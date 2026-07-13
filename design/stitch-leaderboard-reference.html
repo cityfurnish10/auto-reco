@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>City Leaderboard - CityFurnish Operations</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Hanken+Grotesk:wght@600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary-fixed-variant": "#45455b",
+                        "on-primary": "#ffffff",
+                        "on-tertiary-container": "#493f20",
+                        "on-secondary-fixed-variant": "#454747",
+                        "on-error-container": "#93000a",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed-dim": "#d5c59d",
+                        "on-secondary": "#ffffff",
+                        "inverse-surface": "#313032",
+                        "on-surface": "#1c1b1d",
+                        "on-primary-container": "#83829b",
+                        "surface-container-lowest": "#ffffff",
+                        "inverse-primary": "#c6c4df",
+                        "outline": "#78767d",
+                        "surface-container-low": "#f6f2f4",
+                        "error": "#ba1a1a",
+                        "tertiary-container": "#b9aa83",
+                        "surface-bright": "#fcf8fa",
+                        "surface-variant": "#e5e1e3",
+                        "secondary-container": "#dfe0e0",
+                        "tertiary": "#695d3c",
+                        "inverse-on-surface": "#f4f0f2",
+                        "outline-variant": "#c8c5cd",
+                        "on-secondary-container": "#616363",
+                        "error-container": "#ffdad6",
+                        "primary": "#00000b",
+                        "primary-fixed-dim": "#c6c4df",
+                        "background": "#fcf8fa",
+                        "on-background": "#1c1b1d",
+                        "surface-container-highest": "#e5e1e3",
+                        "surface-tint": "#5d5c74",
+                        "surface": "#fcf8fa",
+                        "secondary": "#5d5f5f",
+                        "surface-dim": "#ddd9db",
+                        "primary-fixed": "#e2e0fc",
+                        "on-secondary-fixed": "#1a1c1c",
+                        "primary-container": "#1a1a2e",
+                        "on-surface-variant": "#47464c",
+                        "on-tertiary": "#ffffff",
+                        "on-tertiary-fixed": "#231b02",
+                        "secondary-fixed-dim": "#c6c6c7",
+                        "surface-container-high": "#ebe7e9",
+                        "surface-container": "#f1edef",
+                        "secondary-fixed": "#e2e2e2",
+                        "tertiary-fixed": "#f2e1b7",
+                        "on-primary-fixed": "#1a1a2e",
+                        "on-tertiary-fixed-variant": "#514627"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "row-height-compact": "32px",
+                        "sidebar-width": "260px",
+                        "container-margin": "24px",
+                        "row-height-standard": "44px",
+                        "gutter": "16px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Hanken Grotesk"],
+                        "body-md": ["Inter"],
+                        "label-md": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "headline-lg": ["Hanken Grotesk"],
+                        "label-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["18px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "label-md": ["13px", {"lineHeight": "16px", "fontWeight": "500"}],
+                        "body-sm": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+                        "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "600"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #fcf8fa;
+            color: #1c1b1d;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1edef;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #c8c5cd;
+            border-radius: 3px;
+        }
+        .row-gold {
+            background: linear-gradient(90deg, rgba(242, 225, 183, 0.4) 0%, rgba(242, 225, 183, 0.1) 100%);
+            border-left: 4px solid #b9aa83;
+        }
+    </style>
+</head>
+<body class="overflow-hidden">
+<!-- TopNavBar -->
+<nav class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-container-margin h-row-height-standard bg-surface border-b border-outline-variant">
+<div class="flex items-center gap-4">
+<span class="font-headline-lg text-headline-lg font-black text-primary">CityFurnish</span>
+<span class="bg-primary text-on-primary text-[10px] px-1.5 py-0.5 font-bold uppercase tracking-wider rounded-sm">Admin</span>
+</div>
+<div class="flex items-center gap-6">
+<div class="hidden md:flex items-center space-x-6 h-full">
+<a class="text-on-surface-variant font-medium hover:bg-surface-container-low transition-colors px-3 py-1 rounded" href="#">Metrics</a>
+<a class="text-primary border-b-2 border-primary font-bold px-3 py-1" href="#">Leaderboard</a>
+<a class="text-on-surface-variant font-medium hover:bg-surface-container-low transition-colors px-3 py-1 rounded" href="#">Logs</a>
+</div>
+<div class="flex items-center gap-4">
+<button class="material-symbols-outlined text-on-surface-variant">notifications</button>
+<button class="material-symbols-outlined text-on-surface-variant">help</button>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest overflow-hidden border border-outline-variant">
+<img class="w-full h-full object-cover" data-alt="A professional headshot of a warehouse operations manager, clean-cut, wearing a modern navy corporate polo, set against a blurred industrial office background. The lighting is bright and professional, emphasizing a modern SaaS corporate atmosphere with neutral tones." src="https://lh3.googleusercontent.com/aida-public/AB6AXuADXmRcs_EGUim-nqAG3oNEnFoouQPZmTRBPxasNMFp5PbUupzrViQoMM6Bw2hSo7eHcZczUDyQ-d_56C0Oy7-GkismAAqFA1ilZgTvT0Aa30sLQtLOLzB2s8TAz6LwRH6jml1caCwxWO46GSBX6jlDeh6nrfdmuUBNJazcS9XbxBh23xsVotaBDhG2T_hZZV6MJrdiDX0ledHGFltwmIVQ0oc1xvMj3CbXhJEu0qbxBql1cUDR9yZX7n56TCfxo8OOmn4vayfvcXil"/>
+</div>
+</div>
+</div>
+</nav>
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-full w-[260px] flex flex-col py-6 pt-20 bg-primary-container text-on-primary-container">
+<div class="px-6 mb-8">
+<h2 class="font-headline-md text-headline-md font-bold text-on-primary">Operations Portal</h2>
+<p class="font-body-sm text-body-sm opacity-70">Warehouse Reconciliation</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center px-6 py-3 text-on-primary-container opacity-70 hover:opacity-100 hover:bg-surface-container-highest/10 transition-all" href="#">
+<span class="material-symbols-outlined mr-3">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="flex items-center px-6 py-3 text-on-primary-container opacity-70 hover:opacity-100 hover:bg-surface-container-highest/10 transition-all" href="#">
+<span class="material-symbols-outlined mr-3">upload_file</span>
+<span class="font-label-md text-label-md">Guard Upload</span>
+</a>
+<a class="flex items-center px-6 py-3 bg-on-primary-fixed-variant text-on-primary border-l-4 border-error" href="#">
+<span class="material-symbols-outlined mr-3">leaderboard</span>
+<span class="font-label-md text-label-md">Leaderboard</span>
+</a>
+<a class="flex items-center px-6 py-3 text-on-primary-container opacity-70 hover:opacity-100 hover:bg-surface-container-highest/10 transition-all" href="#">
+<span class="material-symbols-outlined mr-3">group</span>
+<span class="font-label-md text-label-md">User Management</span>
+</a>
+<a class="flex items-center px-6 py-3 text-on-primary-container opacity-70 hover:opacity-100 hover:bg-surface-container-highest/10 transition-all" href="#">
+<span class="material-symbols-outlined mr-3">health_and_safety</span>
+<span class="font-label-md text-label-md">System Health</span>
+</a>
+</nav>
+<div class="mt-auto px-2 space-y-1">
+<a class="flex items-center px-4 py-2 text-on-primary-container opacity-70 hover:opacity-100 transition-all" href="#">
+<span class="material-symbols-outlined mr-3">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+<a class="flex items-center px-4 py-2 text-on-primary-container opacity-70 hover:opacity-100 transition-all" href="#">
+<span class="material-symbols-outlined mr-3">logout</span>
+<span class="font-label-md text-label-md">Logout</span>
+</a>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="ml-[260px] pt-11 h-screen flex flex-col">
+<header class="p-container-margin flex flex-col md:flex-row md:items-end justify-between gap-4">
+<div>
+<h1 class="font-headline-lg text-headline-lg text-primary mb-1">City Leaderboard</h1>
+<p class="text-on-surface-variant font-body-md text-body-md">Comparative analysis of warehouse reconciliation accuracy across active regions.</p>
+</div>
+<div class="flex items-center gap-4">
+<!-- Toggle Group -->
+<div class="bg-surface-container-high rounded-lg p-1 flex">
+<button class="px-4 py-1.5 font-label-md text-label-md rounded hover:bg-surface-bright transition-all">Day</button>
+<button class="px-4 py-1.5 font-label-md text-label-md rounded bg-surface-bright shadow-sm">Week</button>
+<button class="px-4 py-1.5 font-label-md text-label-md rounded hover:bg-surface-bright transition-all">Month</button>
+</div>
+<button class="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:opacity-90 transition-all">
+<span class="material-symbols-outlined text-[18px]">download</span>
+                    Export CSV
+                </button>
+</div>
+</header>
+<!-- Bento Stats Row -->
+<section class="px-container-margin grid grid-cols-1 md:grid-cols-4 gap-gutter mb-gutter">
+<div class="bg-white border border-outline-variant p-4 rounded-xl flex flex-col justify-between shadow-[0px_1px_3px_rgba(0,0,0,0.1)]">
+<div class="flex items-start justify-between">
+<span class="text-on-surface-variant font-label-md text-label-md uppercase tracking-wider">Top Performer</span>
+<span class="material-symbols-outlined text-tertiary">workspace_premium</span>
+</div>
+<div class="mt-4">
+<h3 class="font-headline-lg text-headline-lg text-primary">Bangalore Central</h3>
+<div class="flex items-center gap-2 text-[12px] font-bold text-green-600">
+<span class="material-symbols-outlined text-[14px]">trending_up</span> 
+                        99.8% Accuracy
+                    </div>
+</div>
+</div>
+<div class="bg-white border border-outline-variant p-4 rounded-xl flex flex-col justify-between shadow-[0px_1px_3px_rgba(0,0,0,0.1)]">
+<div class="flex items-start justify-between">
+<span class="text-on-surface-variant font-label-md text-label-md uppercase tracking-wider">Total Items Scanned</span>
+<span class="material-symbols-outlined text-on-primary-container">inventory_2</span>
+</div>
+<div class="mt-4">
+<h3 class="font-headline-lg text-headline-lg text-primary">428.4k</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">+12% vs last week</p>
+</div>
+</div>
+<div class="bg-white border border-outline-variant p-4 rounded-xl flex flex-col justify-between shadow-[0px_1px_3px_rgba(0,0,0,0.1)]">
+<div class="flex items-start justify-between">
+<span class="text-on-surface-variant font-label-md text-label-md uppercase tracking-wider">Critical Variances</span>
+<span class="material-symbols-outlined text-error">report</span>
+</div>
+<div class="mt-4">
+<h3 class="font-headline-lg text-headline-lg text-error">14</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">4 resolved today</p>
+</div>
+</div>
+<div class="bg-white border border-outline-variant p-4 rounded-xl flex flex-col justify-between shadow-[0px_1px_3px_rgba(0,0,0,0.1)] overflow-hidden relative">
+<div class="relative z-10">
+<span class="text-on-surface-variant font-label-md text-label-md uppercase tracking-wider">System Health</span>
+<h3 class="font-headline-lg text-headline-lg text-primary mt-4">94.2%</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">All hubs online</p>
+</div>
+<div class="absolute right-0 bottom-0 opacity-10">
+<span class="material-symbols-outlined text-[80px]" style="font-variation-settings: 'FILL' 1;">monitoring</span>
+</div>
+</div>
+</section>
+<!-- Main Table Section -->
+<section class="flex-1 px-container-margin pb-container-margin overflow-hidden flex flex-col">
+<div class="bg-white border border-outline-variant rounded-xl shadow-sm flex flex-col overflow-hidden">
+<div class="overflow-x-auto custom-scrollbar">
+<table class="w-full text-left border-collapse">
+<thead class="sticky top-0 bg-surface-container-low z-20">
+<tr>
+<th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest border-b border-outline-variant w-20 text-center">Rank</th>
+<th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest border-b border-outline-variant">City Node</th>
+<th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest border-b border-outline-variant text-right">Accuracy %</th>
+<th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest border-b border-outline-variant text-right">Total Items</th>
+<th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest border-b border-outline-variant text-right">Open Variances</th>
+<th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest border-b border-outline-variant text-center">High Severity</th>
+<th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest border-b border-outline-variant text-center">Trend</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/30">
+<!-- Rank 1 - Highlighted -->
+<tr class="row-gold group hover:brightness-95 transition-all cursor-pointer">
+<td class="px-6 py-row-height-standard text-center">
+<span class="material-symbols-outlined text-tertiary" style="font-variation-settings: 'FILL' 1;">workspace_premium</span>
+</td>
+<td class="px-6 py-row-height-standard">
+<div class="flex flex-col">
+<span class="font-headline-md text-headline-md text-primary group-hover:underline">Bangalore Central</span>
+<span class="text-[11px] text-on-surface-variant uppercase">HUB-001 • Main Warehouse</span>
+</div>
+</td>
+<td class="px-6 py-row-height-standard text-right font-bold text-primary">99.82%</td>
+<td class="px-6 py-row-height-standard text-right font-body-md text-body-md">142,500</td>
+<td class="px-6 py-row-height-standard text-right font-body-md text-body-md">2</td>
+<td class="px-6 py-row-height-standard text-center">
+<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[11px] font-bold">0</span>
+</td>
+<td class="px-6 py-row-height-standard text-center">
+<span class="material-symbols-outlined text-green-600">trending_up</span>
+</td>
+</tr>
+<!-- Rank 2 -->
+<tr class="hover:bg-surface-container transition-all cursor-pointer">
+<td class="px-6 py-row-height-standard text-center font-headline-md text-headline-md text-on-surface-variant">2</td>
+<td class="px-6 py-row-height-standard">
+<div class="flex flex-col">
+<span class="font-headline-md text-headline-md text-primary">Mumbai West</span>
+<span class="text-[11px] text-on-surface-variant uppercase">HUB-004 • Distribution</span>
+</div>
+</td>
+<td class="px-6 py-row-height-standard text-right font-bold text-primary">98.45%</td>
+<td class="px-6 py-row-height-standard text-right font-body-md text-body-md">98,200</td>
+<td class="px-6 py-row-height-standard text-right font-body-md text-body-md">12</td>
+<td class="px-6 py-row-height-standard text-center">
+<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[11px] font-bold">0</span>
+</td>
+<td class="px-6 py-row-height-standard text-center">
+<span class="material-symbols-outlined text-green-600">trending_up</span>
+</td>
+</tr>
+<!-- Rank 3 -->
+<tr class="hover:bg-surface-container transition-all cursor-pointer">
+<td class="px-6 py-row-height-standard text-center font-headline-md text-headline-md text-on-surface-variant">3</td>
+<td class="px-6 py-row-height-standard">
+<div class="flex flex-col">
+<span class="font-headline-md text-headline-md text-primary">Hyderabad East</span>
+<span class="text-[11px] text-on-surface-variant uppercase">HUB-009 • Satellite Hub</span>
+</div>
+</td>
+<td class="px-6 py-row-height-standard text-right font-bold text-primary">97.10%</td>
+<td class="px-6 py-row-height-standard text-right font-body-md text-body-md">65,400</td>
+<td class="px-6 py-row-height-standard text-right font-body-md text-body-md">45</td>
+<td class="px-6 py-row-height-standard text-center">
+<span class="bg-error-container text-on-error-container px-2 py-0.5 rounded text-[11px] font-bold">3</span>
+</td>
+<td class="px-6 py-row-height-standard text-center">
+<span class="material-symbols-outlined text-error">trending_down</span>
+</td>
+</tr>
+<!-- Rank 4 -->
+<tr class="hover:bg-surface-container transition-all cursor-pointer">
+<td class="px-6 py-row-height-standard text-center font-headline-md text-headline-md text-on-surface-variant">4</td>
+<td class="px-6 py-row-height-standard">
+<div class="flex flex-col">
+<span class="font-headline-md text-headline-md text-primary">Delhi NCR</span>
+<span class="text-[11px] text-on-surface-variant uppercase">HUB-002 • Regional Office</span>
+</div>
+</td>
+<td class="px-6 py-row-height-standard text-right font-bold text-primary">96.88%</td>
+<td class="px-6 py-row-height-standard text-right font-body-md text-body-md">112,000</td>
+<td class="px-6 py-row-height-standard text-right font-body-md text-body-md">88</td>
+<td class="px-6 py-row-height-standard text-center">
+<span class="bg-error-container text-on-error-container px-2 py-0.5 rounded text-[11px] font-bold">11</span>
+</td>
+<td class="px-6 py-row-height-standard text-center">
+<span class="material-symbols-outlined text-secondary opacity-50">trending_flat</span>
+</td>
+</tr>
+<!-- Rank 5 -->
+<tr class="hover:bg-surface-container transition-all cursor-pointer">
+<td class="px-6 py-row-height-standard text-center font-headline-md text-headline-md text-on-surface-variant">5</td>
+<td class="px-6 py-row-height-standard">
+<div class="flex flex-col">
+<span class="font-headline-md text-headline-md text-primary">Chennai South</span>
+<span class="text-[11px] text-on-surface-variant uppercase">HUB-005 • Inventory Port</span>
+</div>
+</td>
+<td class="px-6 py-row-height-standard text-right font-bold text-primary">94.22%</td>
+<td class="px-6 py-row-height-standard text-right font-body-md text-body-md">44,300</td>
+<td class="px-6 py-row-height-standard text-right font-body-md text-body-md">102</td>
+<td class="px-6 py-row-height-standard text-center">
+<span class="bg-error-container text-on-error-container px-2 py-0.5 rounded text-[11px] font-bold">0</span>
+</td>
+<td class="px-6 py-row-height-standard text-center">
+<span class="material-symbols-outlined text-green-600">trending_up</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Footer Pagination/Status -->
+<div class="px-6 py-3 bg-surface-container-low border-t border-outline-variant flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Showing 5 of 32 active city nodes</span>
+<div class="flex gap-2">
+<button class="p-1 hover:bg-surface-container-high rounded disabled:opacity-30" disabled="">
+<span class="material-symbols-outlined">chevron_left</span>
+</button>
+<button class="p-1 hover:bg-surface-container-high rounded">
+<span class="material-symbols-outlined">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Visual Polish: Decorative Element -->
+<div class="fixed bottom-[-100px] right-[-100px] w-96 h-96 bg-primary opacity-[0.02] rounded-full blur-3xl pointer-events-none"></div>
+<script>
+        // Micro-interaction for row clicks
+        document.querySelectorAll('tbody tr').forEach(row => {
+            row.addEventListener('click', () => {
+                const cityName = row.querySelector('.font-headline-md').innerText;
+                console.log(`Navigating to detailed view for: ${cityName}`);
+                // In a real app: window.location.href = `/city/${cityName.toLowerCase().replace(' ', '-')}`;
+                row.classList.add('scale-[0.99]');
+                setTimeout(() => row.classList.remove('scale-[0.99]'), 100);
+            });
+        });
+
+        // Date Range Selector Logic
+        const dateButtons = document.querySelectorAll('.bg-surface-container-high button');
+        dateButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                dateButtons.forEach(b => {
+                    b.classList.remove('bg-surface-bright', 'shadow-sm');
+                    b.classList.add('hover:bg-surface-bright');
+                });
+                btn.classList.add('bg-surface-bright', 'shadow-sm');
+                btn.classList.remove('hover:bg-surface-bright');
+            });
+        });
+    </script>
+</body></html>

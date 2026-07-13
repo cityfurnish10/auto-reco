@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Warehouse Manager Dashboard - CityFurnish</title>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;900&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-primary-fixed-variant": "#45455b",
+                    "on-primary": "#ffffff",
+                    "on-tertiary-container": "#493f20",
+                    "on-secondary-fixed-variant": "#454747",
+                    "on-error-container": "#93000a",
+                    "on-error": "#ffffff",
+                    "tertiary-fixed-dim": "#d5c59d",
+                    "on-secondary": "#ffffff",
+                    "inverse-surface": "#313032",
+                    "on-surface": "#1c1b1d",
+                    "on-primary-container": "#83829b",
+                    "surface-container-lowest": "#ffffff",
+                    "inverse-primary": "#c6c4df",
+                    "outline": "#78767d",
+                    "surface-container-low": "#f6f2f4",
+                    "error": "#ba1a1a",
+                    "tertiary-container": "#b9aa83",
+                    "surface-bright": "#fcf8fa",
+                    "surface-variant": "#e5e1e3",
+                    "secondary-container": "#dfe0e0",
+                    "tertiary": "#695d3c",
+                    "inverse-on-surface": "#f4f0f2",
+                    "outline-variant": "#c8c5cd",
+                    "on-secondary-container": "#616363",
+                    "error-container": "#ffdad6",
+                    "primary": "#00000b",
+                    "primary-fixed-dim": "#c6c4df",
+                    "background": "#fcf8fa",
+                    "on-background": "#1c1b1d",
+                    "surface-container-highest": "#e5e1e3",
+                    "surface-tint": "#5d5c74",
+                    "surface": "#fcf8fa",
+                    "secondary": "#5d5f5f",
+                    "surface-dim": "#ddd9db",
+                    "primary-fixed": "#e2e0fc",
+                    "on-secondary-fixed": "#1a1c1c",
+                    "primary-container": "#1a1a2e",
+                    "on-surface-variant": "#47464c",
+                    "on-tertiary": "#ffffff",
+                    "on-tertiary-fixed": "#231b02",
+                    "secondary-fixed-dim": "#c6c6c7",
+                    "surface-container-high": "#ebe7e9",
+                    "surface-container": "#f1edef",
+                    "secondary-fixed": "#e2e2e2",
+                    "tertiary-fixed": "#f2e1b7",
+                    "on-primary-fixed": "#1a1a2e",
+                    "on-tertiary-fixed-variant": "#514627"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "row-height-compact": "32px",
+                    "sidebar-width": "260px",
+                    "container-margin": "24px",
+                    "row-height-standard": "44px",
+                    "gutter": "16px"
+            },
+            "fontFamily": {
+                    "headline-md": ["Hanken Grotesk"],
+                    "body-md": ["Inter"],
+                    "label-md": ["Inter"],
+                    "body-sm": ["Inter"],
+                    "headline-lg": ["Hanken Grotesk"],
+                    "label-sm": ["Inter"]
+            },
+            "fontSize": {
+                    "headline-md": ["18px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "label-md": ["13px", {"lineHeight": "16px", "fontWeight": "500"}],
+                    "body-sm": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+                    "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .sidebar-active {
+            background-color: #45455b;
+            color: #ffffff;
+            border-left: 4px solid #ba1a1a;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1edef;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #c8c5cd;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #78767d;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen">
+<!-- Sidebar (As per SideNavBar Shared Component) -->
+<aside class="fixed left-0 top-0 h-full w-[260px] bg-primary-container flex flex-col py-6 z-[60] shadow-xl">
+<div class="px-6 mb-10">
+<h1 class="font-headline-md text-headline-md font-bold text-on-primary-fixed uppercase tracking-wider">CityFurnish</h1>
+<p class="text-[10px] text-on-primary-container uppercase tracking-widest mt-1 opacity-60">Operations Portal</p>
+</div>
+<nav class="flex-1 px-3 space-y-1">
+<a class="sidebar-active flex items-center gap-3 px-3 py-2.5 rounded-sm transition-all duration-100" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="text-on-primary-container opacity-70 hover:opacity-100 flex items-center gap-3 px-3 py-2.5 rounded-sm hover:bg-surface-container-highest/10 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="upload_file">upload_file</span>
+<span class="font-label-md text-label-md">Guard Upload</span>
+</a>
+<a class="text-on-primary-container opacity-70 hover:opacity-100 flex items-center gap-3 px-3 py-2.5 rounded-sm hover:bg-surface-container-highest/10 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="leaderboard">leaderboard</span>
+<span class="font-label-md text-label-md">Leaderboard</span>
+</a>
+<a class="text-on-primary-container opacity-70 hover:opacity-100 flex items-center gap-3 px-3 py-2.5 rounded-sm hover:bg-surface-container-highest/10 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="font-label-md text-label-md">User Management</span>
+</a>
+<a class="text-on-primary-container opacity-70 hover:opacity-100 flex items-center gap-3 px-3 py-2.5 rounded-sm hover:bg-surface-container-highest/10 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="health_and_safety">health_and_safety</span>
+<span class="font-label-md text-label-md">System Health</span>
+</a>
+</nav>
+<div class="px-3 pt-6 border-t border-on-primary-container/10 space-y-1">
+<a class="text-on-primary-container opacity-70 hover:opacity-100 flex items-center gap-3 px-3 py-2.5 rounded-sm hover:bg-surface-container-highest/10 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+<a class="text-on-primary-container opacity-70 hover:opacity-100 flex items-center gap-3 px-3 py-2.5 rounded-sm hover:bg-surface-container-highest/10 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span class="font-label-md text-label-md">Logout</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Wrapper -->
+<main class="ml-[260px] flex flex-col min-h-screen">
+<!-- TopNavBar (As per Shared Component) -->
+<header class="fixed top-0 left-[260px] right-0 z-50 bg-surface flex justify-between items-center px-container-margin h-row-height-standard border-b border-outline-variant">
+<div class="flex items-center gap-4">
+<span class="font-headline-lg text-headline-lg font-black text-primary">CityFurnish</span>
+<div class="h-6 w-[1px] bg-outline-variant mx-2"></div>
+<div class="flex items-center gap-2 px-3 py-1 bg-surface-container-low rounded-full border border-outline-variant">
+<span class="material-symbols-outlined text-[18px] text-primary" data-icon="location_on">location_on</span>
+<span class="font-label-sm text-label-sm text-primary uppercase tracking-tight">Delhi Warehouse</span>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:bg-surface-container-low transition-colors p-2 rounded-full">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:bg-surface-container-low transition-colors p-2 rounded-full">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+</button>
+</div>
+<div class="flex items-center gap-3 pl-4 border-l border-outline-variant">
+<div class="text-right">
+<p class="font-label-md text-label-md text-on-surface">Rajesh Kumar</p>
+<p class="text-[10px] text-on-surface-variant uppercase font-bold tracking-widest">Warehouse Manager</p>
+</div>
+<img class="w-10 h-10 rounded-full border-2 border-primary object-cover" data-alt="Close up portrait of a professional South Asian warehouse manager wearing a clean industrial uniform, looking confident and smiling slightly. The background shows a modern, organized logistics hub with soft focus lighting. The style is sharp, clean, and corporate light-mode." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDABb5slxlfBhg-qLjfpPyXV6FyLs5Gg6p6rn0JaE_c2i6vQ8Ugou4_34qVQLlIIYYBBD3SyVRQRPw33Ap6UhYWaWRZ5NGS0qbI950AkvZjHafUsN77A9Gu1r9xr9TJp9wxVTfluOQTczmUQiYPZkzEe7yNzZ-2qg8z6oB5z1ZX6yKMSJXvqVmCH7f70hOw_aAHHqLsbIYMipdDRJp42-UruyWuEfpGzQpfhSPbtA8pTQNjUX4gtgRLyOT4ZzXIUhys90i7XlJuyT2S"/>
+</div>
+</div>
+</header>
+<!-- Page Canvas -->
+<div class="mt-row-height-standard p-container-margin space-y-6">
+<!-- Date Picker & Header -->
+<div class="flex justify-between items-end">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-primary">Warehouse Operations Dashboard</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Monitoring inventory reconciliation and guard variance logs.</p>
+</div>
+<div class="flex items-center gap-3">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" data-icon="calendar_today">calendar_today</span>
+<input class="pl-10 pr-4 py-2 bg-surface border border-outline-variant rounded-sm font-label-md text-label-md focus:border-primary focus:ring-0 w-64 cursor-pointer" type="text" value="Oct 24, 2023 - Oct 31, 2023"/>
+</div>
+<button class="bg-primary text-on-primary px-4 py-2 font-label-md text-label-md flex items-center gap-2 hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined text-[18px]" data-icon="download">download</span>
+                        Export Report
+                    </button>
+</div>
+</div>
+<!-- Summary Bento Grid -->
+<div class="grid grid-cols-4 gap-4">
+<!-- Card 1 -->
+<div class="bg-surface border border-outline-variant p-5 shadow-sm hover:shadow-md transition-shadow group">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-surface-container-low rounded-sm text-primary">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+</div>
+<span class="text-green-600 font-label-sm text-label-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]" data-icon="trending_up">trending_up</span>
+                            +12%
+                        </span>
+</div>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Total Items Reconciled</p>
+<h3 class="font-headline-lg text-[32px] font-black text-primary mt-1">12,482</h3>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface border border-outline-variant p-5 shadow-sm hover:shadow-md transition-shadow">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-error-container text-on-error-container rounded-sm">
+<span class="material-symbols-outlined" data-icon="warning">warning</span>
+</div>
+</div>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Open Variances</p>
+<h3 class="font-headline-lg text-[32px] font-black text-error mt-1">42</h3>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface border border-outline-variant p-5 shadow-sm hover:shadow-md transition-shadow">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-tertiary-fixed text-on-tertiary-fixed rounded-sm">
+<span class="material-symbols-outlined" data-icon="task_alt">task_alt</span>
+</div>
+</div>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Closed Today</p>
+<h3 class="font-headline-lg text-[32px] font-black text-primary mt-1">156</h3>
+</div>
+<!-- Card 4 -->
+<div class="bg-surface border border-outline-variant p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-primary-fixed text-on-primary-fixed rounded-sm">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+</div>
+</div>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Accuracy %</p>
+<h3 class="font-headline-lg text-[32px] font-black text-primary mt-1">89.5%</h3>
+<div class="absolute bottom-0 left-0 h-1 bg-primary w-[89.5%]"></div>
+</div>
+</div>
+<!-- Main Table Section -->
+<section class="bg-surface border border-outline-variant shadow-sm flex flex-col">
+<!-- Table Header/Filters -->
+<div class="p-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-lowest">
+<h3 class="font-headline-md text-headline-md text-primary">Variance Table</h3>
+<div class="flex items-center gap-3">
+<!-- Search -->
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]" data-icon="search">search</span>
+<input class="pl-10 pr-4 py-1.5 bg-background border border-outline-variant rounded-sm font-body-sm text-body-sm focus:border-primary focus:ring-0 w-64" placeholder="Search Item or Code..." type="text"/>
+</div>
+<!-- Filters -->
+<select class="py-1.5 px-3 bg-background border border-outline-variant rounded-sm font-label-md text-label-md focus:border-primary focus:ring-0 cursor-pointer">
+<option>All Severity</option>
+<option>High</option>
+<option>Medium</option>
+<option>Low</option>
+</select>
+<select class="py-1.5 px-3 bg-background border border-outline-variant rounded-sm font-label-md text-label-md focus:border-primary focus:ring-0 cursor-pointer">
+<option>All Status</option>
+<option>Open</option>
+<option>Closed</option>
+<option>Disputed</option>
+</select>
+<button class="p-1.5 border border-outline-variant rounded-sm hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined" data-icon="filter_list">filter_list</span>
+</button>
+</div>
+</div>
+<!-- Scrollable Table -->
+<div class="overflow-x-auto">
+<table class="w-full border-collapse">
+<thead class="sticky top-0 bg-surface-container z-10">
+<tr class="h-row-height-compact text-left border-b border-outline-variant">
+<th class="px-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Item Code</th>
+<th class="px-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Item Name</th>
+<th class="px-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider text-center">Odoo Qty</th>
+<th class="px-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider text-center">DT Qty</th>
+<th class="px-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider text-center">Sheet Qty</th>
+<th class="px-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider text-center">Guard Qty</th>
+<th class="px-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider text-center">Delta</th>
+<th class="px-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Severity</th>
+<th class="px-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Status</th>
+<th class="px-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider text-right">Action</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/30">
+<!-- Row 1 -->
+<tr class="h-row-height-standard hover:bg-surface-container-low transition-colors">
+<td class="px-4 font-body-sm text-body-sm font-bold">CF-SOF-001</td>
+<td class="px-4 font-body-sm text-body-sm">Elegance 3-Seater Sofa</td>
+<td class="px-4 font-body-sm text-body-sm text-center">45</td>
+<td class="px-4 font-body-sm text-body-sm text-center">45</td>
+<td class="px-4 font-body-sm text-body-sm text-center">45</td>
+<td class="px-4 font-body-sm text-body-sm text-center text-error font-bold">42</td>
+<td class="px-4 font-body-sm text-body-sm text-center font-bold text-error">-3</td>
+<td class="px-4">
+<span class="inline-flex px-2 py-0.5 rounded-full bg-error text-on-error font-label-sm text-[10px] uppercase">High</span>
+</td>
+<td class="px-4">
+<span class="inline-flex px-2 py-0.5 rounded-full bg-amber-500 text-white font-label-sm text-[10px] uppercase">Open</span>
+</td>
+<td class="px-4 text-right">
+<button class="px-3 py-1 bg-primary text-on-primary font-label-sm text-label-sm rounded-sm hover:opacity-80 transition-opacity">Close</button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="h-row-height-standard bg-surface-container-lowest hover:bg-surface-container-low transition-colors">
+<td class="px-4 font-body-sm text-body-sm font-bold">CF-TAB-042</td>
+<td class="px-4 font-body-sm text-body-sm">WorkFocus Desk Pro</td>
+<td class="px-4 font-body-sm text-body-sm text-center">112</td>
+<td class="px-4 font-body-sm text-body-sm text-center">112</td>
+<td class="px-4 font-body-sm text-body-sm text-center">110</td>
+<td class="px-4 font-body-sm text-body-sm text-center">112</td>
+<td class="px-4 font-body-sm text-body-sm text-center font-bold text-on-tertiary-container">-2</td>
+<td class="px-4">
+<span class="inline-flex px-2 py-0.5 rounded-full bg-amber-500 text-white font-label-sm text-[10px] uppercase">Medium</span>
+</td>
+<td class="px-4">
+<span class="inline-flex px-2 py-0.5 rounded-full bg-green-600 text-white font-label-sm text-[10px] uppercase">Closed</span>
+</td>
+<td class="px-4 text-right">
+<button class="px-3 py-1 border border-outline-variant text-on-surface-variant font-label-sm text-label-sm rounded-sm opacity-50 cursor-not-allowed">Close</button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="h-row-height-standard hover:bg-surface-container-low transition-colors">
+<td class="px-4 font-body-sm text-body-sm font-bold">CF-CHR-088</td>
+<td class="px-4 font-body-sm text-body-sm">ErgoLift Executive Chair</td>
+<td class="px-4 font-body-sm text-body-sm text-center">204</td>
+<td class="px-4 font-body-sm text-body-sm text-center">204</td>
+<td class="px-4 font-body-sm text-body-sm text-center">204</td>
+<td class="px-4 font-body-sm text-body-sm text-center">205</td>
+<td class="px-4 font-body-sm text-body-sm text-center font-bold text-green-600">+1</td>
+<td class="px-4">
+<span class="inline-flex px-2 py-0.5 rounded-full bg-green-600 text-white font-label-sm text-[10px] uppercase">Low</span>
+</td>
+<td class="px-4">
+<span class="inline-flex px-2 py-0.5 rounded-full bg-surface-dim text-on-surface-variant font-label-sm text-[10px] uppercase">Disputed</span>
+</td>
+<td class="px-4 text-right">
+<button class="px-3 py-1 bg-primary text-on-primary font-label-sm text-label-sm rounded-sm hover:opacity-80 transition-opacity">Close</button>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="h-row-height-standard bg-surface-container-lowest hover:bg-surface-container-low transition-colors">
+<td class="px-4 font-body-sm text-body-sm font-bold">CF-BDR-012</td>
+<td class="px-4 font-body-sm text-body-sm">CloudRest King Mattress</td>
+<td class="px-4 font-body-sm text-body-sm text-center">30</td>
+<td class="px-4 font-body-sm text-body-sm text-center">28</td>
+<td class="px-4 font-body-sm text-body-sm text-center">30</td>
+<td class="px-4 font-body-sm text-body-sm text-center">30</td>
+<td class="px-4 font-body-sm text-body-sm text-center font-bold text-error">-2</td>
+<td class="px-4">
+<span class="inline-flex px-2 py-0.5 rounded-full bg-error text-on-error font-label-sm text-[10px] uppercase">High</span>
+</td>
+<td class="px-4">
+<span class="inline-flex px-2 py-0.5 rounded-full bg-amber-500 text-white font-label-sm text-[10px] uppercase">Open</span>
+</td>
+<td class="px-4 text-right">
+<button class="px-3 py-1 bg-primary text-on-primary font-label-sm text-label-sm rounded-sm hover:opacity-80 transition-opacity">Close</button>
+</td>
+</tr>
+<!-- Row 5 -->
+<tr class="h-row-height-standard hover:bg-surface-container-low transition-colors">
+<td class="px-4 font-body-sm text-body-sm font-bold">CF-LMP-009</td>
+<td class="px-4 font-body-sm text-body-sm">Aura Ambient Floor Lamp</td>
+<td class="px-4 font-body-sm text-body-sm text-center">412</td>
+<td class="px-4 font-body-sm text-body-sm text-center">412</td>
+<td class="px-4 font-body-sm text-body-sm text-center">412</td>
+<td class="px-4 font-body-sm text-body-sm text-center">412</td>
+<td class="px-4 font-body-sm text-body-sm text-center font-bold text-on-surface-variant">0</td>
+<td class="px-4">
+<span class="inline-flex px-2 py-0.5 rounded-full bg-green-600 text-white font-label-sm text-[10px] uppercase">Low</span>
+</td>
+<td class="px-4">
+<span class="inline-flex px-2 py-0.5 rounded-full bg-green-600 text-white font-label-sm text-[10px] uppercase">Closed</span>
+</td>
+<td class="px-4 text-right">
+<button class="px-3 py-1 border border-outline-variant text-on-surface-variant font-label-sm text-label-sm rounded-sm opacity-50 cursor-not-allowed">Close</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Footer/Pagination -->
+<div class="p-3 border-t border-outline-variant flex justify-between items-center bg-surface-container-lowest">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Showing 5 of 42 open variances</span>
+<div class="flex items-center gap-1">
+<button class="p-1 rounded-sm hover:bg-surface-container-low disabled:opacity-30" disabled="">
+<span class="material-symbols-outlined" data-icon="chevron_left">chevron_left</span>
+</button>
+<button class="w-8 h-8 flex items-center justify-center bg-primary text-on-primary font-label-md text-label-md rounded-sm">1</button>
+<button class="w-8 h-8 flex items-center justify-center hover:bg-surface-container-low font-label-md text-label-md rounded-sm">2</button>
+<button class="w-8 h-8 flex items-center justify-center hover:bg-surface-container-low font-label-md text-label-md rounded-sm">3</button>
+<button class="p-1 rounded-sm hover:bg-surface-container-low">
+<span class="material-symbols-outlined" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+</div>
+</section>
+</div>
+<!-- Footer Space -->
+<footer class="mt-auto p-6 text-center border-t border-outline-variant bg-surface-container-low">
+<p class="text-[11px] font-bold text-on-surface-variant uppercase tracking-[0.2em]">CityFurnish Inventory Systems © 2023</p>
+</footer>
+</main>
+<script>
+        // Simple micro-interaction for the "Close" button simulation
+        document.querySelectorAll('button').forEach(btn => {
+            if(btn.textContent.trim() === 'Close' && !btn.classList.contains('cursor-not-allowed')) {
+                btn.addEventListener('click', function() {
+                    const row = this.closest('tr');
+                    this.textContent = 'Closed';
+                    this.classList.replace('bg-primary', 'bg-green-600');
+                    const statusBadge = row.querySelector('td:nth-child(9) span');
+                    statusBadge.textContent = 'Closed';
+                    statusBadge.classList.replace('bg-amber-500', 'bg-green-600');
+                    btn.classList.add('opacity-50', 'cursor-not-allowed');
+                });
+            }
+        });
+    </script>
+</body></html>

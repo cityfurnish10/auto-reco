@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>System Health | CityFurnish Operations</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Hanken+Grotesk:wght@600;700;800;900&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@100..900&family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        .status-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+        .sidebar-active-indicator {
+            box-shadow: inset 4px 0 0 0 #ba1a1a;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-primary-fixed-variant": "#45455b",
+                      "on-primary": "#ffffff",
+                      "on-tertiary-container": "#493f20",
+                      "on-secondary-fixed-variant": "#454747",
+                      "on-error-container": "#93000a",
+                      "on-error": "#ffffff",
+                      "tertiary-fixed-dim": "#d5c59d",
+                      "on-secondary": "#ffffff",
+                      "inverse-surface": "#313032",
+                      "on-surface": "#1c1b1d",
+                      "on-primary-container": "#83829b",
+                      "surface-container-lowest": "#ffffff",
+                      "inverse-primary": "#c6c4df",
+                      "outline": "#78767d",
+                      "surface-container-low": "#f6f2f4",
+                      "error": "#ba1a1a",
+                      "tertiary-container": "#b9aa83",
+                      "surface-bright": "#fcf8fa",
+                      "surface-variant": "#e5e1e3",
+                      "secondary-container": "#dfe0e0",
+                      "tertiary": "#695d3c",
+                      "inverse-on-surface": "#f4f0f2",
+                      "outline-variant": "#c8c5cd",
+                      "on-secondary-container": "#616363",
+                      "error-container": "#ffdad6",
+                      "primary": "#00000b",
+                      "primary-fixed-dim": "#c6c4df",
+                      "background": "#fcf8fa",
+                      "on-background": "#1c1b1d",
+                      "surface-container-highest": "#e5e1e3",
+                      "surface-tint": "#5d5c74",
+                      "surface": "#fcf8fa",
+                      "secondary": "#5d5f5f",
+                      "surface-dim": "#ddd9db",
+                      "primary-fixed": "#e2e0fc",
+                      "on-secondary-fixed": "#1a1c1c",
+                      "primary-container": "#1a1a2e",
+                      "on-surface-variant": "#47464c",
+                      "on-tertiary": "#ffffff",
+                      "on-tertiary-fixed": "#231b02",
+                      "secondary-fixed-dim": "#c6c6c7",
+                      "surface-container-high": "#ebe7e9",
+                      "surface-container": "#f1edef",
+                      "secondary-fixed": "#e2e2e2",
+                      "tertiary-fixed": "#f2e1b7",
+                      "on-primary-fixed": "#1a1a2e",
+                      "on-tertiary-fixed-variant": "#514627"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "row-height-compact": "32px",
+                      "sidebar-width": "260px",
+                      "container-margin": "24px",
+                      "row-height-standard": "44px",
+                      "gutter": "16px"
+              },
+              "fontFamily": {
+                      "headline-md": ["Hanken Grotesk"],
+                      "body-md": ["Inter"],
+                      "label-md": ["Inter"],
+                      "body-sm": ["Inter"],
+                      "headline-lg": ["Hanken Grotesk"],
+                      "label-sm": ["Inter"]
+              },
+              "fontSize": {
+                      "headline-md": ["18px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                      "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "label-md": ["13px", {"lineHeight": "16px", "fontWeight": "500"}],
+                      "body-sm": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+                      "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "600"}]
+              }
+            },
+          },
+        }
+    </script>
+</head>
+<body class="bg-background text-on-background font-body-md overflow-x-hidden">
+<!-- Sidebar (Shared Component) -->
+<aside class="fixed left-0 top-0 h-full w-[260px] flex flex-col py-6 bg-primary-container z-40 text-on-primary">
+<div class="px-6 mb-8">
+<h1 class="font-headline-md text-headline-md font-bold text-on-primary-fixed">CityFurnish</h1>
+<p class="font-body-sm text-body-sm opacity-70">Operations Portal</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center px-6 py-3 text-on-primary-container opacity-70 hover:opacity-100 transition-all font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined mr-3">dashboard</span>
+                Dashboard
+            </a>
+<a class="flex items-center px-6 py-3 text-on-primary-container opacity-70 hover:opacity-100 transition-all font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined mr-3">upload_file</span>
+                Guard Upload
+            </a>
+<a class="flex items-center px-6 py-3 text-on-primary-container opacity-70 hover:opacity-100 transition-all font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined mr-3">leaderboard</span>
+                Leaderboard
+            </a>
+<a class="flex items-center px-6 py-3 text-on-primary-container opacity-70 hover:opacity-100 transition-all font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined mr-3">group</span>
+                User Management
+            </a>
+<!-- Active State: System Health -->
+<a class="flex items-center px-6 py-3 bg-on-primary-fixed-variant text-on-primary border-l-4 border-error font-label-md text-label-md scale-[0.98] transition-all" href="#">
+<span class="material-symbols-outlined mr-3">health_and_safety</span>
+                System Health
+            </a>
+</nav>
+<div class="px-6 mt-auto pt-6 border-t border-white/10 space-y-1">
+<a class="flex items-center py-2 text-on-primary-container opacity-70 hover:opacity-100 transition-all font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined mr-3">settings</span>
+                Settings
+            </a>
+<a class="flex items-center py-2 text-on-primary-container opacity-70 hover:opacity-100 transition-all font-label-md text-label-md text-error" href="#">
+<span class="material-symbols-outlined mr-3">logout</span>
+                Logout
+            </a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-[260px] min-h-screen">
+<!-- Top Bar (Shared Component) -->
+<header class="sticky top-0 z-30 bg-surface flex justify-between items-center px-container-margin h-row-height-standard border-b border-outline-variant">
+<div class="flex items-center gap-4">
+<h2 class="font-headline-md text-headline-md text-primary">System Health</h2>
+<div class="flex items-center gap-2 px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded text-label-sm font-label-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-green-500 status-pulse"></span>
+                    ALL SYSTEMS OPERATIONAL
+                </div>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:bg-surface-container-low p-1.5 rounded transition-colors">notifications</span>
+<span class="absolute top-1 right-1 w-2 h-2 bg-error rounded-full border border-surface"></span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:bg-surface-container-low p-1.5 rounded transition-colors">help</span>
+<div class="flex items-center gap-3 pl-4 border-l border-outline-variant">
+<div class="text-right">
+<p class="font-label-md text-label-md text-primary">Admin User</p>
+<p class="text-[11px] text-on-surface-variant">Warehouse Manager</p>
+</div>
+<img class="w-8 h-8 rounded-full bg-surface-container-highest object-cover border border-outline-variant" data-alt="A professional warehouse manager headshot in a bright office environment, clean corporate SaaS aesthetic with soft professional lighting, minimalist background and high-quality photography." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCMUXAOteqCxVxFzdsH0CQgGDn4rKOZsrDfu-qdrfF_XWuLllYsmedpTflCA1SDaL08V5HfO-6ngogPdcJMpMqp6XN3M5oOUVZMB4gdeTJ74_d4uObkCeNG9zYY7c8dYIse9P79tu71-aGAvMewsGLgCC4YJwkA-bqbSnBRZS-ZpkUO9dj6snAclHIYoNSKjGhx4ydybcdFyO0nz6XHBSqY6FK_rBShiqJycdDFQ7lMkZS2kCZjLio-ONClPX-oMKf8zi6n1rP9z0th"/>
+</div>
+</div>
+</header>
+<!-- Page Canvas -->
+<div class="p-container-margin">
+<!-- Bento Status Cards -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter mb-8">
+<!-- Odoo Sync -->
+<div class="bg-white p-5 border border-outline-variant rounded-lg shadow-sm hover:shadow-md transition-shadow">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-primary/5 rounded">
+<span class="material-symbols-outlined text-primary">sync</span>
+</div>
+<span class="bg-green-600 text-white px-2 py-1 rounded text-[10px] font-bold tracking-wider">OK</span>
+</div>
+<h3 class="font-headline-md text-headline-md mb-1">Odoo Sync</h3>
+<p class="text-on-surface-variant text-body-sm">ERP integration status</p>
+<div class="mt-4 pt-4 border-t border-outline-variant flex justify-between items-center">
+<span class="text-label-sm font-label-sm opacity-60 uppercase">Last Sync</span>
+<span class="text-label-md font-label-md text-primary">2 mins ago</span>
+</div>
+</div>
+<!-- Delivery Tracker Sync -->
+<div class="bg-white p-5 border border-outline-variant rounded-lg shadow-sm hover:shadow-md transition-shadow">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-primary/5 rounded">
+<span class="material-symbols-outlined text-primary">local_shipping</span>
+</div>
+<span class="bg-green-600 text-white px-2 py-1 rounded text-[10px] font-bold tracking-wider">OK</span>
+</div>
+<h3 class="font-headline-md text-headline-md mb-1">Delivery Tracker</h3>
+<p class="text-on-surface-variant text-body-sm">GPS & Dispatch sync</p>
+<div class="mt-4 pt-4 border-t border-outline-variant flex justify-between items-center">
+<span class="text-label-sm font-label-sm opacity-60 uppercase">Last Sync</span>
+<span class="text-label-md font-label-md text-primary">45s ago</span>
+</div>
+</div>
+<!-- Google Sheet Sync -->
+<div class="bg-white p-5 border border-outline-variant rounded-lg shadow-sm hover:shadow-md transition-shadow">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-primary/5 rounded">
+<span class="material-symbols-outlined text-primary">table_chart</span>
+</div>
+<span class="bg-error text-white px-2 py-1 rounded text-[10px] font-bold tracking-wider">FAILED</span>
+</div>
+<h3 class="font-headline-md text-headline-md mb-1">Google Sheets</h3>
+<p class="text-on-surface-variant text-body-sm">Legacy report pipeline</p>
+<div class="mt-4 pt-4 border-t border-outline-variant flex justify-between items-center">
+<span class="text-label-sm font-label-sm opacity-60 uppercase">Last Attempt</span>
+<span class="text-label-md font-label-md text-error">12 mins ago</span>
+</div>
+</div>
+<!-- Guard Register Upload -->
+<div class="bg-white p-5 border border-outline-variant rounded-lg shadow-sm hover:shadow-md transition-shadow">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-primary/5 rounded">
+<span class="material-symbols-outlined text-primary">shield</span>
+</div>
+<span class="bg-green-600 text-white px-2 py-1 rounded text-[10px] font-bold tracking-wider">OK</span>
+</div>
+<h3 class="font-headline-md text-headline-md mb-1">Guard Register</h3>
+<p class="text-on-surface-variant text-body-sm">Daily log processor</p>
+<div class="mt-4 pt-4 border-t border-outline-variant flex justify-between items-center">
+<span class="text-label-sm font-label-sm opacity-60 uppercase">Last Sync</span>
+<span class="text-label-md font-label-md text-primary">1h ago</span>
+</div>
+</div>
+</div>
+<!-- Error Log Section -->
+<div class="bg-white border border-outline-variant rounded-lg shadow-sm overflow-hidden">
+<div class="px-6 py-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low/30">
+<div>
+<h3 class="font-headline-md text-headline-md text-primary">Recent Error Logs</h3>
+<p class="text-body-sm text-on-surface-variant">System-wide critical events and sync failures</p>
+</div>
+<div class="flex gap-2">
+<button class="flex items-center gap-2 px-3 py-1.5 bg-white border border-outline text-label-md font-label-md rounded hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-[18px]">filter_list</span>
+                            Filter
+                        </button>
+<button class="flex items-center gap-2 px-3 py-1.5 bg-primary text-white text-label-md font-label-md rounded hover:opacity-90 transition-all">
+<span class="material-symbols-outlined text-[18px]">refresh</span>
+                            Clear Logs
+                        </button>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low text-on-surface-variant border-b border-outline-variant">
+<th class="px-6 py-3 font-label-sm text-label-sm uppercase tracking-wider sticky top-0">Timestamp</th>
+<th class="px-6 py-3 font-label-sm text-label-sm uppercase tracking-wider sticky top-0">Source</th>
+<th class="px-6 py-3 font-label-sm text-label-sm uppercase tracking-wider sticky top-0">City</th>
+<th class="px-6 py-3 font-label-sm text-label-sm uppercase tracking-wider sticky top-0">Error Message</th>
+<th class="px-6 py-3 font-label-sm text-label-sm uppercase tracking-wider sticky top-0">Status</th>
+<th class="px-6 py-3 font-label-sm text-label-sm uppercase tracking-wider sticky top-0 text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container-lowest transition-colors h-[44px]">
+<td class="px-6 py-3 text-body-sm whitespace-nowrap">2023-10-27 14:32:01</td>
+<td class="px-6 py-3">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-amber-400"></span>
+<span class="text-label-md font-label-md">Google Sheets Sync</span>
+</div>
+</td>
+<td class="px-6 py-3 text-body-sm">Bangalore</td>
+<td class="px-6 py-3 text-body-sm font-mono text-error truncate max-w-xs">403: Insufficient Permission for API scope</td>
+<td class="px-6 py-3">
+<span class="bg-error-container text-on-error-container px-2 py-0.5 rounded text-[11px] font-bold">UNRESOLVED</span>
+</td>
+<td class="px-6 py-3 text-right">
+<button class="text-on-surface-variant hover:text-primary"><span class="material-symbols-outlined text-[20px]">more_vert</span></button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container-lowest transition-colors h-[44px] bg-surface-container-lowest/50">
+<td class="px-6 py-3 text-body-sm whitespace-nowrap">2023-10-27 14:15:22</td>
+<td class="px-6 py-3">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="text-label-md font-label-md">Odoo ERP</span>
+</div>
+</td>
+<td class="px-6 py-3 text-body-sm">Mumbai</td>
+<td class="px-6 py-3 text-body-sm font-mono text-on-surface-variant truncate max-w-xs">Connection timeout: Retrying in 5s...</td>
+<td class="px-6 py-3">
+<span class="bg-tertiary-container text-on-tertiary-container px-2 py-0.5 rounded text-[11px] font-bold">RETRYING</span>
+</td>
+<td class="px-6 py-3 text-right">
+<button class="text-on-surface-variant hover:text-primary"><span class="material-symbols-outlined text-[20px]">more_vert</span></button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-surface-container-lowest transition-colors h-[44px]">
+<td class="px-6 py-3 text-body-sm whitespace-nowrap">2023-10-27 13:50:11</td>
+<td class="px-6 py-3">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-blue-500"></span>
+<span class="text-label-md font-label-md">Delivery Tracker</span>
+</div>
+</td>
+<td class="px-6 py-3 text-body-sm">Delhi NCR</td>
+<td class="px-6 py-3 text-body-sm font-mono text-green-700 truncate max-w-xs">Success: Backlog data sync completed (452 rows)</td>
+<td class="px-6 py-3">
+<span class="bg-green-100 text-green-800 px-2 py-0.5 rounded text-[11px] font-bold">RESOLVED</span>
+</td>
+<td class="px-6 py-3 text-right">
+<button class="text-on-surface-variant hover:text-primary"><span class="material-symbols-outlined text-[20px]">more_vert</span></button>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="hover:bg-surface-container-lowest transition-colors h-[44px] bg-surface-container-lowest/50">
+<td class="px-6 py-3 text-body-sm whitespace-nowrap">2023-10-27 12:44:09</td>
+<td class="px-6 py-3">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-slate-400"></span>
+<span class="text-label-md font-label-md">Guard Register</span>
+</div>
+</td>
+<td class="px-6 py-3 text-body-sm">Pune</td>
+<td class="px-6 py-3 text-body-sm font-mono text-error truncate max-w-xs">Validation Error: Row 44 contains invalid character set</td>
+<td class="px-6 py-3">
+<span class="bg-error-container text-on-error-container px-2 py-0.5 rounded text-[11px] font-bold">UNRESOLVED</span>
+</td>
+<td class="px-6 py-3 text-right">
+<button class="text-on-surface-variant hover:text-primary"><span class="material-symbols-outlined text-[20px]">more_vert</span></button>
+</td>
+</tr>
+<!-- Row 5 -->
+<tr class="hover:bg-surface-container-lowest transition-colors h-[44px]">
+<td class="px-6 py-3 text-body-sm whitespace-nowrap">2023-10-27 11:20:55</td>
+<td class="px-6 py-3">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-amber-400"></span>
+<span class="text-label-md font-label-md">Google Sheets Sync</span>
+</div>
+</td>
+<td class="px-6 py-3 text-body-sm">Hyderabad</td>
+<td class="px-6 py-3 text-body-sm font-mono text-error truncate max-w-xs">Quota Exceeded: Daily API read limit reached</td>
+<td class="px-6 py-3">
+<span class="bg-error-container text-on-error-container px-2 py-0.5 rounded text-[11px] font-bold">UNRESOLVED</span>
+</td>
+<td class="px-6 py-3 text-right">
+<button class="text-on-surface-variant hover:text-primary"><span class="material-symbols-outlined text-[20px]">more_vert</span></button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="px-6 py-3 border-t border-outline-variant bg-surface-container-lowest flex justify-between items-center">
+<p class="text-label-sm font-label-sm text-on-surface-variant">Showing 5 of 142 recent logs</p>
+<div class="flex gap-1">
+<button class="p-1 border border-outline-variant rounded hover:bg-surface-container-low disabled:opacity-30" disabled="">
+<span class="material-symbols-outlined">chevron_left</span>
+</button>
+<button class="p-1 border border-outline-variant rounded hover:bg-surface-container-low">
+<span class="material-symbols-outlined">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Operational Insights (Atmospheric Cards) -->
+<div class="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-gutter">
+<div class="lg:col-span-2 bg-[#1A1A2E] p-6 rounded-lg text-white relative overflow-hidden">
+<div class="relative z-10">
+<h4 class="font-headline-md text-headline-md mb-2">Sync Latency Heatmap</h4>
+<p class="text-white/60 text-body-sm mb-6">Cross-region synchronization speed over the last 24 hours</p>
+<div class="flex items-end gap-2 h-32">
+<!-- Simulated Chart -->
+<div class="flex-1 bg-green-500/40 rounded-t-sm" style="height: 40%"></div>
+<div class="flex-1 bg-green-500/40 rounded-t-sm" style="height: 45%"></div>
+<div class="flex-1 bg-green-500/40 rounded-t-sm" style="height: 38%"></div>
+<div class="flex-1 bg-green-500/40 rounded-t-sm" style="height: 60%"></div>
+<div class="flex-1 bg-error/60 rounded-t-sm" style="height: 95%"></div>
+<div class="flex-1 bg-green-500/40 rounded-t-sm" style="height: 50%"></div>
+<div class="flex-1 bg-green-500/40 rounded-t-sm" style="height: 42%"></div>
+<div class="flex-1 bg-green-500/40 rounded-t-sm" style="height: 35%"></div>
+<div class="flex-1 bg-green-500/40 rounded-t-sm" style="height: 48%"></div>
+<div class="flex-1 bg-green-500/40 rounded-t-sm" style="height: 52%"></div>
+<div class="flex-1 bg-green-500/40 rounded-t-sm" style="height: 41%"></div>
+<div class="flex-1 bg-green-500/40 rounded-t-sm" style="height: 39%"></div>
+</div>
+<div class="flex justify-between mt-2 text-[10px] text-white/40 font-mono">
+<span>00:00</span>
+<span>06:00</span>
+<span>12:00</span>
+<span>18:00</span>
+<span>23:59</span>
+</div>
+</div>
+<!-- Background Decoration -->
+<div class="absolute top-0 right-0 w-64 h-64 bg-error/10 blur-[100px] rounded-full"></div>
+</div>
+<div class="bg-white border border-outline-variant p-6 rounded-lg flex flex-col">
+<h4 class="font-headline-md text-headline-md mb-4 text-primary">System Resources</h4>
+<div class="space-y-4 flex-1">
+<div>
+<div class="flex justify-between text-label-sm font-label-sm mb-1">
+<span>API THROUGHPUT</span>
+<span>82%</span>
+</div>
+<div class="w-full h-2 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[82%]"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-label-sm font-label-sm mb-1">
+<span>STORAGE (CLOUD)</span>
+<span>14%</span>
+</div>
+<div class="w-full h-2 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[14%]"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-label-sm font-label-sm mb-1">
+<span>WORKER THREADS</span>
+<span>65%</span>
+</div>
+<div class="w-full h-2 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[65%]"></div>
+</div>
+</div>
+</div>
+<button class="mt-6 w-full py-2 bg-surface-container-low border border-outline-variant rounded font-label-md text-label-md text-primary hover:bg-surface-container-high transition-colors">
+                        View Detailed Metrics
+                    </button>
+</div>
+</div>
+</div>
+</main>
+<script>
+        // Simple Micro-interaction for Row Highlighting
+        document.querySelectorAll('tbody tr').forEach(row => {
+            row.addEventListener('click', () => {
+                // Clear existing selections
+                document.querySelectorAll('tbody tr').forEach(r => r.classList.remove('bg-primary/5'));
+                // Highlight clicked row
+                row.classList.add('bg-primary/5');
+            });
+        });
+
+        // Atmospheric Effect: Randomizing some chart heights subtly for "live" feel
+        const chartBars = document.querySelectorAll('.lg\\:col-span-2 .flex-1');
+        setInterval(() => {
+            chartBars.forEach(bar => {
+                const currentHeight = parseInt(bar.style.height);
+                const variation = Math.floor(Math.random() * 5) - 2; // -2 to +2
+                const newHeight = Math.min(Math.max(currentHeight + variation, 10), 95);
+                bar.style.height = newHeight + '%';
+                bar.style.transition = 'height 1s ease-in-out';
+            });
+        }, 3000);
+    </script>
+</body></html>

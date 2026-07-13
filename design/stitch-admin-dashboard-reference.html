@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>WarehouseOps | Super Admin Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@600;700;800;900&family=Inter:wght@400;500;600&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@100..900&family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Custom Table Styling for High Density */
+        .dense-table th, .dense-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #e5e1e3;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#f2e1b7",
+                        "on-secondary-fixed": "#1a1c1c",
+                        "primary-container": "#1a1a2e",
+                        "surface-bright": "#fcf8fa",
+                        "inverse-primary": "#c6c4df",
+                        "tertiary": "#695d3c",
+                        "on-tertiary-fixed": "#231b02",
+                        "secondary": "#5d5f5f",
+                        "on-tertiary-container": "#493f20",
+                        "on-error-container": "#93000a",
+                        "on-secondary-fixed-variant": "#454747",
+                        "secondary-fixed-dim": "#c6c6c7",
+                        "outline-variant": "#c8c5cd",
+                        "on-tertiary": "#ffffff",
+                        "surface-variant": "#e5e1e3",
+                        "surface-container": "#f1edef",
+                        "surface": "#fcf8fa",
+                        "tertiary-container": "#b9aa83",
+                        "outline": "#78767d",
+                        "inverse-surface": "#313032",
+                        "tertiary-fixed-dim": "#d5c59d",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-high": "#ebe7e9",
+                        "on-tertiary-fixed-variant": "#514627",
+                        "on-primary-fixed": "#1a1a2e",
+                        "on-primary-fixed-variant": "#45455b",
+                        "on-background": "#1c1b1d",
+                        "primary-fixed": "#e2e0fc",
+                        "primary": "#00000b",
+                        "on-primary-container": "#83829b",
+                        "surface-container-highest": "#e5e1e3",
+                        "on-surface": "#1c1b1d",
+                        "secondary-fixed": "#e2e2e2",
+                        "on-error": "#ffffff",
+                        "inverse-on-surface": "#f4f0f2",
+                        "on-surface-variant": "#47464c",
+                        "surface-tint": "#5d5c74",
+                        "primary-fixed-dim": "#c6c4df",
+                        "on-secondary-container": "#616363",
+                        "background": "#fcf8fa",
+                        "surface-container-low": "#f6f2f4",
+                        "on-secondary": "#ffffff",
+                        "secondary-container": "#dfe0e0",
+                        "on-primary": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "surface-dim": "#ddd9db",
+                        "error": "#ba1a1a"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "container-margin": "24px",
+                        "row-height-compact": "32px",
+                        "sidebar-width": "260px",
+                        "gutter": "16px",
+                        "row-height-standard": "44px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Hanken Grotesk"],
+                        "label-sm": ["Inter"],
+                        "label-md": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "headline-lg": ["Hanken Grotesk"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["18px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "600"}],
+                        "label-md": ["13px", {"lineHeight": "16px", "fontWeight": "500"}],
+                        "body-sm": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+                        "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface font-body-md overflow-x-hidden">
+<!-- Sidebar Navigation -->
+<aside class="w-sidebar-width h-screen fixed left-0 top-0 bg-primary-container flex flex-col py-6 px-4 gap-2 z-50">
+<div class="mb-8 px-2">
+<h1 class="font-headline-lg text-headline-lg text-on-primary-fixed font-black uppercase tracking-tighter">WarehouseOps</h1>
+<p class="font-label-md text-label-md text-on-primary-container opacity-70">Station 42-A</p>
+</div>
+<nav class="flex flex-col gap-1 flex-1">
+<a class="flex items-center text-on-primary-fixed font-bold border-l-4 border-error bg-on-primary-fixed-variant/10 py-3 px-3 transition-colors" href="#">
+<span class="material-symbols-outlined mr-3">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="flex items-center text-on-primary-fixed-variant hover:text-on-primary-fixed hover:bg-on-primary-fixed-variant/5 py-3 px-3 transition-colors" href="#">
+<span class="material-symbols-outlined mr-3">inventory_2</span>
+<span class="font-label-md text-label-md">Inventory</span>
+</a>
+<a class="flex items-center text-on-primary-fixed-variant hover:text-on-primary-fixed hover:bg-on-primary-fixed-variant/5 py-3 px-3 transition-colors" href="#">
+<span class="material-symbols-outlined mr-3">sync_alt</span>
+<span class="font-label-md text-label-md">Reconciliation</span>
+</a>
+<a class="flex items-center text-on-primary-fixed-variant hover:text-on-primary-fixed hover:bg-on-primary-fixed-variant/5 py-3 px-3 transition-colors" href="#">
+<span class="material-symbols-outlined mr-3">history_edu</span>
+<span class="font-label-md text-label-md">Audit Log</span>
+</a>
+<a class="flex items-center text-on-primary-fixed-variant hover:text-on-primary-fixed hover:bg-on-primary-fixed-variant/5 py-3 px-3 transition-colors" href="#">
+<span class="material-symbols-outlined mr-3">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+</nav>
+<button class="mt-4 bg-error text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[18px]">add</span>
+<span class="font-label-md">New Audit</span>
+</button>
+<div class="mt-auto pt-6 border-t border-on-primary-fixed-variant/20 flex flex-col gap-1">
+<a class="flex items-center text-on-primary-fixed-variant hover:text-on-primary-fixed py-2 px-3" href="#">
+<span class="material-symbols-outlined mr-3">help_outline</span>
+<span class="font-label-md text-label-md">Support</span>
+</a>
+<a class="flex items-center text-on-primary-fixed-variant hover:text-on-primary-fixed py-2 px-3" href="#">
+<span class="material-symbols-outlined mr-3">logout</span>
+<span class="font-label-md text-label-md">Sign Out</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-sidebar-width flex-1 min-h-screen flex flex-col">
+<!-- Top Navigation Bar -->
+<header class="h-row-height-standard sticky top-0 z-40 bg-surface shadow-sm border-b border-outline-variant flex justify-between items-center px-container-margin w-full">
+<div class="flex items-center gap-4">
+<h2 class="font-headline-md text-headline-md text-primary font-bold">Reconciliation Portal</h2>
+<span class="bg-error text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest">Admin View</span>
+</div>
+<div class="flex items-center gap-6">
+<div class="hidden md:flex gap-4">
+<a class="font-label-md text-on-surface-variant hover:text-on-surface" href="#">Live Feed</a>
+<a class="font-label-md text-primary font-bold border-b-2 border-primary pb-1" href="#">Reports</a>
+</div>
+<div class="flex items-center gap-3">
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary">notifications</button>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary">help</button>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center border border-outline-variant">
+<img class="w-full h-full rounded-full object-cover" data-alt="A professional warehouse manager headshot in a high-tech logistics center, soft industrial lighting, wearing a navy blue uniform, with a blurred background of organized storage racks." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAyJEEObaQSFILzQ97u-G557874bRd_BnEmcpRQyMaQtyXj-ngWncBkyi0EcX2qKSsuPE6aaPIe0xW_s9KKkQKIdO2orV7vSExJnhVj2rXY8AK9bXsMTK4XVnGobZRneAqhaBCKWQ-Ys4fBRrWeDnhYGinJTm06ZQMgH6yAub87t7vXjarpyRI_12ok-sjF0SuV3dOUUKWq52b3LMl4Uk1AeNCYl-uUo-0aHya0FRiFJSCi6DCdjeu-XnmWEg0Cra09Kv-ofTU5qXmW"/>
+</div>
+</div>
+</div>
+</header>
+<!-- Content Canvas -->
+<section class="p-container-margin space-y-8">
+<!-- Summary Stats Cards -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+<div class="bg-white border border-outline-variant p-4 shadow-sm rounded flex flex-col justify-between">
+<span class="text-on-surface-variant font-label-md uppercase tracking-wider text-[11px]">Total Variances Today</span>
+<div class="flex items-end justify-between mt-2">
+<span class="text-[32px] font-bold text-primary">1,482</span>
+<span class="text-error font-bold flex items-center text-xs">+12% <span class="material-symbols-outlined text-[16px]">trending_up</span></span>
+</div>
+<span class="text-[10px] text-on-surface-variant mt-1">Across all 24 connected cities</span>
+</div>
+<div class="bg-white border border-outline-variant p-4 shadow-sm rounded flex flex-col justify-between">
+<span class="text-on-surface-variant font-label-md uppercase tracking-wider text-[11px]">Cities with High Severity</span>
+<div class="flex items-end justify-between mt-2">
+<span class="text-[32px] font-bold text-error">07</span>
+<span class="bg-error/10 text-error px-2 py-0.5 rounded-full text-[10px] font-bold uppercase">Critical</span>
+</div>
+<span class="text-[10px] text-on-surface-variant mt-1">Requires immediate supervisor action</span>
+</div>
+<div class="bg-white border border-outline-variant p-4 shadow-sm rounded flex flex-col justify-between">
+<span class="text-on-surface-variant font-label-md uppercase tracking-wider text-[11px]">Avg. Accuracy %</span>
+<div class="flex items-end justify-between mt-2">
+<span class="text-[32px] font-bold text-primary">91.4%</span>
+<span class="text-success text-green-600 font-bold flex items-center text-xs">+2.1% <span class="material-symbols-outlined text-[16px]">trending_up</span></span>
+</div>
+<span class="text-[10px] text-on-surface-variant mt-1">Benchmark target: 95.0%</span>
+</div>
+<div class="bg-white border border-outline-variant p-4 shadow-sm rounded flex flex-col justify-between">
+<span class="text-on-surface-variant font-label-md uppercase tracking-wider text-[11px]">Items Reconciled Today</span>
+<div class="flex items-end justify-between mt-2">
+<span class="text-[32px] font-bold text-primary">42.8k</span>
+<span class="text-on-surface-variant font-bold flex items-center text-xs"><span class="material-symbols-outlined text-[16px]">schedule</span> On-track</span>
+</div>
+<span class="text-[10px] text-on-surface-variant mt-1">Updated 2 minutes ago</span>
+</div>
+</div>
+<!-- City-wise Breakdown Section -->
+<div class="space-y-4">
+<div class="flex justify-between items-center">
+<h3 class="font-headline-md text-headline-md text-primary">City-wise Variance Breakdown</h3>
+<button class="text-primary font-bold text-xs uppercase hover:underline">View All 24 Cities</button>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+<!-- City Card: Critical -->
+<div class="bg-white border border-outline-variant border-l-4 border-l-error p-4 shadow-sm flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<div>
+<h4 class="font-headline-md text-headline-md">Chicago, IL</h4>
+<span class="text-[11px] text-on-surface-variant">Station: CHI-SOUTH-02</span>
+</div>
+<span class="text-error font-black text-lg">78.2%</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-xs font-bold text-on-surface">342</span>
+<span class="text-[11px] text-on-surface-variant">Open Variances</span>
+</div>
+<div class="space-y-1">
+<div class="flex h-2 w-full bg-surface-container overflow-hidden rounded-full">
+<div class="bg-error w-[60%]" title="High Severity"></div>
+<div class="bg-[#F59E0B] w-[25%]" title="Medium Severity"></div>
+<div class="bg-green-500 w-[15%]" title="Low Severity"></div>
+</div>
+<div class="flex justify-between text-[10px] font-bold text-on-surface-variant uppercase">
+<span>High</span>
+<span>Med</span>
+<span>Low</span>
+</div>
+</div>
+<button class="mt-2 w-full py-2 border border-primary text-primary font-bold text-xs hover:bg-primary hover:text-white transition-colors">VIEW DETAIL</button>
+</div>
+<!-- City Card: OK -->
+<div class="bg-white border border-outline-variant p-4 shadow-sm flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<div>
+<h4 class="font-headline-md text-headline-md">San Francisco, CA</h4>
+<span class="text-[11px] text-on-surface-variant">Station: SF-WEST-09</span>
+</div>
+<span class="text-primary font-black text-lg">94.8%</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-xs font-bold text-on-surface">89</span>
+<span class="text-[11px] text-on-surface-variant">Open Variances</span>
+</div>
+<div class="space-y-1">
+<div class="flex h-2 w-full bg-surface-container overflow-hidden rounded-full">
+<div class="bg-error w-[10%]" title="High Severity"></div>
+<div class="bg-[#F59E0B] w-[30%]" title="Medium Severity"></div>
+<div class="bg-green-500 w-[60%]" title="Low Severity"></div>
+</div>
+<div class="flex justify-between text-[10px] font-bold text-on-surface-variant uppercase">
+<span>High</span>
+<span>Med</span>
+<span>Low</span>
+</div>
+</div>
+<button class="mt-2 w-full py-2 border border-primary text-primary font-bold text-xs hover:bg-primary hover:text-white transition-colors">VIEW DETAIL</button>
+</div>
+<!-- City Card: Warning -->
+<div class="bg-white border border-outline-variant border-l-4 border-l-error p-4 shadow-sm flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<div>
+<h4 class="font-headline-md text-headline-md">Austin, TX</h4>
+<span class="text-[11px] text-on-surface-variant">Station: ATX-CENT-01</span>
+</div>
+<span class="text-error font-black text-lg">82.5%</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-xs font-bold text-on-surface">215</span>
+<span class="text-[11px] text-on-surface-variant">Open Variances</span>
+</div>
+<div class="space-y-1">
+<div class="flex h-2 w-full bg-surface-container overflow-hidden rounded-full">
+<div class="bg-error w-[40%]" title="High Severity"></div>
+<div class="bg-[#F59E0B] w-[40%]" title="Medium Severity"></div>
+<div class="bg-green-500 w-[20%]" title="Low Severity"></div>
+</div>
+<div class="flex justify-between text-[10px] font-bold text-on-surface-variant uppercase">
+<span>High</span>
+<span>Med</span>
+<span>Low</span>
+</div>
+</div>
+<button class="mt-2 w-full py-2 border border-primary text-primary font-bold text-xs hover:bg-primary hover:text-white transition-colors">VIEW DETAIL</button>
+</div>
+<!-- City Card: OK -->
+<div class="bg-white border border-outline-variant p-4 shadow-sm flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<div>
+<h4 class="font-headline-md text-headline-md">New York, NY</h4>
+<span class="text-[11px] text-on-surface-variant">Station: NYC-EAST-04</span>
+</div>
+<span class="text-primary font-black text-lg">96.1%</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-xs font-bold text-on-surface">42</span>
+<span class="text-[11px] text-on-surface-variant">Open Variances</span>
+</div>
+<div class="space-y-1">
+<div class="flex h-2 w-full bg-surface-container overflow-hidden rounded-full">
+<div class="bg-error w-[5%]" title="High Severity"></div>
+<div class="bg-[#F59E0B] w-[15%]" title="Medium Severity"></div>
+<div class="bg-green-500 w-[80%]" title="Low Severity"></div>
+</div>
+<div class="flex justify-between text-[10px] font-bold text-on-surface-variant uppercase">
+<span>High</span>
+<span>Med</span>
+<span>Low</span>
+</div>
+</div>
+<button class="mt-2 w-full py-2 border border-primary text-primary font-bold text-xs hover:bg-primary hover:text-white transition-colors">VIEW DETAIL</button>
+</div>
+</div>
+</div>
+<!-- Variance Table Section -->
+<div class="bg-white border border-outline-variant shadow-sm rounded overflow-hidden">
+<div class="p-4 border-b border-outline-variant bg-surface-container-lowest flex flex-col lg:flex-row justify-between lg:items-center gap-4">
+<div>
+<h3 class="font-headline-md text-headline-md text-primary">All Cities Variance Table</h3>
+<p class="text-[11px] text-on-surface-variant mt-0.5">Showing 1,482 records across active warehouses</p>
+</div>
+<div class="flex flex-wrap items-center gap-3">
+<select class="bg-surface border border-outline-variant text-[12px] font-bold px-3 py-1.5 rounded focus:ring-0 focus:border-primary">
+<option>All Cities</option>
+<option>Chicago</option>
+<option>San Francisco</option>
+<option>Austin</option>
+</select>
+<select class="bg-surface border border-outline-variant text-[12px] font-bold px-3 py-1.5 rounded focus:ring-0 focus:border-primary">
+<option>All Severity</option>
+<option>High</option>
+<option>Medium</option>
+<option>Low</option>
+</select>
+<select class="bg-surface border border-outline-variant text-[12px] font-bold px-3 py-1.5 rounded focus:ring-0 focus:border-primary">
+<option>All Status</option>
+<option>Pending</option>
+<option>Resolved</option>
+<option>Escalated</option>
+</select>
+<button class="bg-primary text-white px-4 py-1.5 font-bold text-[12px] rounded flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">download</span>
+                            Export
+                        </button>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse dense-table">
+<thead class="bg-surface-container-low text-[11px] font-bold text-on-surface-variant uppercase tracking-wider sticky top-0">
+<tr>
+<th class="border-r border-outline-variant/30">Item Code</th>
+<th>Item Name</th>
+<th>City</th>
+<th class="text-right">Odoo Qty</th>
+<th class="text-right">DT Qty</th>
+<th class="text-right">Sheet Qty</th>
+<th class="text-right">Guard Qty</th>
+<th class="text-right bg-error/5">Delta</th>
+<th>Severity</th>
+<th>Status</th>
+<th class="text-center">Action</th>
+</tr>
+</thead>
+<tbody class="text-[13px]">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container-low/50 transition-colors">
+<td class="font-mono font-bold text-primary">SKU-90210-A</td>
+<td class="max-w-[200px] truncate">H-D Gearbox Housing 2200</td>
+<td>Chicago</td>
+<td class="text-right">1,240</td>
+<td class="text-right">1,215</td>
+<td class="text-right">1,200</td>
+<td class="text-right">1,200</td>
+<td class="text-right font-bold text-error bg-error/5">-40</td>
+<td>
+<span class="bg-error text-white px-2 py-0.5 rounded text-[10px] font-bold">HIGH</span>
+</td>
+<td>
+<span class="bg-[#FFEDD5] text-[#9A3412] px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-[#FED7AA]">Pending</span>
+</td>
+<td class="text-center">
+<button class="material-symbols-outlined text-primary hover:bg-surface-variant p-1 rounded transition-colors">more_vert</button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container-low/50 transition-colors bg-surface-container-low/20">
+<td class="font-mono font-bold text-primary">SKU-44122-B</td>
+<td class="max-w-[200px] truncate">Optical Sensor Module V4</td>
+<td>San Francisco</td>
+<td class="text-right">450</td>
+<td class="text-right">452</td>
+<td class="text-right">452</td>
+<td class="text-right">452</td>
+<td class="text-right font-bold text-green-600 bg-error/5">+2</td>
+<td>
+<span class="bg-green-500 text-white px-2 py-0.5 rounded text-[10px] font-bold">LOW</span>
+</td>
+<td>
+<span class="bg-[#DCFCE7] text-[#166534] px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-[#BBF7D0]">Resolved</span>
+</td>
+<td class="text-center">
+<button class="material-symbols-outlined text-primary hover:bg-surface-variant p-1 rounded transition-colors">more_vert</button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-surface-container-low/50 transition-colors">
+<td class="font-mono font-bold text-primary">SKU-11200-Z</td>
+<td class="max-w-[200px] truncate">Control Arm Assembly L/R</td>
+<td>Austin</td>
+<td class="text-right">88</td>
+<td class="text-right">76</td>
+<td class="text-right">76</td>
+<td class="text-right">76</td>
+<td class="text-right font-bold text-error bg-error/5">-12</td>
+<td>
+<span class="bg-[#F59E0B] text-white px-2 py-0.5 rounded text-[10px] font-bold">MEDIUM</span>
+</td>
+<td>
+<span class="bg-[#F3F4F6] text-[#4B5563] px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-[#E5E7EB]">In Progress</span>
+</td>
+<td class="text-center">
+<button class="material-symbols-outlined text-primary hover:bg-surface-variant p-1 rounded transition-colors">more_vert</button>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="hover:bg-surface-container-low/50 transition-colors bg-surface-container-low/20">
+<td class="font-mono font-bold text-primary">SKU-77332-K</td>
+<td class="max-w-[200px] truncate">Fuel Injector Seal Kit (x50)</td>
+<td>Chicago</td>
+<td class="text-right">5,400</td>
+<td class="text-right">5,320</td>
+<td class="text-right">5,320</td>
+<td class="text-right">5,320</td>
+<td class="text-right font-bold text-error bg-error/5">-80</td>
+<td>
+<span class="bg-error text-white px-2 py-0.5 rounded text-[10px] font-bold">HIGH</span>
+</td>
+<td>
+<span class="bg-[#FFEDD5] text-[#9A3412] px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-[#FED7AA]">Pending</span>
+</td>
+<td class="text-center">
+<button class="material-symbols-outlined text-primary hover:bg-surface-variant p-1 rounded transition-colors">more_vert</button>
+</td>
+</tr>
+<!-- Row 5 -->
+<tr class="hover:bg-surface-container-low/50 transition-colors">
+<td class="font-mono font-bold text-primary">SKU-10029-D</td>
+<td class="max-w-[200px] truncate">Synthetic Brake Fluid 5L</td>
+<td>New York</td>
+<td class="text-right">120</td>
+<td class="text-right">120</td>
+<td class="text-right">120</td>
+<td class="text-right">120</td>
+<td class="text-right font-bold text-gray-400 bg-error/5">0</td>
+<td>
+<span class="bg-green-500 text-white px-2 py-0.5 rounded text-[10px] font-bold">LOW</span>
+</td>
+<td>
+<span class="bg-[#DCFCE7] text-[#166534] px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-[#BBF7D0]">Resolved</span>
+</td>
+<td class="text-center">
+<button class="material-symbols-outlined text-primary hover:bg-surface-variant p-1 rounded transition-colors">more_vert</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="p-3 border-t border-outline-variant bg-surface-container-lowest flex justify-between items-center px-4">
+<span class="text-[11px] text-on-surface-variant">Showing 1 to 5 of 1,482 variances</span>
+<div class="flex items-center gap-1">
+<button class="p-1 border border-outline-variant rounded hover:bg-surface-container disabled:opacity-50" disabled="">
+<span class="material-symbols-outlined text-[18px]">chevron_left</span>
+</button>
+<span class="px-3 text-[12px] font-bold">1</span>
+<button class="p-1 border border-outline-variant rounded hover:bg-surface-container">
+<span class="material-symbols-outlined text-[18px]">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Footer -->
+<footer class="mt-auto p-container-margin border-t border-outline-variant bg-surface-container-lowest text-[11px] text-on-surface-variant flex justify-between">
+<div>© 2024 WarehouseOps Global Enterprise Solution. All rights reserved.</div>
+<div class="flex gap-4">
+<a class="hover:text-primary" href="#">System Status: <span class="text-green-600 font-bold">Operational</span></a>
+<a class="hover:text-primary" href="#">Security Policy</a>
+<a class="hover:text-primary" href="#">Admin Logs</a>
+</div>
+</footer>
+</main>
+<script>
+        // Simple Interaction: Toggle active state of sidebar items (Visual only)
+        const navLinks = document.querySelectorAll('aside nav a');
+        navLinks.forEach(link => {
+            link.addEventListener('click', (e) => {
+                navLinks.forEach(l => {
+                    l.classList.remove('text-on-primary-fixed', 'font-bold', 'border-l-4', 'border-error', 'bg-on-primary-fixed-variant/10');
+                    l.classList.add('text-on-primary-fixed-variant');
+                });
+                link.classList.add('text-on-primary-fixed', 'font-bold', 'border-l-4', 'border-error', 'bg-on-primary-fixed-variant/10');
+                link.classList.remove('text-on-primary-fixed-variant');
+            });
+        });
+
+        // Search Bar Placeholder Toggle
+        const searchInput = document.querySelector('header input');
+        if(searchInput) {
+            searchInput.addEventListener('focus', () => searchInput.classList.add('border-primary'));
+            searchInput.addEventListener('blur', () => searchInput.classList.remove('border-primary'));
+        }
+    </script>
+</body></html>

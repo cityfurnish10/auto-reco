@@ -1,0 +1,338 @@
+/* Tailwind v4 entry. The design tokens still live in tailwind.config.ts,
+   loaded via @config for a faithful carry-over of the Stitch palette.
+   Icons are Lucide SVG components (see app/icon.tsx) — no icon web font. */
+@import "tailwindcss";
+@config "../tailwind.config.ts";
+
+/* ==========================================================================
+   DESIGN TOKENS — single source of truth. Component CSS below (and any
+   Tailwind utility that references surface, accent, text, or border colors
+   via tailwind.config.ts) reads from these custom properties. Never
+   hardcode a hex value in a component file — add/extend a token here instead.
+   ========================================================================== */
+:root {
+  /* Surface hierarchy — page bg -> card bg -> elevated (hover/header) */
+  --surface-page: #fcf8fa;
+  --surface-card: #ffffff;
+  --surface-elevated: #f6f2f4;
+
+  /* Accent — primary actions + active states (reuses the existing brand navy) */
+  --color-accent: #1a1a2e;
+  --color-accent-hover: #141422; /* ~8% darker */
+  --color-accent-active: #0e0e18; /* ~12% darker */
+  --color-accent-soft: rgba(26, 26, 46, 0.08);
+
+  /* Semantic status colors — foreground + soft background pair each */
+  --color-success-fg: #059669;
+  --color-success-bg: #d1fae5;
+  --color-warning-fg: #d97706;
+  --color-warning-bg: #fef3c7;
+  --color-error-fg: #dc2626;
+  --color-error-bg: #fee2e2;
+  --color-info-fg: #2563eb;
+  --color-info-bg: #dbeafe;
+  --color-neutral-fg: #6b7280;
+  --color-neutral-bg: #f3f4f6;
+
+  /* Text hierarchy — 4 levels, one hue family (neutral warm gray) */
+  --text-primary: #1c1b1d;
+  --text-secondary: #47464c;
+  --text-muted: #78767d;
+  --text-disabled: #c8c5cd;
+
+  /* Border — single token used everywhere */
+  --border-color: #e5e1e3;
+
+  /* Shadow — one style for cards, one slightly stronger for hover */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="dark"] {
+  --surface-page: #0f1117;
+  --surface-card: #161b22;
+  --surface-elevated: #1e2530;
+
+  --color-accent: #8b8ff0;
+  --color-accent-hover: #9a9df3;
+  --color-accent-active: #7376dd;
+  --color-accent-soft: rgba(139, 143, 240, 0.14);
+
+  --color-success-fg: #34d399;
+  --color-success-bg: rgba(52, 211, 153, 0.15);
+  --color-warning-fg: #fbbf24;
+  --color-warning-bg: rgba(251, 191, 36, 0.15);
+  --color-error-fg: #f87171;
+  --color-error-bg: rgba(248, 113, 113, 0.15);
+  --color-info-fg: #60a5fa;
+  --color-info-bg: rgba(96, 165, 250, 0.15);
+  --color-neutral-fg: #9ca3af;
+  --color-neutral-bg: rgba(156, 163, 175, 0.15);
+
+  --text-primary: #f4f0f2;
+  --text-secondary: #c8c5cd;
+  --text-muted: #83829b;
+  --text-disabled: #45455b;
+
+  --border-color: rgba(255, 255, 255, 0.08);
+
+  /* Dark surfaces don't read shadows well — rely on the border instead */
+  --shadow-card: none;
+  --shadow-card-hover: none;
+}
+
+body {
+  background-color: var(--surface-page);
+  color: var(--text-primary);
+  font-family: var(--font-inter), sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+/* Subtle dotted pattern for navy surfaces (login backdrop, sidebar accents) */
+.navy-pattern {
+  background-color: #1a1a2e;
+  background-image: radial-gradient(
+    rgba(255, 255, 255, 0.05) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+}
+
+.login-card-shadow {
+  box-shadow: 0px 20px 25px rgba(0, 0, 0, 0.15);
+}
+
+/* Gold highlight for the #1 leaderboard row — a one-off trophy/rank accent,
+   deliberately outside the semantic token system (not a status color). */
+.row-gold {
+  background: linear-gradient(
+    90deg,
+    rgba(242, 225, 183, 0.4) 0%,
+    rgba(242, 225, 183, 0.1) 100%
+  );
+  border-left: 3px solid #b9aa83;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ==========================================================================
+   COMPONENT LAYER — shared classes for the repeated patterns (cards, KPI
+   tiles, badges, buttons, tables, inputs, chips). Every file below should
+   reach for these instead of re-deriving colors/spacing inline.
+   ========================================================================== */
+@layer components {
+  /* Headline font defaults to semibold so headings read as headings without
+     every one needing an explicit weight class. Lives in the components layer
+     so `font-bold`/`font-black`/`font-medium` utilities still override it —
+     this is what keeps heading weights even instead of a mix of 400 and 700. */
+  .font-headline {
+    font-weight: 600;
+  }
+
+  /* Cards / surfaces ------------------------------------------------------ */
+  .card {
+    background: var(--surface-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: var(--shadow-card);
+    transition: box-shadow 150ms ease;
+  }
+  .card-hover:hover {
+    box-shadow: var(--shadow-card-hover);
+  }
+
+  .kpi-tile {
+    background: var(--surface-card);
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: var(--shadow-card);
+    padding: 20px;
+    transition: box-shadow 150ms ease;
+  }
+  .kpi-tile:hover {
+    box-shadow: var(--shadow-card-hover);
+  }
+  .kpi-tile--accent { border-left-color: var(--color-accent); }
+  .kpi-tile--danger { border-left-color: var(--color-error-fg); }
+  .kpi-tile--warning { border-left-color: var(--color-warning-fg); }
+  .kpi-tile--info { border-left-color: var(--color-info-fg); }
+  .kpi-tile--success { border-left-color: var(--color-success-fg); }
+
+  .kpi-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .kpi-value {
+    font-size: 28px;
+    line-height: 34px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  /* Badges / pills --------------------------------------------------------- */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .badge-high { background: var(--color-error-bg); color: var(--color-error-fg); }
+  .badge-medium { background: var(--color-warning-bg); color: var(--color-warning-fg); }
+  .badge-info { background: var(--color-info-bg); color: var(--color-info-fg); }
+  .badge-done { background: var(--color-success-bg); color: var(--color-success-fg); }
+  .badge-suppressed { background: var(--color-neutral-bg); color: var(--color-neutral-fg); }
+
+  /* Filter chip (dismissible / toggle) ------------------------------------ */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    transition: background-color 150ms ease, border-color 150ms ease;
+  }
+  .chip-active {
+    background: var(--color-accent-soft);
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+
+  /* Buttons ----------------------------------------------------------------*/
+  .btn {
+    height: 36px;
+    padding: 0 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    white-space: nowrap;
+    transition: background-color 150ms ease, box-shadow 150ms ease, border-color 150ms ease, color 150ms ease;
+    cursor: pointer;
+  }
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-compact { height: 32px; padding: 0 12px; }
+
+  .btn-primary {
+    background: var(--color-accent);
+    color: #ffffff;
+  }
+  .btn-primary:hover:not(:disabled) { background: var(--color-accent-hover); }
+  .btn-primary:active:not(:disabled) { background: var(--color-accent-active); }
+
+  .btn-secondary {
+    background: transparent;
+    border: 1px solid var(--color-accent);
+    color: var(--color-accent);
+  }
+  .btn-secondary:hover:not(:disabled) { background: var(--color-accent-soft); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-secondary);
+  }
+  .btn-ghost:hover:not(:disabled) { background: var(--surface-elevated); }
+
+  .btn-destructive {
+    background: var(--color-error-bg);
+    color: var(--color-error-fg);
+  }
+  .btn-destructive:hover:not(:disabled) { filter: brightness(0.96); }
+
+  .btn-icon {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    background: transparent;
+    transition: background-color 150ms ease, color 150ms ease;
+    cursor: pointer;
+  }
+  .btn-icon:hover { background: var(--surface-elevated); color: var(--text-primary); }
+
+  /* Inputs / selects --------------------------------------------------------*/
+  .input-clean {
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 13px;
+    background: var(--surface-card);
+    color: var(--text-primary);
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+  .input-clean::placeholder { color: var(--text-disabled); }
+  .input-clean:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px var(--color-accent-soft);
+  }
+
+  /* Data table --------------------------------------------------------------*/
+  .table-clean {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .table-clean thead {
+    background: var(--surface-elevated);
+  }
+  .table-clean th {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    padding: 10px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+  }
+  .table-clean td {
+    padding: 10px 16px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+  }
+  .table-clean tbody tr {
+    transition: background-color 120ms ease;
+  }
+  .table-clean tbody tr:hover {
+    background: var(--surface-elevated);
+  }
+  .table-clean .row-action {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .table-clean tbody tr:hover .row-action {
+    opacity: 1;
+  }
+}

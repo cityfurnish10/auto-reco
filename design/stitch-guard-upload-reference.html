@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Guard Register Upload | CityFurnish Operations</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;900&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-primary-fixed-variant": "#45455b",
+                    "on-primary": "#ffffff",
+                    "on-tertiary-container": "#493f20",
+                    "on-secondary-fixed-variant": "#454747",
+                    "on-error-container": "#93000a",
+                    "on-error": "#ffffff",
+                    "tertiary-fixed-dim": "#d5c59d",
+                    "on-secondary": "#ffffff",
+                    "inverse-surface": "#313032",
+                    "on-surface": "#1c1b1d",
+                    "on-primary-container": "#83829b",
+                    "surface-container-lowest": "#ffffff",
+                    "inverse-primary": "#c6c4df",
+                    "outline": "#78767d",
+                    "surface-container-low": "#f6f2f4",
+                    "error": "#ba1a1a",
+                    "tertiary-container": "#b9aa83",
+                    "surface-bright": "#fcf8fa",
+                    "surface-variant": "#e5e1e3",
+                    "secondary-container": "#dfe0e0",
+                    "tertiary": "#695d3c",
+                    "inverse-on-surface": "#f4f0f2",
+                    "outline-variant": "#c8c5cd",
+                    "on-secondary-container": "#616363",
+                    "error-container": "#ffdad6",
+                    "primary": "#00000b",
+                    "primary-fixed-dim": "#c6c4df",
+                    "background": "#fcf8fa",
+                    "on-background": "#1c1b1d",
+                    "surface-container-highest": "#e5e1e3",
+                    "surface-tint": "#5d5c74",
+                    "surface": "#fcf8fa",
+                    "secondary": "#5d5f5f",
+                    "surface-dim": "#ddd9db",
+                    "primary-fixed": "#e2e0fc",
+                    "on-secondary-fixed": "#1a1c1c",
+                    "primary-container": "#1a1a2e",
+                    "on-surface-variant": "#47464c",
+                    "on-tertiary": "#ffffff",
+                    "on-tertiary-fixed": "#231b02",
+                    "secondary-fixed-dim": "#c6c6c7",
+                    "surface-container-high": "#ebe7e9",
+                    "surface-container": "#f1edef",
+                    "secondary-fixed": "#e2e2e2",
+                    "tertiary-fixed": "#f2e1b7",
+                    "on-primary-fixed": "#1a1a2e",
+                    "on-tertiary-fixed-variant": "#514627"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "row-height-compact": "32px",
+                    "sidebar-width": "260px",
+                    "container-margin": "24px",
+                    "row-height-standard": "44px",
+                    "gutter": "16px"
+            },
+            "fontFamily": {
+                    "headline-md": ["Hanken Grotesk"],
+                    "body-md": ["Inter"],
+                    "label-md": ["Inter"],
+                    "body-sm": ["Inter"],
+                    "headline-lg": ["Hanken Grotesk"],
+                    "label-sm": ["Inter"]
+            },
+            "fontSize": {
+                    "headline-md": ["18px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "label-md": ["13px", {"lineHeight": "16px", "fontWeight": "500"}],
+                    "body-sm": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+                    "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .drop-zone-active { border-color: #ba1a1a; background-color: rgba(186, 26, 26, 0.05); }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen">
+<!-- SideNavBar Anchor -->
+<aside class="fixed left-0 top-0 h-full w-[260px] flex flex-col py-6 bg-primary-container z-50">
+<div class="px-6 mb-8">
+<h1 class="font-headline-md text-headline-md font-bold text-on-primary-fixed mb-1">CityFurnish</h1>
+<div class="flex items-center gap-3 mt-6">
+<div class="w-10 h-10 rounded-full bg-surface-variant flex items-center justify-center overflow-hidden border border-outline-variant">
+<img class="w-full h-full object-cover" data-alt="Close-up professional headshot of a warehouse operations manager in a clean corporate setting, wearing a modern dark navy uniform with a subtle silver badge. The background is a soft-focus logistics hub with organized shelving and warm, cinematic interior lighting. High-end SaaS corporate photography style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCgDhSRgnKzy4QdJ91rSxKM8XoVBBr0G_h5WgxPHSO4KBxsy3K0rXIyFfAt0ipoZiF0AROuO6_uWcwRdQRuvlmBOE-i3KLEXFw7mPnkctJLdkdfv0wkslewKxOiIDjQNiCsce13oUE7eXLmKP1gyQmfaUZz7aQgk1xQnSgkaIhaW5smWjWS88n7fj_tzV_HDgQzaVjS--FBz2tzJVRzi9-xqgkQomOotcKG9uIZqB7GxfC5Fcf1Q3Hxqtc_UjUj8KfcCC5R4P2jv8je"/>
+</div>
+<div>
+<p class="font-label-md text-label-md text-on-primary">Operations Portal</p>
+<p class="font-body-sm text-body-sm text-on-primary-container">Warehouse Reconciliation</p>
+</div>
+</div>
+</div>
+<nav class="flex-1 px-3 space-y-1">
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg text-on-primary-container opacity-70 hover:opacity-100 hover:bg-surface-container-highest/10 transition-all" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg bg-on-primary-fixed-variant text-on-primary border-l-4 border-error scale-[0.98] duration-100" href="#">
+<span class="material-symbols-outlined">upload_file</span>
+<span class="font-label-md text-label-md">Guard Upload</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg text-on-primary-container opacity-70 hover:opacity-100 hover:bg-surface-container-highest/10 transition-all" href="#">
+<span class="material-symbols-outlined">leaderboard</span>
+<span class="font-label-md text-label-md">Leaderboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg text-on-primary-container opacity-70 hover:opacity-100 hover:bg-surface-container-highest/10 transition-all" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="font-label-md text-label-md">User Management</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg text-on-primary-container opacity-70 hover:opacity-100 hover:bg-surface-container-highest/10 transition-all" href="#">
+<span class="material-symbols-outlined">health_and_safety</span>
+<span class="font-label-md text-label-md">System Health</span>
+</a>
+</nav>
+<div class="px-3 border-t border-on-primary-fixed-variant/30 pt-4 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-primary-container opacity-70 hover:opacity-100 transition-all" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-primary-container opacity-70 hover:opacity-100 transition-all" href="#">
+<span class="material-symbols-outlined">logout</span>
+<span class="font-label-md text-label-md">Logout</span>
+</a>
+</div>
+</aside>
+<!-- TopNavBar Anchor -->
+<header class="fixed top-0 left-0 w-full z-40 flex justify-between items-center px-container-margin h-row-height-standard bg-surface border-b border-outline-variant pl-[284px]">
+<div class="flex items-center gap-4 flex-1">
+<div class="relative w-full max-w-md">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+<input class="w-full bg-surface-container-low border-none rounded-lg pl-10 pr-4 py-1.5 font-body-md text-body-md focus:ring-1 focus:ring-primary" placeholder="Search registers or personnel..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant">notifications</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant">help</span>
+</button>
+<div class="h-8 w-[1px] bg-outline-variant mx-2"></div>
+<div class="flex items-center gap-3">
+<span class="font-label-md text-label-md text-on-surface">Admin User</span>
+<img class="w-8 h-8 rounded-full border border-outline-variant object-cover" data-alt="Small circular profile thumbnail of an administrative professional in a corporate environment. The image is clean and bright, matching the modern light-mode UI, with professional studio lighting and a neutral grey background. Focused on a friendly yet authoritative professional persona." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAJozXF2n_mMYNG2Sd0oWnTshuhs9xFjWr4u_dQxlfOZCanllOicdXMwpLrXYV4hEIK0jsvsTba4xj6IjzmvAXbSlKDk84xnUV9VGxICo6UjgqkWCPT_RF4bPn3elzUZKZslA0kHJ8DEw_F2bpJU2kidWpTJYsOPrZWyMfE5fonCySarlLBmSBwWBqfAtSq3gKq7h1oXbUzFHISokL0Y_YEf_jFfKZWoF1oCYfe9BweoES0JdleQ_VO2rqLAFGZo3A98-2ShIzKvnGs"/>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-[260px] pt-row-height-standard p-container-margin">
+<!-- Header Section -->
+<div class="flex justify-between items-end mb-8 mt-4">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-primary">Upload Guard Register</h2>
+<div class="flex items-center gap-2 mt-1 text-on-surface-variant">
+<span class="material-symbols-outlined text-[18px]">location_on</span>
+<span class="font-label-md text-label-md">Delhi Hub</span>
+<span class="mx-2 text-outline-variant">•</span>
+<span class="font-body-sm text-body-sm" id="currentDate">October 24, 2023</span>
+</div>
+</div>
+<button class="bg-primary text-on-primary px-6 py-2 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined text-[20px]">download</span>
+                Download Template
+            </button>
+</div>
+<div class="grid grid-cols-12 gap-gutter">
+<!-- Upload Area -->
+<section class="col-span-12 lg:col-span-8">
+<div class="bg-surface-container-lowest border-2 border-dashed border-outline-variant rounded-xl p-16 flex flex-col items-center justify-center text-center transition-all cursor-pointer hover:border-primary" id="dropZone">
+<input accept=".xlsx" class="hidden" id="fileInput" type="file"/>
+<div class="w-20 h-20 bg-surface-container-low rounded-full flex items-center justify-center mb-6 border border-outline-variant/30">
+<span class="material-symbols-outlined text-[48px] text-primary" style="font-variation-settings: 'FILL' 0;">cloud_upload</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-primary mb-2">Drag your Excel file here or click to browse</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-6">Support .xlsx files only. Maximum file size 10MB.</p>
+<div class="flex items-center gap-4">
+<button class="border border-outline px-8 py-2.5 rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors" onclick="document.getElementById('fileInput').click()">
+                            Browse Files
+                        </button>
+</div>
+</div>
+<div class="mt-6 flex items-start gap-3 p-4 bg-tertiary-fixed/20 rounded-lg border border-tertiary-fixed">
+<span class="material-symbols-outlined text-tertiary">info</span>
+<div>
+<p class="font-label-md text-label-md text-tertiary font-bold mb-0.5">Registration Guidelines</p>
+<p class="font-body-sm text-body-sm text-on-tertiary-fixed-variant">Ensure all guard IDs match the master database before uploading. The system will automatically parse attendance and overtime hours based on the shift timings defined in the template.</p>
+</div>
+</div>
+</section>
+<!-- Instructions/Side Card -->
+<section class="col-span-12 lg:col-span-4">
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-6 h-full">
+<h4 class="font-headline-md text-headline-md text-primary mb-4">Quick Insights</h4>
+<div class="space-y-6">
+<div class="flex items-center justify-between p-3 bg-surface-container rounded-lg">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-success-container/10 rounded-lg flex items-center justify-center text-green-700">
+<span class="material-symbols-outlined">fact_check</span>
+</div>
+<span class="font-label-md text-label-md">Last Validated</span>
+</div>
+<span class="font-label-md text-label-md font-bold">Today, 09:12 AM</span>
+</div>
+<div class="flex items-center justify-between p-3 bg-surface-container rounded-lg">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-error-container/10 rounded-lg flex items-center justify-center text-error">
+<span class="material-symbols-outlined">warning</span>
+</div>
+<span class="font-label-md text-label-md">Missing Records</span>
+</div>
+<span class="font-label-md text-label-md font-bold">12 Entries</span>
+</div>
+<div class="pt-4">
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-3">Validation Rules</p>
+<ul class="space-y-2">
+<li class="flex items-center gap-2 text-body-sm text-body-sm">
+<span class="material-symbols-outlined text-[16px] text-green-600" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+                                    Column headers must remain unchanged.
+                                </li>
+<li class="flex items-center gap-2 text-body-sm text-body-sm">
+<span class="material-symbols-outlined text-[16px] text-green-600" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+                                    Date format: DD-MM-YYYY.
+                                </li>
+<li class="flex items-center gap-2 text-body-sm text-body-sm text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px] text-outline">circle</span>
+                                    Total hours must not exceed 16/day.
+                                </li>
+</ul>
+</div>
+</div>
+</div>
+</section>
+<!-- Status Table Section -->
+<section class="col-span-12 mt-4">
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+<div class="px-6 py-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
+<h4 class="font-headline-md text-headline-md text-primary">Upload Status (Previous 7 Days)</h4>
+<div class="flex gap-2">
+<button class="p-1.5 hover:bg-surface-container rounded transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant">filter_list</span>
+</button>
+<button class="p-1.5 hover:bg-surface-container rounded transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant">refresh</span>
+</button>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead class="bg-surface-container-low/50 sticky top-0">
+<tr>
+<th class="px-6 py-3 font-label-md text-label-md text-on-surface-variant border-b border-outline-variant uppercase tracking-tight">Date</th>
+<th class="px-6 py-3 font-label-md text-label-md text-on-surface-variant border-b border-outline-variant uppercase tracking-tight">File Name</th>
+<th class="px-6 py-3 font-label-md text-label-md text-on-surface-variant border-b border-outline-variant uppercase tracking-tight">Status</th>
+<th class="px-6 py-3 font-label-md text-label-md text-on-surface-variant border-b border-outline-variant uppercase tracking-tight">Uploaded By</th>
+<th class="px-6 py-3 font-label-md text-label-md text-on-surface-variant border-b border-outline-variant uppercase tracking-tight">Time</th>
+<th class="px-6 py-3 font-label-md text-label-md text-on-surface-variant border-b border-outline-variant uppercase tracking-tight text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-primary">24 Oct 2023</td>
+<td class="px-6 py-row-height-standard font-label-md text-label-md text-primary font-medium">delhi_hub_guards_oct24.xlsx</td>
+<td class="px-6 py-row-height-standard">
+<span class="px-2.5 py-1 rounded bg-green-100 text-green-800 text-[11px] font-bold uppercase tracking-wider">Parsed</span>
+</td>
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-on-surface-variant">Rajesh Kumar</td>
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-on-surface-variant">10:15 AM</td>
+<td class="px-6 py-row-height-standard text-right">
+<button class="material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity">visibility</button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-primary">23 Oct 2023</td>
+<td class="px-6 py-row-height-standard font-label-md text-label-md text-primary font-medium">delhi_hub_guards_oct23.xlsx</td>
+<td class="px-6 py-row-height-standard">
+<span class="px-2.5 py-1 rounded bg-blue-100 text-blue-800 text-[11px] font-bold uppercase tracking-wider">Uploaded</span>
+</td>
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-on-surface-variant">Sandeep Verma</td>
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-on-surface-variant">09:45 AM</td>
+<td class="px-6 py-row-height-standard text-right">
+<button class="material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity">visibility</button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-primary">22 Oct 2023</td>
+<td class="px-6 py-row-height-standard font-label-md text-label-md text-primary font-medium">delhi_hub_guards_oct22_retry.xlsx</td>
+<td class="px-6 py-row-height-standard">
+<span class="px-2.5 py-1 rounded bg-red-100 text-red-800 text-[11px] font-bold uppercase tracking-wider">Error</span>
+</td>
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-on-surface-variant">Rajesh Kumar</td>
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-on-surface-variant">11:20 AM</td>
+<td class="px-6 py-row-height-standard text-right">
+<button class="material-symbols-outlined text-error opacity-0 group-hover:opacity-100 transition-opacity">error</button>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-primary">21 Oct 2023</td>
+<td class="px-6 py-row-height-standard font-label-md text-label-md text-primary font-medium">delhi_hub_guards_oct21.xlsx</td>
+<td class="px-6 py-row-height-standard">
+<span class="px-2.5 py-1 rounded bg-amber-100 text-amber-800 text-[11px] font-bold uppercase tracking-wider">Pending</span>
+</td>
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-on-surface-variant">Sandeep Verma</td>
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-on-surface-variant">08:55 AM</td>
+<td class="px-6 py-row-height-standard text-right">
+<button class="material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity">visibility</button>
+</td>
+</tr>
+<!-- Row 5-7 placeholders -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-primary">20 Oct 2023</td>
+<td class="px-6 py-row-height-standard font-label-md text-label-md text-primary font-medium">delhi_hub_guards_oct20.xlsx</td>
+<td class="px-6 py-row-height-standard">
+<span class="px-2.5 py-1 rounded bg-green-100 text-green-800 text-[11px] font-bold uppercase tracking-wider">Parsed</span>
+</td>
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-on-surface-variant">Admin System</td>
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-on-surface-variant">09:00 AM</td>
+<td class="px-6 py-row-height-standard text-right">
+<button class="material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity">visibility</button>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-primary">19 Oct 2023</td>
+<td class="px-6 py-row-height-standard font-label-md text-label-md text-primary font-medium">delhi_hub_guards_oct19.xlsx</td>
+<td class="px-6 py-row-height-standard">
+<span class="px-2.5 py-1 rounded bg-green-100 text-green-800 text-[11px] font-bold uppercase tracking-wider">Parsed</span>
+</td>
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-on-surface-variant">Rajesh Kumar</td>
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-on-surface-variant">10:05 AM</td>
+<td class="px-6 py-row-height-standard text-right">
+<button class="material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity">visibility</button>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-primary">18 Oct 2023</td>
+<td class="px-6 py-row-height-standard font-label-md text-label-md text-primary font-medium">delhi_hub_guards_oct18.xlsx</td>
+<td class="px-6 py-row-height-standard">
+<span class="px-2.5 py-1 rounded bg-green-100 text-green-800 text-[11px] font-bold uppercase tracking-wider">Parsed</span>
+</td>
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-on-surface-variant">Sandeep Verma</td>
+<td class="px-6 py-row-height-standard font-body-sm text-body-sm text-on-surface-variant">09:30 AM</td>
+<td class="px-6 py-row-height-standard text-right">
+<button class="material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity">visibility</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="px-6 py-3 flex justify-between items-center bg-surface-container-low/30 border-t border-outline-variant">
+<p class="font-body-sm text-body-sm text-on-surface-variant">Showing latest 7 upload logs</p>
+<a class="font-label-md text-label-md text-primary font-bold hover:underline" href="#">View All History</a>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- Notification Toast (Hidden) -->
+<div class="fixed bottom-8 right-8 bg-primary-container text-on-primary px-6 py-4 rounded-xl shadow-2xl flex items-center gap-4 translate-y-24 transition-transform duration-300 z-[60] border border-outline/20" id="uploadToast">
+<div class="w-8 h-8 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined">check</span>
+</div>
+<div>
+<p class="font-label-md text-label-md">Upload successful!</p>
+<p class="font-body-sm text-body-sm text-on-primary-container">"delhi_hub_guards_oct24.xlsx" is being processed.</p>
+</div>
+<button class="ml-4 opacity-50 hover:opacity-100" onclick="hideToast()">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<script>
+        // Date Display
+        const dateEl = document.getElementById('currentDate');
+        const options = { year: 'numeric', month: 'long', day: 'numeric' };
+        dateEl.textContent = new Date().toLocaleDateString('en-US', options);
+
+        // Upload Micro-interactions
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const toast = document.getElementById('uploadToast');
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('drop-zone-active'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('drop-zone-active'), false);
+        });
+
+        dropZone.addEventListener('drop', handleDrop, false);
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+
+        function handleFiles(files) {
+            if(files.length > 0) {
+                // Mock upload visual
+                dropZone.innerHTML = `
+                    <div class="flex flex-col items-center">
+                        <div class="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin mb-4"></div>
+                        <p class="font-label-md text-label-md text-primary">Uploading ${files[0].name}...</p>
+                    </div>
+                `;
+                
+                setTimeout(() => {
+                    showToast();
+                    setTimeout(() => window.location.reload(), 2000); // Reload to reset state
+                }, 1500);
+            }
+        }
+
+        function showToast() {
+            toast.style.transform = 'translateY(0)';
+        }
+
+        function hideToast() {
+            toast.style.transform = 'translateY(150%)';
+        }
+    </script>
+</body></html>
