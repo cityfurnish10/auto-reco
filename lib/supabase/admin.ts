@@ -1,14 +1,29 @@
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+// Service-role Supabase client — bypasses RLS.
+// Used exclusively by the cron pipeline and server-side API routes.
+// NEVER import this on the client side.
 
-// Service-role client — bypasses RLS. Server-side only (ingestion, engine,
-// cron). Importing this in client code is a security bug.
-export function createAdminClient() {
-  if (typeof window !== "undefined") {
-    throw new Error("Admin client must never be used in the browser");
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+
+let _admin: SupabaseClient | null = null;
+
+export function createAdminClient(): SupabaseClient {
+  if (_admin) return _admin;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !key) {
+    throw new Error(
+      "Missing Supabase env vars: NEXT_PUBLIC_SUPABASE_URL and/or SUPABASE_SERVICE_ROLE_KEY"
+    );
   }
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
+
+  _admin = createClient(url, key, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  return _admin;
 }

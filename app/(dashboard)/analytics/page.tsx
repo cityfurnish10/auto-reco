@@ -8,6 +8,7 @@
 import { useMemo, useState } from "react";
 import { useDemoStore } from "@/lib/demo-store";
 import { CITIES, CITY_SUMMARIES, OVERALL, type City } from "@/lib/sample-data";
+import { varianceSource, DATA_SOURCES } from "@/lib/engine/variance-source";
 
 type Range = 30 | 60 | 90;
 
@@ -17,23 +18,6 @@ const CITY_COLOR: Record<City, string> = {
   PUNE: "#9333ea",
   DELHI: "#f59e0b",
   HYDRABAD: "#ba1a1a",
-};
-
-// Which source each variance name primarily implicates (for the reliability
-// view). Heuristic mapping over the engine's variance vocabulary.
-const SOURCE_OF: Record<string, "Odoo" | "DT" | "Sheet" | "Physical"> = {
-  "Odoo-Only Entry — No Floor Record": "Odoo",
-  "Register/DT Logged — Not in Odoo": "Odoo",
-  "Register-Confirmed, No Odoo Record": "Odoo",
-  "Pickup Confirmed — Odoo Not Closed": "Odoo",
-  "Odoo Update Pending — Movement Confirmed": "Odoo",
-  "Odoo Update Pending — Cross-Check": "Odoo",
-  "Fake Scan Risk": "DT",
-  "DT-Only — Fake Scan Risk": "DT",
-  "Sheet-Only Dispatch — No Trail": "Sheet",
-  "Gate-Only Dispatch — No Ops/Odoo Trail": "Physical",
-  "Ops-Sheet Confirmed — Gate Log Missing": "Physical",
-  "Physical + Odoo Agree — No Register/DT": "Physical",
 };
 
 const SOURCE_COLOR: Record<string, string> = {
@@ -85,8 +69,9 @@ export default function AnalyticsPage() {
     const tally: Record<string, number> = { Odoo: 0, DT: 0, Sheet: 0, Physical: 0 };
     if (lastRun) {
       for (const v of lastRun.realVariances) {
-        const src = SOURCE_OF[v.variance_name];
-        if (src) tally[src] += 1;
+        const src = varianceSource(v.variance_name, v.direction);
+        // Only the 4 real data sources feed the reliability chart (not "Cross").
+        if ((DATA_SOURCES as readonly string[]).includes(src)) tally[src] += 1;
       }
     }
     const total = Object.values(tally).reduce((s, n) => s + n, 0) || 1;

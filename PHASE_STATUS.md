@@ -70,21 +70,37 @@ in [DB_Plan.md](./DB_Plan.md).
 
 ---
 
-## ⬜ Phase 5 — Supabase Database + Ingestion Pipeline (planned — see DB_Plan.md)
+## 🟡 Phase 5 — Supabase Database + Ingestion Pipeline (code written; not yet applied/run)
 
 Build order (from DB_Plan.md §Suggested build order):
 
 | # | Task | Status | File(s) |
 |---|------|--------|---------|
-| 5.1 | Schema migration: 6 tables, checks, indexes, RLS, storage bucket, `prune_expired()`, pg_cron, new-user trigger | ⬜ | `supabase/migrations/0001_init.sql` |
-| 5.2 | Seed `app_users` (idempotent upsert for the 6 known accounts) | ⬜ | `supabase/migrations/0002_seed_app_users.sql` |
-| 5.3 | `varianceSource()` helper (extract `SOURCE_OF` from analytics) | ⬜ | `lib/engine/variance-source.ts` |
-| 5.4 | `.env.example` key-format mapping notes | ⬜ | `.env.example` |
-| 5.5 | Connector interface + orchestrator (DT + Sheets live; Odoo + Guard stubbed) | ⬜ / 🔒 | `lib/connectors/*` |
-| 5.6 | Validation schemas (raw → `SourceRow`) | ⬜ | `lib/validation/*` |
-| 5.7 | Persistence layer (runs / variances upsert / source_rows / ingestion_logs) | ⬜ | `lib/db/*` (new) |
-| 5.8 | Reconcile route (the pipeline, `CRON_SECRET`-guarded) | ⬜ | `app/api/cron/reconcile/route.ts` |
-| 5.9 | Verify: apply migrations, curl the route, tsc + build green | ⬜ | — |
+| 5.1 | Schema migration: 6 tables, checks, indexes, RLS, storage bucket, `prune_expired()`, pg_cron, new-user trigger | ✅ | `supabase/migrations/0001_init.sql` |
+| 5.2 | Seed `app_users` (idempotent upsert for the 6 known accounts) | ✅ | `supabase/migrations/0002_seed_app_users.sql` |
+| 5.3 | `varianceSource()` helper (extracted `SOURCE_OF`; analytics refactored) | ✅ | `lib/engine/variance-source.ts` |
+| 5.4 | `.env.example` key-format + `DT_MONGODB_URI` notes | ✅ | `.env.example` |
+| 5.5 | Connector interface + orchestrator | ✅ (DT wired; Odoo/Guard/Sheets structured stubs) | `lib/connectors/*` |
+| 5.6 | Validation schema (`cityTaggedRowSchema` / `validateRows`) | ✅ | `lib/validation/source-row.ts` |
+| 5.7 | Persistence layer (runs / variances upsert / source_rows / ingestion_logs / prune) | ✅ | `lib/db/persist.ts` |
+| 5.8 | Reconcile route (`CRON_SECRET`-guarded, GET+POST, Node runtime) | ✅ | `app/api/cron/reconcile/route.ts` |
+| 5.9 | Verify: tsc + build + 24 tests green | ✅ | — |
+| 5.10 | **Apply migrations to Supabase + set env + first live run** | ⬜ 🔒 | needs secret key |
+
+Installed `mongodb`. All code compiles/builds; nothing has been run against the live DB yet
+(needs the Supabase **secret key** + migrations applied). Connectors return `[]`/throw until
+configured — Odoo transport, Guard OCR provider, and the Sheets layout are still open.
+
+### How to apply & run (Phase 5.10)
+1. In Supabase SQL editor (or `supabase db push`), run `0001_init.sql` then `0002_seed_app_users.sql`.
+   Enable **pg_cron** (Database → Extensions) if you want the nightly prune scheduled.
+2. Create the 6 Auth users (Authentication → Users) with the seed emails, then re-run `0002`.
+3. Populate `.env.local`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   (publishable), `SUPABASE_SERVICE_ROLE_KEY` (secret), `CRON_SECRET`, `DT_MONGODB_URI`.
+4. Trigger a run:
+   `curl -X POST -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/reconcile`
+   → returns per-source status + counts; writes `reconciliation_runs`, `source_rows`,
+   `variances`, `ingestion_logs`.
 
 ## ⬜ Phase 6 — Connectors Go Live
 - ⬜ **DT** — map `cityfurnish` movement docs → `SourceRow` (needs collection/field discovery).
