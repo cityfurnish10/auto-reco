@@ -1,15 +1,17 @@
 // Delivery Tracker connector — MongoDB (Atlas `cityfurnish` DB). Implements
-// the aggregation from DB MODEL.md §18: tasks + orderfromcityfurnishes
+// the aggregation from DB MODEL.md §18: <parent> + orderfromcityfurnishes
 // (barcode lines), done-only filtered (§15), direction derived per §14.
 //
-// ⚠️ KNOWN ISSUE (2026-07-14): on the currently-configured DT_MONGODB_URI, the
-// `tasks` collection is empty (0 docs) even though `orderfromcityfurnishes`
-// is fully populated (327k docs, barcodes present). This connector is correct
-// against the schema in DB MODEL.md, but will return 0 rows until either (a)
-// DT_MONGODB_URI is corrected to point at an environment where `tasks` is
-// populated, or (b) this is switched to read through Metabase's "Delivery
-// Tracker MongoDB" connection (DB id 6) instead, which is confirmed live via
-// saved cards 317/404/564. See PHASE_STATUS.md for the current state.
+// ✅ RESOLVED (2026-07-15): DB MODEL.md named the parent collection `tasks`,
+// but on the live cluster `tasks` is empty (0 docs) — it was superseded by
+// `deliveries` (174k docs) at some point after the doc was written. Verified
+// directly: orderfromcityfurnishes.pickup_deliveryId/deliveryId resolve into
+// `deliveries` (not tasks/trips/forms/etc.), and `deliveries` carries exactly
+// the fields §18 expects (scheduledDate, email, firstName/lastName, jobType,
+// ticketNumber, city, category, subCategory, status). The full pipeline
+// sourced from `deliveries` returns real done rows for a D-1 window across all
+// 5 cities. The source collection is configurable via DT_TASKS_COLLECTION
+// (default "deliveries") in case it's renamed again.
 //
 // Requires: DT_MONGODB_URI (full connection string), DT_MONGODB_DB (default
 // "cityfurnish"). Node runtime only (uses the `mongodb` driver).
@@ -20,8 +22,20 @@ import { normalizeCity } from "./types";
 import { istDayToUtcWindow } from "./ist-window";
 import { deriveDtDirection, DT_EXCLUDED_JOB_TYPES } from "./dt-mapping";
 
+const DT_PARENT_COLLECTION = process.env.DT_TASKS_COLLECTION ?? "deliveries";
+
 function str(v: unknown): string | undefined {
   return v == null ? undefined : String(v);
+}
+
+// Date fields come back from the driver as BSON Date objects. String(date)
+// yields an ugly locale string ("Wed Jul 15 2026 …GMT+0530…") — normalize to
+// ISO so downstream (engine grouping, variances.date column) gets a clean,
+// sortable, parseable value. Strings (already-ISO stored values) pass through.
+function dateStr(v: unknown): string | undefined {
+  if (v == null) return undefined;
+  if (v instanceof Date) return v.toISOString();
+  return String(v);
 }
 
 export const dtConnector: Connector = {
@@ -124,7 +138,7 @@ export const dtConnector: Connector = {
       ];
 
       const rows: CityTaggedRow[] = [];
-      const cursor = db.collection("tasks").aggregate(pipeline);
+      const cursor = db.collection(DT_PARENT_COLLECTION).aggregate(pipeline);
       for await (const raw of cursor) {
         const doc = raw as Record<string, unknown>;
 
@@ -143,7 +157,7 @@ export const dtConnector: Connector = {
         });
         if (!direction) continue; // ambiguous (§14 rule 6) — skip
 
-        const movementDate = str(doc.movementDate);
+        const movementDate = dateStr(doc.movementDate);
         rows.push({
           source: "DT",
           city,
@@ -152,7 +166,7 @@ export const dtConnector: Connector = {
           status: "done", // pipeline already filtered to items.status === "2"
           date: movementDate,
           movementDate,
-          createdOn: str(doc.createdOn),
+          createdOn: dateStr(doc.createdOn),
           soNumber: str(doc.soNumber),
           ticketId: str(doc.ticketId),
           customer: str(doc.customer)?.trim(),

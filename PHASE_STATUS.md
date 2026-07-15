@@ -1,6 +1,6 @@
 # Project Phase Status — CityFurnish Auto-Reconciliation Platform
 
-_Last updated: 2026-07-15 (Google Sheets connector built + live-verified against real data)_
+_Last updated: 2026-07-15 (Google Sheets + DT MongoDB connectors both live-verified against real data)_
 
 A running record of what's **done** and what's **to be done**. The detailed backend design lives
 in [DB_Plan.md](./DB_Plan.md) (original plan) and [IMPLEMENTATION_PLAN_1.md](./IMPLEMENTATION_PLAN_1.md)
@@ -22,7 +22,7 @@ in [DB_Plan.md](./DB_Plan.md) (original plan) and [IMPLEMENTATION_PLAN_1.md](./I
 | 4 | Source connectivity verification (DT MongoDB) | ✅ done |
 | 5 | Supabase database — schema live, 6 tables + RLS + 6 users, verified | ✅ **done, live** |
 | 6 | API routes (variances/runs/stats/sources) | ✅ done (code) — testable now, not yet tested |
-| 7 | Connectors (DT + Odoo + Guard OCR code-complete; **Sheets code-complete + live-verified**) | 🟡 Sheets live; DT/Odoo/Guard still 🔒 on credentials |
+| 7 | Connectors (**DT + Sheets live-verified**; Guard OCR code+infra ready; Odoo code-ready) | 🟡 DT + Sheets live; Guard needs a sample PDF; Odoo 🔒 on Metabase creds |
 | 8 | Dashboard reads from Supabase + retention | ⬜ |
 | 9 | Cron scheduling, System Health, Email digest | ⬜ |
 
@@ -148,24 +148,29 @@ production schema for both DT and Odoo, with full field maps, direction-derivati
 normalization tables, and exact queries (Mongo aggregation for DT, SQL for Odoo). Re-verified
 directly against the live Mongo cluster:
 
-- ✅ `orderfromcityfurnishes` (327,198 docs) **does** have `barcode`, populated on 308,120 of them
-  (`FUMYEL18090363` etc.) — **the barcode blocker is resolved.**
-- ❌ `tasks` (the collection joined for `city`/`scheduledDate`/`jobType`/direction context) is
-  **empty** (0 docs, exact count) on the `DT_MONGODB_URI` currently in `.env.local`. Only one
-  application database exists on that cluster (`cityfurnish`; checked `admin`/`config`/`local`
-  too) — so this isn't a wrong-db-name issue. Most likely explanation: this connection string
-  points at a different environment (backup/stale replica?) than whatever backs Metabase's
-  "Delivery Tracker MongoDB" connection (DB id 6), which the doc's own reference cards (317, 404,
-  564) prove has live joined data. **Needs a corrected `DT_MONGODB_URI`** — someone with Atlas
-  console access should confirm which cluster/project Metabase's DB id 6 actually points to.
+- ✅ `orderfromcityfurnishes` (327,516 docs) **does** have `barcode` — **barcode blocker resolved.**
+- ✅ **DT is now LIVE (2026-07-15).** The `tasks`-empty problem is solved: `tasks` really is empty
+  (0 docs), but it was superseded by the **`deliveries`** collection (174,513 docs) — the doc's
+  §18 schema was written against the old name. Proved it directly rather than guessing: enumerated
+  all 25 collections on the cluster, then confirmed `orderfromcityfurnishes.pickup_deliveryId`/
+  `deliveryId` resolve into `deliveries` (3/3), not tasks/trips/forms/etc., and that `deliveries`
+  carries every field §18 expects on `tasks` (`scheduledDate`, `email`, `firstName`/`lastName`,
+  `jobType`, `ticketNumber`, `city`, `category`, `subCategory`, `status`). `deliveries` has current
+  data (through 2026 and beyond). The connector's source collection is now `deliveries`
+  (configurable via `DT_TASKS_COLLECTION`). **No corrected connection string was needed — the
+  existing `DT_MONGODB_URI` was fine all along; only the collection name was stale.**
+- Also fixed while live-testing: DT date fields (`date`/`movementDate`/`createdOn`) come back as
+  BSON `Date` objects; `String(date)` was producing an ugly locale string
+  (`"Wed Jul 15 2026 …GMT+0530…"`) headed for the `variances.date` column — added a `dateStr()`
+  helper that emits clean ISO. (Latent all along, but never surfaced while `tasks` returned 0 rows.)
 
 | # | Task | Status | File(s) |
 |---|------|--------|---------|
-| 7.1 | DT connector rewritten to the real `tasks`+`orderfromcityfurnishes` aggregation (§18), direction derivation (§14, 6-rule switch), done-only filter (§15), city map (§20) | ✅ code done, pipeline syntax-verified live | `lib/connectors/dt.ts`, `dt-mapping.ts` |
+| 7.1 | DT connector — `deliveries`+`orderfromcityfurnishes` aggregation (§18), direction derivation (§14, 6-rule switch), done-only filter (§15), city map (§20) | ✅ **code done + live-verified: 357 rows for D-1 across all 5 cities, both directions** | `lib/connectors/dt.ts`, `dt-mapping.ts` |
 | 7.2 | Shared IST-day→UTC window helper (§4/§17) | ✅ | `lib/connectors/ist-window.ts` |
 | 7.3 | Metabase REST client (API-key or session auth, native SQL) | ✅ | `lib/connectors/metabase.ts` |
 | 7.4 | Odoo connector rewritten to Metabase native SQL (§6), city map (§8) | ✅ code done, untested (no Metabase creds yet) | `lib/connectors/odoo.ts`, `odoo-mapping.ts` |
-| 7.5 | **Get a working `DT_MONGODB_URI`** (one with a populated `tasks`) | ⬜ 🔒 | — |
+| 7.5 | ~~Get a working `DT_MONGODB_URI`~~ — **resolved 2026-07-15**: existing URI was fine; parent collection was `deliveries`, not the empty `tasks` | ✅ | `lib/connectors/dt.ts` |
 | 7.6 | **Get Metabase credentials** (API key, or username+password) + the Odoo database id in Metabase | ⬜ 🔒 | — |
 | 7.7 | **Google Sheets — service-account read → `SourceRow`** (Sheets API v4, per-tab Outward/Inward direction, header-name column mapping, blank-template-row-safe 200-row buffer, Sheets-serial + text date parsing) | ✅ **code done + live-verified against real data** | `lib/connectors/sheets.ts`, `sheets-mapping.ts` |
 | 7.8 | **Guard OCR — full pipeline built** (Azure Vision v3.2 async Read, Storage signed upload, per-page table reconstruction + direction detection, mandatory human review UI, `guard.ts` wired to read confirmed rows) | ✅ code done, ✅ Azure + migration 0003 both confirmed live — 🔒 only a real sample PDF left | see "Phase 7b" below |
@@ -311,9 +316,9 @@ those exact strings won't fire for Odoo rows until this is confirmed with an Odo
 ---
 
 ## 🔒 Blockers / inputs needed from the user
-1. **A `DT_MONGODB_URI` that has a populated `tasks` collection** — current one connects fine but
-   `tasks` is empty there (§ above). Someone with Atlas console access needs to confirm which
-   cluster backs Metabase's "Delivery Tracker MongoDB" (DB id 6) and give that connection string.
+1. ~~A `DT_MONGODB_URI` with a populated `tasks` collection~~ — **resolved 2026-07-15.** The existing
+   URI was correct; the parent collection is `deliveries`, not the empty `tasks`. DT is live
+   (357 rows for D-1, all 5 cities). No longer a blocker.
 2. **Metabase credentials** — an API key (preferred, Admin → API Keys) or username+password, plus
    the numeric database id for "Odoo Live Database" in Metabase (DT's is confirmed `6`; Odoo's
    isn't given — `GET /api/database` will list it once authenticated).
