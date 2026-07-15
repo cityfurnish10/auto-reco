@@ -37,7 +37,7 @@
 import { google, sheets_v4 } from "googleapis";
 import type { Connector, CityTaggedRow } from "./types";
 import { normalizeCity } from "./types";
-import { parseSheetDate } from "./sheets-mapping";
+import { resolveSheetDate } from "./sheets-mapping";
 import type { Direction } from "../engine/types";
 
 // Sized for backfill pulls, not just the nightly D-1 run: the busiest tab
@@ -180,14 +180,23 @@ export const sheetsConnector: Connector = {
 
       for (const tab of tabs) {
         let values: unknown[][];
+        let displayed: unknown[][]; // same grid, FORMATTED (what ops actually see)
         try {
-          const res = await api.spreadsheets.values.get({
-            spreadsheetId: entry.spreadsheetId,
-            range: `${tab.name}!A1:Z`, // unbounded rows — API returns only rows with data
-            valueRenderOption: "UNFORMATTED_VALUE",
-            dateTimeRenderOption: "SERIAL_NUMBER",
-          });
-          values = res.data.values ?? [];
+          const [uRes, fRes] = await Promise.all([
+            api.spreadsheets.values.get({
+              spreadsheetId: entry.spreadsheetId,
+              range: `${tab.name}!A1:Z`, // unbounded rows — API returns only rows with data
+              valueRenderOption: "UNFORMATTED_VALUE",
+              dateTimeRenderOption: "SERIAL_NUMBER",
+            }),
+            api.spreadsheets.values.get({
+              spreadsheetId: entry.spreadsheetId,
+              range: `${tab.name}!A1:Z`,
+              valueRenderOption: "FORMATTED_VALUE", // the displayed string, not the serial
+            }),
+          ]);
+          values = uRes.data.values ?? [];
+          displayed = fRes.data.values ?? [];
         } catch (err) {
           throw new Error(
             `Sheets pull failed for ${cityKey}/${tab.name}: ${err instanceof Error ? err.message : String(err)}`
@@ -199,15 +208,27 @@ export const sheetsConnector: Connector = {
         const idx = buildColumnIndex(values[headerIdx]);
         if (idx.date === -1 || idx.barcode === -1) continue; // can't reconcile without these
 
-        // These sheets carry thousands of blank template rows after the real
-        // data (leftover formatting/dropdown validation keeps the Sheets API
-        // from treating them as truly empty) — filter to rows with an actual
-        // date BEFORE taking the buffer, or slice(-ROW_BUFFER) grabs blank
-        // filler instead of the last 200 real entries.
-        const withDate = values.slice(headerIdx + 1).filter((r) => r[idx.date] != null && r[idx.date] !== "");
-        const recentRows = withDate.slice(-ROW_BUFFER); // last 200 real data rows only
-        for (const line of recentRows) {
-          const date = parseSheetDate(line[idx.date]);
+        // Date resolution reconciles the raw serial (UNFORMATTED) with the
+        // displayed string (FORMATTED) — see resolveSheetDate. The sheets are
+        // internally inconsistent: DELHI serials are correct but display US
+        // M/D/Y; HYD/MUM display the intended India D/M day but their serial is
+        // a MM/DD-corrupted value (46363 = Dec-7 for a "12-07" = 12-Jul entry).
+        // Trusting either one alone drops a whole city's day or mis-files it.
+        // Non-date fields still come from UNFORMATTED (exact barcodes).
+        //
+        // These sheets also carry thousands of blank template rows after the
+        // real data — filter to rows with a date cell BEFORE the buffer, or
+        // slice(-ROW_BUFFER) grabs blank filler instead of real entries.
+        const dataRows: Array<{ line: unknown[]; serialCell: unknown; displayCell: unknown }> = [];
+        for (let i = headerIdx + 1; i < values.length; i++) {
+          const serialCell = values[i]?.[idx.date];
+          const displayCell = displayed[i]?.[idx.date];
+          if ((serialCell == null || serialCell === "") && (displayCell == null || displayCell === "")) continue;
+          dataRows.push({ line: values[i], serialCell, displayCell });
+        }
+        const recentRows = dataRows.slice(-ROW_BUFFER); // last N real data rows only
+        for (const { line, serialCell, displayCell } of recentRows) {
+          const date = resolveSheetDate(serialCell, displayCell, runDate);
           if (date !== runDate) continue; // filter to the run's business date
 
           const barcode = str(line[idx.barcode]);
