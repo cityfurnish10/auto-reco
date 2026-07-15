@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { getSupabaseClient } from "@/lib/supabase/client";
 import { authenticateDemo, setSessionCookie } from "@/lib/demo-auth";
 import { Icon } from "@/components/icon";
 
@@ -40,7 +40,7 @@ export default function LoginForm() {
       return;
     }
 
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,

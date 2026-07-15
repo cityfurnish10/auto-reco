@@ -54,10 +54,12 @@ CREATE TABLE IF NOT EXISTS reconciliation_runs (
   completed_at    TIMESTAMPTZ
 );
 
--- Only one successful/partial run per business date (prevent double-runs).
-CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_date
-  ON reconciliation_runs (business_date)
-  WHERE status IN ('success', 'partial');
+-- Non-unique: the pipeline is expected to be re-run for the same business_date
+-- (manual re-run after fixing a connector, retrying a failed run, etc). Variance
+-- de-duplication happens at the variances table's own unique key, not here.
+-- Callers wanting "the" run for a date should pick the latest by created_at.
+CREATE INDEX IF NOT EXISTS idx_runs_date
+  ON reconciliation_runs (business_date, created_at DESC);
 
 COMMENT ON TABLE reconciliation_runs IS 'One row per reconciliation pipeline execution (cron or manual trigger).';
 

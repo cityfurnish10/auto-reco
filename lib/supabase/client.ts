@@ -1,7 +1,17 @@
 // Browser-side Supabase client — uses the anon key, respects RLS.
 // Used by React components and client-side data fetching.
+//
+// IMPORTANT: must use createBrowserClient from @supabase/ssr (not plain
+// @supabase/supabase-js). The plain client stores the session in
+// localStorage only; middleware.ts and lib/supabase/server.ts read the
+// session from cookies via @supabase/ssr's createServerClient. Using the
+// plain client here meant a successful sign-in never wrote a cookie, so
+// middleware always saw "no session" and bounced every login straight back
+// to /login regardless of credentials — createBrowserClient keeps the two
+// in sync by writing the session to cookies as well as localStorage.
 
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 let _client: SupabaseClient | null = null;
 
@@ -17,6 +27,6 @@ export function getSupabaseClient(): SupabaseClient {
     );
   }
 
-  _client = createClient(url, key);
+  _client = createBrowserClient(url, key);
   return _client;
 }

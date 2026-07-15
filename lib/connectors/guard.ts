@@ -1,25 +1,50 @@
-// Guard connector — STUB. Reads scanned register images/PDFs from the Supabase
-// Storage bucket `guard-registers` for the run date, runs OCR, and maps the
-// parsed rows → SourceRow{ source: "PHYSICAL", ... }. OCR provider (Google
-// Vision / AWS Textract / Tesseract) is not chosen yet, so ocr() is a TODO.
+// Guard connector — reads reviewer-confirmed rows from guard_uploads
+// (status='processed') for the run date and maps them to SourceRow. All the
+// heavy lifting (OCR, table reconstruction, human review) happens upstream in
+// the upload pipeline (app/api/uploads/guard/*) before a row ever reaches
+// 'processed' — this connector just reads the confirmed result, the same
+// shape as dt.ts/odoo.ts reading their sources from the cron pipeline.
 
+import { createAdminClient } from "../supabase/admin";
 import type { Connector, CityTaggedRow } from "./types";
-
-// Abstraction seam: swap in the chosen OCR provider here without touching the
-// connector interface. Returns raw text lines to be parsed into rows.
-async function ocr(_fileBytes: Uint8Array): Promise<string[]> {
-  throw new Error("OCR provider not configured.");
-}
+import type { GuardUpload } from "../db/schema";
+import type { City } from "../sample-data";
 
 export const guardConnector: Connector = {
   source: "PHYSICAL",
   label: "Guard Register (OCR)",
-  async pull(_runDate: string): Promise<CityTaggedRow[]> {
-    // TODO (Phase 6): list guard_uploads for runDate, download each file from
-    // the guard-registers bucket, ocr() it, parse lines → CityTaggedRow with
-    // source:"PHYSICAL", direction, barcode, status ("done"), date, and the
-    // uploading city. Update guard_uploads.status → PARSED + ocr_confidence.
-    void ocr;
-    throw new Error("Guard OCR connector not implemented yet (provider TBD).");
+  async pull(runDate: string): Promise<CityTaggedRow[]> {
+    const db = createAdminClient();
+    const { data, error } = await db
+      .from("guard_uploads")
+      .select("*")
+      .eq("business_date", runDate)
+      .eq("status", "processed");
+
+    if (error) throw new Error(`Guard connector query failed: ${error.message}`);
+
+    const rows: CityTaggedRow[] = [];
+    for (const upload of (data ?? []) as GuardUpload[]) {
+      const city = upload.city as City;
+      for (const row of upload.parsed_rows ?? []) {
+        const barcode = row.cells.barcode?.trim();
+        // Both should always be present post-review (the PATCH route
+        // requires them), but stay defensive against partially-edited rows.
+        if (!barcode || !row.direction) continue;
+
+        rows.push({
+          source: "PHYSICAL",
+          city,
+          direction: row.direction,
+          barcode,
+          status: "done",
+          date: runDate,
+          soNumber: row.cells.so_number || undefined,
+          ticketId: row.cells.ticket_id || undefined,
+          product: row.cells.product || undefined,
+        });
+      }
+    }
+    return rows;
   },
 };

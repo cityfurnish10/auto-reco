@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { getSupabaseClient } from "@/lib/supabase/client";
 import { clearSessionCookie, type SessionUser } from "@/lib/demo-auth";
 import { useDemoStore } from "@/lib/demo-store";
 import { runAllCities } from "@/lib/engine/run";
@@ -50,7 +50,7 @@ export default function Sidebar({ user }: { user: SessionUser }) {
 
   async function handleSignOut() {
     if (supabaseConfigured) {
-      const supabase = createClient();
+      const supabase = getSupabaseClient();
       await supabase.auth.signOut();
     } else {
       clearSessionCookie();

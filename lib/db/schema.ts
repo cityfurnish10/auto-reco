@@ -129,7 +129,25 @@ export interface IngestionLog {
 }
 
 // ─── guard_uploads ──────────────────────────────────────────────────────────
-export type UploadStatus = "pending" | "processed" | "failed";
+// 5-state flow: pending -> ocr_running -> needs_review -> processed (or failed
+// at any point). direction is nullable now — a single PDF has both IN and OUT
+// pages, so direction lives per-row inside parsed_rows, not on the upload itself.
+export type UploadStatus =
+  | "pending"
+  | "ocr_running"
+  | "needs_review"
+  | "processed"
+  | "failed";
+
+// One reconstructed body row from a page of the register. `direction` is the
+// page-level guess/override — see lib/connectors/ocr/direction-detect.ts.
+export interface ParsedGuardRow {
+  page: number;
+  rowIndex: number;
+  direction: Direction | null;
+  cells: Record<string, string>; // keyed by lib/connectors/ocr/table-reconstruct.ts's GUARD_COLUMNS
+  confidence: number | null;
+}
 
 export interface GuardUpload {
   id: string;
@@ -139,10 +157,15 @@ export interface GuardUpload {
   file_path: string;
   city: City;
   business_date: string;
-  direction: Direction;
+  direction: Direction | null;
   rows_parsed: number;
   rows_valid: number;
   ocr_confidence: number | null;
+  parsed_rows: ParsedGuardRow[] | null; // reviewer-confirmed once status=processed
+  ocr_raw_snapshot: ParsedGuardRow[] | null; // immutable pre-correction OCR output
+  ocr_operation_id: string | null; // Azure async operation URL, while ocr_running
+  reviewed_by: string | null;
+  reviewed_at: string | null;
   status: UploadStatus;
   error: string | null;
   created_at: string;
