@@ -1,6 +1,6 @@
 # Project Phase Status — CityFurnish Auto-Reconciliation Platform
 
-_Last updated: 2026-07-14 (Guard OCR pipeline built)_
+_Last updated: 2026-07-15 (Google Sheets connector built + live-verified against real data)_
 
 A running record of what's **done** and what's **to be done**. The detailed backend design lives
 in [DB_Plan.md](./DB_Plan.md) (original plan) and [IMPLEMENTATION_PLAN_1.md](./IMPLEMENTATION_PLAN_1.md)
@@ -22,7 +22,7 @@ in [DB_Plan.md](./DB_Plan.md) (original plan) and [IMPLEMENTATION_PLAN_1.md](./I
 | 4 | Source connectivity verification (DT MongoDB) | ✅ done |
 | 5 | Supabase database — schema live, 6 tables + RLS + 6 users, verified | ✅ **done, live** |
 | 6 | API routes (variances/runs/stats/sources) | ✅ done (code) — testable now, not yet tested |
-| 7 | Connectors (DT + Odoo + Guard OCR pipeline all code-complete; Sheets still a stub) | 🟡 code done — 🔒 blocked on credentials |
+| 7 | Connectors (DT + Odoo + Guard OCR code-complete; **Sheets code-complete + live-verified**) | 🟡 Sheets live; DT/Odoo/Guard still 🔒 on credentials |
 | 8 | Dashboard reads from Supabase + retention | ⬜ |
 | 9 | Cron scheduling, System Health, Email digest | ⬜ |
 
@@ -92,7 +92,7 @@ actual migration file, not DB_Plan.md, for exact shapes:
 | 5.2 | Link Supabase Auth → `app_users.auth_id` by email | ✅ | `supabase/migrations/0002_seed_app_users.sql` |
 | 5.3 | `varianceSource()` helper | ✅ | `lib/engine/variance-source.ts` |
 | 5.4 | `.env.example` / `.env.local` populated | ✅ | see below |
-| 5.5 | Connector interface + orchestrator | 🟡 DT wired; Odoo/Guard/Sheets structured stubs | `lib/connectors/*` |
+| 5.5 | Connector interface + orchestrator | ✅ all 4 connectors code-complete (DT, Odoo, Guard, Sheets) | `lib/connectors/*` |
 | 5.6 | Validation schema | ✅ | `lib/validation/source-row.ts` |
 | 5.7 | Persistence layer | ✅ | `lib/db/persist.ts` |
 | 5.8 | Reconcile route (`CRON_SECRET`-guarded) | ✅ | `app/api/cron/reconcile/route.ts` |
@@ -167,8 +167,61 @@ directly against the live Mongo cluster:
 | 7.4 | Odoo connector rewritten to Metabase native SQL (§6), city map (§8) | ✅ code done, untested (no Metabase creds yet) | `lib/connectors/odoo.ts`, `odoo-mapping.ts` |
 | 7.5 | **Get a working `DT_MONGODB_URI`** (one with a populated `tasks`) | ⬜ 🔒 | — |
 | 7.6 | **Get Metabase credentials** (API key, or username+password) + the Odoo database id in Metabase | ⬜ 🔒 | — |
-| 7.7 | Google Sheets — service-account read → `SourceRow` | ⬜ 🔒 | needs `GOOGLE_SERVICE_ACCOUNT_KEY` + 5 sheet IDs |
-| 7.8 | **Guard OCR — full pipeline built** (Azure Vision v3.2 async Read, Storage signed upload, per-page table reconstruction + direction detection, mandatory human review UI, `guard.ts` wired to read confirmed rows) | ✅ code done — 🔒 blocked on Azure credentials + a real sample PDF | see "Phase 7b" below |
+| 7.7 | **Google Sheets — service-account read → `SourceRow`** (Sheets API v4, per-tab Outward/Inward direction, header-name column mapping, blank-template-row-safe 200-row buffer, Sheets-serial + text date parsing) | ✅ **code done + live-verified against real data** | `lib/connectors/sheets.ts`, `sheets-mapping.ts` |
+| 7.8 | **Guard OCR — full pipeline built** (Azure Vision v3.2 async Read, Storage signed upload, per-page table reconstruction + direction detection, mandatory human review UI, `guard.ts` wired to read confirmed rows) | ✅ code done, ✅ Azure + migration 0003 both confirmed live — 🔒 only a real sample PDF left | see "Phase 7b" below |
+
+### Phase 7c — Google Sheets connector (this session) — ✅ code complete, ✅ **live-verified against real data**
+
+- **Auth:** Google service account (server-to-server, no user consent flow) — `GOOGLE_SERVICE_ACCOUNT_KEY`
+  holds the downloaded JSON key. The sheet must separately be shared with that key's
+  `client_email` (Viewer) — a service account has zero access until a sheet is shared with it,
+  same as adding any other collaborator. This was confirmed as the right shape with the user (as
+  opposed to an OAuth client id/secret + human consent flow, unnecessary complexity for an
+  unattended nightly cron job). **Real key inserted and confirmed working 2026-07-15**
+  (service account `guard-sheet-reader@…`, in `.env.local` only — gitignored).
+  ⚠️ Must be pasted as **one line** in `.env.local` — a raw multi-line JSON blob breaks standard
+  `.env` parsing (only `"{"` gets read as the value). Caught and fixed for the real key.
+- **Config:** `SHEETS_CONFIG` — one JSON env var, all 5 real spreadsheet ids now live:
+  `{"DELHI":{"spreadsheetId":"1KVN_..."},"PUNE":{...},"MUMBAI":{...},"BANGALORE":{...},"HYDRABAD":{...}}`
+  (city codes the user gave — GUR/PUN/MUM/BAN/HYD — mapped to the engine's full City names).
+- **Real layout discovered live (differs from the original IMPLEMENTATION_PLAN.md §A3 guess):**
+  each city's spreadsheet has separate **"Outward" and "Inward" tabs**, not one tab with an "Ops
+  Type" column driving direction. Direction is now derived from **which tab** a row came from
+  (Outward→OUT, Inward→IN) — the "Operations Type"/"Ops Type" column that does exist holds
+  job-type-like text (Delivery, Pick Up, New - Rental, Upgrade), not IN/OUT, and the engine only
+  reads `jobType` from ODOO rows anyway (`views.ts:76`), so it isn't mapped. Tab names default to
+  `"Outward"`/`"Inward"` (confirmed identical across all 5 cities) with optional per-city override
+  (`outwardSheet`/`inwardSheet`) in case a tab is ever renamed.
+- **Header row isn't row 1** — every tab has a single-cell title row above it ("OUTWARD"/"Inward ",
+  casing/whitespace varies) — `findHeaderRowIndex()` scans the first few rows for one containing a
+  "date" cell instead of assuming a fixed offset.
+- **Real bug caught + fixed via live testing: blank template rows.** Every sheet has thousands of
+  blank rows appended after the real data (leftover formatting/dropdown validation keeps the
+  Sheets API from treating them as empty) — e.g. DELHI/Outward reports 3,188 "data rows" but the
+  real data ends around row 2,824; the rest is filler. A naive `slice(-200)` over the raw fetched
+  rows grabbed blank filler instead of the last 200 real entries. Fixed: rows are filtered to
+  "has a non-empty date cell" **before** the 200-row buffer is taken.
+- **Column mapping is header-name-based, not position-based**, with real alias spellings seen live
+  (e.g. "Barcode" on Inward tabs vs "Barcodes" on some Outward tabs) — `buildColumnIndex()`.
+- **Date filtering:** `parseSheetDate()` (`sheets-mapping.ts`) handles both a Sheets serial-number
+  date (confirmed live — dates come back as serials like `46174`) and manually-typed text dates
+  (ISO, and DD/MM/YYYY read as day-first — India-based ops teams). Matched directly against the
+  run's business date, no UTC conversion (sheet dates are plain IST calendar dates, same treatment
+  as the Guard/PHYSICAL source).
+- **Status:** always `"done"` — a row's presence on the sheet means it happened, matching
+  IMPLEMENTATION_PLAN.md §A3's rule.
+- **Live verification (2026-07-15):** compiled `sheets.ts` in isolation and ran `sheetsConnector.pull()`
+  against the real 5 sheets for several candidate dates. `pull("2026-07-14")` (D-1 from today)
+  returned 137 real rows (PUNE 25 OUT + 44 IN, HYDRABAD 40 OUT + 28 IN); `pull("2026-07-13")`
+  returned 491 rows across all 5 cities. DELHI/MUMBAI/BANGALORE had no rows yet for 2026-07-14 at
+  test time — their sheets' most recent entries were 1-2 days further behind (2026-07-11/12/13),
+  a real data-entry lag on the ops side, not a connector bug — worth knowing before assuming a
+  city's numbers are wrong on a given day.
+- **Bug caught + fixed in passing:** `/api/cron/reconcile`'s default run date (when no `?date=` is
+  passed — the real-world case once a scheduler is wired up in Phase 9) was literally "today"
+  (`todayISO()`). Reconciliation is a D-1 process (a business day is only complete, across all 4
+  sources, after it's fully closed out overnight) — every connector's date-window logic is written
+  against that assumption. Renamed to `defaultRunDate()` and fixed to return yesterday's date.
 
 ### Phase 7b — Guard Register OCR pipeline (this session, code complete)
 
@@ -205,11 +258,29 @@ Full design in the approved plan (`.claude/plans/...atomic-toucan.md`) — summa
 | `app/(dashboard)/uploads/uploads-client.tsx` | Rewritten: PDF-only upload, real pipeline wired end-to-end when `supabaseConfigured`; demo `.xlsx` simulation kept as the fallback otherwise |
 | `lib/connectors/guard.ts` | Rewritten: reads `guard_uploads` where `status='processed'` for the run date, maps `parsed_rows` → `SourceRow[]` |
 
-**Still needed to test end-to-end:** `AZURE_VISION_ENDPOINT` + `AZURE_VISION_API_KEY` (confirm
-the resource actually exposes the v3.2 Read surface — some newer Foundry-provisioned Vision
-resources only expose v4.0, which doesn't support PDF), apply `0003_guard_ocr_review.sql`, and a
-real sample register PDF to validate `GUARD_COLUMNS`/the reconstruction heuristic against (it's
-currently `date/barcode/so_number/ticket_id/product` — a reasonable guess, not confirmed).
+**Update 2026-07-15 — both remaining blockers resolved:**
+- **Azure Vision credentials** — confirmed live earlier this session: real HTTP requests against
+  the resource, a hand-crafted test PDF submitted and polled to `succeeded` on the v3.2 Read
+  endpoint. Not a blocker.
+- **Migration `0003_guard_ocr_review.sql`** — the user believed they'd applied it but wasn't sure.
+  Verified directly against the live Supabase project (service-role client, read-only checks +
+  one throwaway insert/delete probe) rather than asking them to re-check manually: the
+  `guard-registers` Storage bucket exists, all 5 new `guard_uploads` columns are queryable, and
+  the 5-state `status` check constraint accepts `'ocr_running'`. **Confirmed fully applied.**
+- **Real register columns, confirmed by the user** (not a guess anymore): `Sr. No, Date, SO No,
+  Ticket ID, Customer Name, PO No, Vendor, Product Name, Barcode, Vehicle No, Delivery Associate,
+  Operation Type` — 11 columns total, only 7 of which are kept (Date, SO Number, Ticket ID,
+  Product, PO Number, Barcode, Operation Type). `table-reconstruct.ts` was reworked to a
+  `REGISTER_COLUMNS` (all 11, for header-anchored X-range alignment) / `GUARD_COLUMNS` (the 7
+  kept, what's actually stored/reviewed) split — reconstructing as if the form only had 7 columns
+  would have misaligned every column boundary once the OCR'd header returns more cells than that.
+  "Operation Type" is job-type-like text (not IN/OUT) — same non-mapping treatment as the Sheets
+  connector's "Ops Type" column; direction still comes from per-page header-keyword detection
+  (`direction-detect.ts`), unchanged.
+
+**Still open:** an actual real sample PDF hasn't been run through the pipeline yet — the column
+*names* are now confirmed, but the OCR/handwriting-reconstruction quality on a real scan is still
+unverified.
 
 **Known gap kept out of scope this pass:** the doc lists several DT/Odoo fields worth keeping in
 `source_rows.raw` for audit (agent name, vehicle number, tried-barcode, etc.) that the current
@@ -246,12 +317,13 @@ those exact strings won't fire for Odoo rows until this is confirmed with an Odo
 2. **Metabase credentials** — an API key (preferred, Admin → API Keys) or username+password, plus
    the numeric database id for "Odoo Live Database" in Metabase (DT's is confirmed `6`; Odoo's
    isn't given — `GET /api/database` will list it once authenticated).
-3. **`AZURE_VISION_ENDPOINT` + `AZURE_VISION_API_KEY`** (Foundry Vision resource, promised but not
-   yet pasted) — also worth confirming the resource exposes the classic v3.2 Read surface, not
-   only the newer v4.0 API (which doesn't support PDF and would break the Guard pipeline).
-4. **A real sample guard-register PDF** — `GUARD_COLUMNS` (date/barcode/so_number/ticket_id/
-   product) is a reasonable guess, not confirmed against the actual form layout/handwriting.
-5. **Google Sheets IDs** — the 5 per-city spreadsheet IDs + service account key.
+3. ~~`AZURE_VISION_ENDPOINT` + `AZURE_VISION_API_KEY`~~ — **done.** Real credentials confirmed live
+   against the v3.2 Read surface (not the newer PDF-incompatible v4.0 API). No longer a blocker.
+4. **A real sample guard-register PDF** — column *names* are now confirmed (`GUARD_COLUMNS`/
+   `REGISTER_COLUMNS` updated to match, Phase 7b), but nobody has run an actual scan/photo through
+   the OCR + reconstruction heuristic yet, so real-world accuracy on handwriting is still unknown.
+5. ~~Google Sheets — real values in `.env.local`~~ — **done 2026-07-15.** Real service account key +
+   all 5 spreadsheet ids are live and pull-tested (see Phase 7c). No longer a blocker.
 6. **Confirm Odoo's `procure_method` values** with an Odoo admin (affects `jobType` mapping — see
    Phase 7 note above).
 7. **Rotate the DT `atlasAdmin` password** (shared in plaintext during testing) before go-live.

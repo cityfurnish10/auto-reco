@@ -15,10 +15,12 @@ import { Icon } from "@/components/icon";
 
 const COLUMN_LABELS: Record<string, string> = {
   date: "Date",
-  barcode: "Barcode",
   so_number: "SO Number",
   ticket_id: "Ticket ID",
   product: "Product",
+  po_number: "PO Number",
+  barcode: "Barcode",
+  operation_type: "Operation Type",
 };
 
 interface EditableRow extends ParsedGuardRow {

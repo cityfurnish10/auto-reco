@@ -31,8 +31,14 @@ function authorized(req: NextRequest): boolean {
   return header === `Bearer ${secret}`;
 }
 
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+// Reconciliation runs one day behind ("D-1") — it's only reliable once a
+// business day has fully closed out across all 4 sources (overnight ops
+// entries, Odoo end-of-day postings, etc.), so the default target date when
+// no `?date=` is given is yesterday, not today.
+function defaultRunDate(): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
 }
 
 async function handle(req: NextRequest) {
@@ -49,7 +55,7 @@ async function handle(req: NextRequest) {
     );
   }
 
-  const runDate = req.nextUrl.searchParams.get("date") || todayISO();
+  const runDate = req.nextUrl.searchParams.get("date") || defaultRunDate();
   const trigger = req.method === "POST" ? "manual" : "cron";
   const db = createAdminClient();
 

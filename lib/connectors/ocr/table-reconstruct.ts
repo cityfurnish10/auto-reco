@@ -22,12 +22,39 @@
 
 import type { OcrLine, OcrPoint } from "./azure-vision";
 
+// The register's real, confirmed columns, left to right (Sr. No, Date, SO
+// No, Ticket ID, Customer Name, PO No, Vendor, Product Name, Barcode,
+// Vehicle No, Delivery Associate, Operation Type). All 11 are needed here to
+// anchor column X-ranges off the header row correctly — reconstructing as if
+// the form only had the 7 columns we actually keep (below) would misalign
+// every column boundary once the OCR'd header has more cells than that.
+export const REGISTER_COLUMNS = [
+  "sr_no",
+  "date",
+  "so_number",
+  "ticket_id",
+  "customer_name",
+  "po_number",
+  "vendor",
+  "product",
+  "barcode",
+  "vehicle_no",
+  "delivery_associate",
+  "operation_type",
+] as const;
+
+// The subset actually surfaced to the reviewer, stored in parsed_rows, and
+// read by guard.ts — everything else on the register (Sr. No, Customer
+// Name, Vendor, Vehicle No, Delivery Associate) is reconstructed for
+// column-alignment purposes only and then discarded.
 export const GUARD_COLUMNS = [
   "date",
-  "barcode",
   "so_number",
   "ticket_id",
   "product",
+  "po_number",
+  "barcode",
+  "operation_type",
 ] as const;
 
 export interface ParsedRowCells {
@@ -127,17 +154,18 @@ function columnIndexFor(centerX: number, bounds: number[]): number {
 
 export function reconstructGrid(
   lines: OcrLine[],
-  columns: readonly string[] = GUARD_COLUMNS
+  columns: readonly string[] = GUARD_COLUMNS,
+  allColumns: readonly string[] = REGISTER_COLUMNS
 ): ParsedRowCells[] {
   const geoms = lines.map(geometry);
   const rows = groupIntoRows(geoms);
   if (rows.length <= 1) return []; // no body rows (just a header, or empty page)
 
   const [headerRow, ...bodyRows] = rows;
-  const bounds = columnBoundsFromHeader(headerRow, columns.length);
+  const bounds = columnBoundsFromHeader(headerRow, allColumns.length);
 
   return bodyRows.map((row, rowIndex) => {
-    const byColumn: string[][] = columns.map(() => []);
+    const byColumn: string[][] = allColumns.map(() => []);
     const confidences: number[] = [];
 
     for (const g of [...row].sort((a, b) => a.centerX - b.centerX)) {
@@ -147,8 +175,9 @@ export function reconstructGrid(
     }
 
     const cells: Record<string, string> = {};
-    columns.forEach((col, i) => {
-      cells[col] = byColumn[i].join(" ").trim();
+    columns.forEach((col) => {
+      const fullIdx = allColumns.indexOf(col);
+      cells[col] = fullIdx === -1 ? "" : byColumn[fullIdx].join(" ").trim();
     });
 
     return {
