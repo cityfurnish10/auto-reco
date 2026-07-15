@@ -12,6 +12,7 @@ import { detectDirectionConflicts } from "./direction-conflict";
 import { classify, duplicateHit } from "./ladder";
 import { filterOdooWindow } from "./odoo-window";
 import { computeSuppressions } from "./suppressions";
+import { isSpareJobType } from "./util";
 import { buildViews } from "./views";
 import { ALL_REPORTED } from "./types";
 import type {
@@ -62,7 +63,7 @@ export function runReconciliation(
     // Placeholder checks first — these labels are long enough to pass the
     // length/alnum test but must never run the normal ladder.
     if (isPpBox(r.barcode)) ppBoxRows.push(r);
-    else if (isSpareOrConsumable(r.barcode)) spareRows.push(r);
+    else if (isSpareOrConsumable(r.barcode) || isSpareJobType(r.jobType)) spareRows.push(r);
     else if (isValidBarcode(r.barcode)) valid.push(r);
   }
 

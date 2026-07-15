@@ -59,3 +59,17 @@ export function normalizeSO(raw: string | undefined | null): string | null {
 export function blank(v: string | undefined | null): boolean {
   return !v || v.toString().trim() === "";
 }
+
+// A row whose Ops Type / job type marks it a non-rental consumable/material,
+// not barcode-tracked stock — the ops sheet logs these as line items with an
+// SO of "NA". Observed families on the real sheets: "Spare Parts" (toilet
+// cleaner, copper pipe, cable wire), "Consumbles"/"Consumables" (barcode roll,
+// carbon roll), "Refurb Material" (cooling coil). They must surface as a
+// Spare/Consumable INFO row, not a REAL "no trail" variance, even when the
+// barcode text itself doesn't say "spare". CONSUM matches the common
+// misspelling; REFURB+MAT avoids catching a refurbished rental *unit*.
+export function isSpareJobType(jobType: string | undefined | null): boolean {
+  if (!jobType) return false;
+  const s = jobType.toString().toUpperCase();
+  return s.includes("SPARE") || s.includes("CONSUM") || (s.includes("REFURB") && s.includes("MAT"));
+}
