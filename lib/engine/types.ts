@@ -43,6 +43,19 @@ export interface SourcePresence {
   rawBarcodes: string[]; // distinct raw spellings that folded to this canonical
 }
 
+// Which sources actually reported for this city+run (connector OK and ≥1 row
+// for the city). An unreported source's absence is uninformative — the ladder
+// must not blame it (source outage / data-entry lag would otherwise flood the
+// dashboard with false HIGH variances). Default: all true (sample/demo data).
+export interface ReportedSources {
+  P: boolean; // PHYSICAL / guard register
+  S: boolean; // SHEET
+  D: boolean; // DT
+  O: boolean; // ODOO
+}
+
+export const ALL_REPORTED: ReportedSources = { P: true, S: true, D: true, O: true };
+
 export interface BarcodeView {
   canonical: string;
   direction: Direction;
@@ -51,6 +64,12 @@ export interface BarcodeView {
   S: SourcePresence;
   D: SourcePresence;
   O: SourcePresence;
+  // True when at least one Odoo row for this barcode was POSTED on the run
+  // date itself (createdOn == runDate). The Odoo pull spans ±1 day of postings
+  // to catch posting lag; an "Odoo-only" variance may only fire for same-day
+  // postings, so neighbours' movements pulled as match-targets never surface
+  // as false Odoo-only rows (each posting is judged once, in its own day's run).
+  odooSameDay: boolean;
   soNumber: string | null;
   ticketId: string | null;
   customer: string | null;

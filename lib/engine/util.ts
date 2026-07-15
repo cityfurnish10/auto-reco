@@ -13,7 +13,13 @@ export function normalizeStatus(raw: string | undefined | null): NormStatus {
     return "done";
   if (["pending", "in_transit", "transit", "ongoing"].includes(s))
     return "pending";
-  if (["not_done", "notdone", "failed", "absent", "missing", "cancelled", "canceled"].includes(s))
+  if (
+    [
+      "not_done", "notdone", "failed", "absent", "missing", "cancelled", "canceled",
+      // Ops-sheet "Physical Status" vocabulary (a failed delivery/pickup)
+      "not_delivered", "undelivered", "not_received", "not_picked",
+    ].includes(s)
+  )
     return "not_done";
   if (["non_match", "nonmatch", "mismatch", "wrong", "wrong_scan"].includes(s))
     return "non_match";

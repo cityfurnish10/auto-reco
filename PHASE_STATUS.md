@@ -1,6 +1,6 @@
 # Project Phase Status — CityFurnish Auto-Reconciliation Platform
 
-_Last updated: 2026-07-15 (DT + Google Sheets + Odoo connectors all live-verified — 3 of 4 sources live)_
+_Last updated: 2026-07-15 (reco-logic overhaul validated on real 12-July data: 727 false HIGHs → 85 real chase items)_
 
 A running record of what's **done** and what's **to be done**. The detailed backend design lives
 in [DB_Plan.md](./DB_Plan.md) (original plan) and [IMPLEMENTATION_PLAN_1.md](./IMPLEMENTATION_PLAN_1.md)
@@ -174,6 +174,54 @@ directly against the live Mongo cluster:
 | 7.6 | ~~Get Metabase credentials + Odoo database id~~ — **resolved 2026-07-15**: username/password provided, "Odoo Live Database" = db id **5** (auto-discovered via GET /api/database) | ✅ | `.env.local` |
 | 7.7 | **Google Sheets — service-account read → `SourceRow`** (Sheets API v4, per-tab Outward/Inward direction, header-name column mapping, blank-template-row-safe 200-row buffer, Sheets-serial + text date parsing) | ✅ **code done + live-verified against real data** | `lib/connectors/sheets.ts`, `sheets-mapping.ts` |
 | 7.8 | **Guard OCR — full pipeline built** (Azure Vision v3.2 async Read, Storage signed upload, per-page table reconstruction + direction detection, mandatory human review UI, `guard.ts` wired to read confirmed rows) | ✅ code done, ✅ Azure + migration 0003 both confirmed live — 🔒 only a real sample PDF left | see "Phase 7b" below |
+
+### Phase 7f — Reconciliation-logic overhaul, validated on real data (2026-07-15) — ✅
+
+Brainstormed the reco logic "like a warehouse manager" against **real 2026-07-12 data**
+(DT 607 + Odoo + Sheets rows, no guard) and the ops team's actual WhatsApp chase lists.
+The engine as-specced produced **727 false HIGH variances for one day** (ops manually chase
+~10-15). Root causes found by measurement, all fixed:
+
+1. **Odoo `sml.date` is the POSTING timestamp, not the movement date.** Measured: 237/607 DT
+   movements posted same-day, 302 next-day, 0 the day before. The old same-day-only pull missed
+   half of Odoo (39% DT↔Odoo overlap → 89% with a ±1-day posting window). Also the §4 per-city
+   window keyed on `create_date` — which is ORDER creation (0→14+ days before movement) — was
+   silently decimating Odoo coverage. Connector now pulls postings [R-1..R+1] and emits
+   `createdOn` = IST posting date; `odoo-window.ts` rewritten to a uniform ±1-day posting window.
+   Attribution safety: adjacent-day postings only ever MATCH (suppress false "Not in Odoo") —
+   the "Odoo-Only" rung requires a same-day posting (`BarcodeView.odooSameDay`), so each posting
+   is judged exactly once, in its own day's run.
+2. **Reported-source gating** (`ReportedSources`, threaded `pullAll → runAllCities → classify`):
+   a rung blaming a source's ABSENCE only fires when that source reported (connector OK, ≥1 row
+   for the city). Outage/unfilled-sheet now reads as "source down", not hundreds of false HIGHs
+   (MUMBAI: 129 false HIGHs → 4 real; HYDRABAD: 88 → 0). In the no-guard mode (the normal
+   nightly case), Sheet+DT-agree-Odoo-missing **escalates from INFO to REAL "Not in Odoo"** —
+   exactly the ops team's main manual chase item ("Odoo out missing" on WhatsApp).
+3. **jobType now sourced DT > Guard > Sheet > Odoo** (`views.ts` rank map). DT's values
+   ("Repair"/"Replace"/"New - Rental") normalize natively to the engine's REPAIR/REPLACE/
+   NEW_RENTAL; Odoo's `procurement_status` (ok/new) never matched, so the repair/replace
+   suppressions and direction-conflict skips were dead code on live data. Sheets/Guard now also
+   map their Operation Type column.
+4. **"Odoo-Only Entry" demoted REAL → INFO** (bucket layer, `original_priority` preserved):
+   measured 462/day, 98% ordinary ON-RET customer orders = Odoo batch-posting earlier days'
+   movements. Ops never chase these; a phantom posting is a periodic-audit item, not morning noise.
+5. **Failed-delivery rule** (new REAL "Failed Delivery — Return Not Logged"): an OUT entry whose
+   every status is not_done ("Not Delivered" — Sheets' Physical Status column is now mapped) is
+   exempt from the normal ladder (a failed delivery is *rightly* absent from Odoo/DT-done), but
+   its return leg must exist on the IN side — missing → chase item. Straight from ops practice
+   ("…missing in Reg inward pls check and write them in Reg inward").
+6. **PP boxes count-only** (new INFO "PP Box Movement (Count Only)"): free-text box entries
+   ("PP BOX - 29") no longer run the ladder as fake barcodes — one count row per direction.
+7. **Sheets buffer 200 → 1500 rows**: 200 only covered ~1 day of the busiest tab; a backfill
+   pull of an older date silently lost most rows (BAN: 20 of ~200 found → false flood).
+8. Vendor rows: PO Number now stands in for the blank SO (Sheets + Guard connectors).
+9. Also measured & cleared: canonicalize() OCR-fold collisions on digital sources = **0** across
+   1,656 real rows (fold is safe); cross-source direction disagreement = 8/384 multi-source
+   barcodes (~2%, all DT:OUT-vs-Odoo:IN appliance replacements — small, surfaces as legit noise).
+
+**Result on real 2026-07-12 (no guard): 727 false HIGHs → 85 REAL** (DELHI 64 — of which 59 are
+a genuine GUR Odoo-posting backlog — MUM 4, PUNE 6, BAN 11, HYD 0) + 353 INFO audit rows.
+Tests: 24 → 33, all green. The 4-source (guard-reported) ladder behavior is unchanged.
 
 ### Phase 7e — Cross-source normalization audit (this session) — ✅
 

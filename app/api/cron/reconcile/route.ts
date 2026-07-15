@@ -63,13 +63,16 @@ async function handle(req: NextRequest) {
 
   try {
     // 1. Pull all 4 sources (tolerant of individual failures).
-    const { rowsByCity, results, presentSources } = await pullAll(runDate);
+    const { rowsByCity, results, presentSources, reportedByCity } =
+      await pullAll(runDate);
 
     // 2. Persist the complete raw feed (pruned after 7 days).
     const sourceRowCount = await saveSourceRows(db, runId, runDate, rowsByCity);
 
-    // 3. Run the (unchanged) reconciliation engine.
-    const run = runAllCities(rowsByCity);
+    // 3. Run the reconciliation engine. reportedByCity tells the ladder which
+    //    sources actually answered per city — an outage or a not-yet-filled
+    //    sheet must read as "source down", never as a flood of false HIGHs.
+    const run = runAllCities(rowsByCity, new Date(), reportedByCity);
 
     // 4. Upsert variances (dedup key; human closures preserved).
     const varianceCount = await upsertVariances(db, runId, run.perCity);

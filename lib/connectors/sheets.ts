@@ -40,7 +40,13 @@ import { normalizeCity } from "./types";
 import { parseSheetDate } from "./sheets-mapping";
 import type { Direction } from "../engine/types";
 
-const ROW_BUFFER = 200;
+// Sized for backfill pulls, not just the nightly D-1 run: the busiest tab
+// (BAN Outward) logs ~150-200 rows/day, so 200 only covered "yesterday" and a
+// re-run for an older date silently lost most of that day's rows (measured:
+// a D-3 pull of 2026-07-12 found 20 of ~200 BAN rows → false variance flood).
+// The API call fetches the whole used range regardless — the buffer is just a
+// row-cap, so 1500 (~1 week of the busiest sheet) costs nothing extra.
+const ROW_BUFFER = 1500;
 const DEFAULT_OUTWARD_SHEET = "Outward";
 const DEFAULT_INWARD_SHEET = "Inward";
 const HEADER_SCAN_ROWS = 5;
@@ -134,9 +140,19 @@ function buildColumnIndex(headerRow: unknown[]) {
     date: col("date"),
     barcode: col("barcode", "barcodes", "barcode/id"),
     soNumber: col("so number", "so_number", "so no"),
+    // Vendor rows (Inward tab) carry a PO Number and a blank SO — used as the
+    // soNumber fallback so vendor items still have a join identifier.
+    poNumber: col("po number", "po_number", "po no"),
     ticketId: col("ticket id", "ticket_id"),
     customer: col("customer name", "customer"),
     product: col("sku", "product", "item name", "item code"),
+    // "Delivered"/"Received" → done; "Not Delivered" → not_done — drives the
+    // engine's failed-delivery rule (OUT logged as not delivered must have a
+    // matching IN return entry). Blank defaults to done (presence = done).
+    status: col("physical status", "status"),
+    // Ops Type text (New - Rental / Pick Up / Repair / Upgrade / …) — engine
+    // normalizes; REPAIR/REPLACE/NEW_RENTAL drive suppression rules.
+    opsType: col("ops type", "operations type", "ops_type", "operation type"),
   };
 }
 
@@ -197,17 +213,22 @@ export const sheetsConnector: Connector = {
           const barcode = str(line[idx.barcode]);
           if (!barcode) continue;
 
+          const soNumber = idx.soNumber !== -1 ? str(line[idx.soNumber]) : undefined;
+          const poNumber = idx.poNumber !== -1 ? str(line[idx.poNumber]) : undefined;
           rows.push({
             source: "SHEET",
             city,
             direction: tab.direction,
             barcode,
-            status: "done", // presence on the sheet = done (IMPLEMENTATION_PLAN.md §A3)
+            // Physical Status when present ("Delivered"/"Not Delivered"/…);
+            // blank = presence = done (IMPLEMENTATION_PLAN.md §A3).
+            status: (idx.status !== -1 ? str(line[idx.status]) : undefined) ?? "done",
             date,
-            soNumber: idx.soNumber !== -1 ? str(line[idx.soNumber]) : undefined,
+            soNumber: soNumber ?? poNumber, // vendor rows: PO stands in for SO
             ticketId: idx.ticketId !== -1 ? str(line[idx.ticketId]) : undefined,
             customer: idx.customer !== -1 ? str(line[idx.customer]) : undefined,
             product: idx.product !== -1 ? str(line[idx.product]) : undefined,
+            jobType: idx.opsType !== -1 ? str(line[idx.opsType]) : undefined,
           });
         }
       }

@@ -29,6 +29,18 @@ function presenceFor(view: BarcodeView, source: SourceKind): SourcePresence {
   }
 }
 
+// jobType source precedence. DT's jobType is the engine's native vocabulary
+// ("Repair"/"Replace"/"New - Rental" → REPAIR/REPLACE/NEW_RENTAL — verified on
+// live data 2026-07-12); guard/sheet Operation Type is the same ops language.
+// Odoo's procurement_status (ok/new/damaged) never matches the engine's terms,
+// so it's only a last-resort fill. Higher rank wins.
+const JOB_TYPE_RANK: Record<SourceKind, number> = {
+  DT: 4,
+  PHYSICAL: 3,
+  SHEET: 2,
+  ODOO: 1,
+};
+
 // rows are already: this city, this direction, valid barcodes only.
 export function buildViews(
   rows: SourceRow[],
@@ -36,6 +48,7 @@ export function buildViews(
   direction: Direction
 ): Map<string, BarcodeView> {
   const views = new Map<string, BarcodeView>();
+  const jobTypeRank = new Map<string, number>(); // canonical → rank of current jobType
 
   for (const row of rows) {
     const canonical = canonicalize(row.barcode);
@@ -49,6 +62,7 @@ export function buildViews(
         S: emptyPresence(),
         D: emptyPresence(),
         O: emptyPresence(),
+        odooSameDay: false, // set by run.ts once the run date is known
         soNumber: null,
         ticketId: null,
         customer: null,
@@ -73,8 +87,12 @@ export function buildViews(
     if (!view.ticketId && row.ticketId) view.ticketId = row.ticketId;
     if (!view.customer && row.customer) view.customer = row.customer;
     if (!view.product && row.product) view.product = row.product;
-    if (row.source === "ODOO" && row.jobType) {
-      view.jobType = normalizeJobType(row.jobType);
+    if (row.jobType) {
+      const rank = JOB_TYPE_RANK[row.source];
+      if (rank > (jobTypeRank.get(canonical) ?? 0)) {
+        view.jobType = normalizeJobType(row.jobType);
+        jobTypeRank.set(canonical, rank);
+      }
     }
     if (row.source === "DT" && normalizeStatus(row.status) === "non_match") {
       view.dtNonMatch = true;

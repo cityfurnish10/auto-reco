@@ -4,7 +4,7 @@
 // runAllCities() consumes.
 
 import { CITIES, type City } from "../sample-data";
-import type { SourceRow } from "../engine/types";
+import type { ReportedSources, SourceKind, SourceRow } from "../engine/types";
 import type { Connector, ConnectorResult, CityTaggedRow } from "./types";
 import { dtConnector } from "./dt";
 import { odooConnector } from "./odoo";
@@ -22,6 +22,11 @@ export interface PullAllResult {
   rowsByCity: Record<City, SourceRow[]>;
   results: ConnectorResult[];
   presentSources: number; // how many of the 4 returned OK
+  // Per city: which sources actually reported (connector OK AND ≥1 row for
+  // the city). Feeds the engine's reported-aware ladder so a source outage or
+  // a not-yet-filled ops sheet reads as "source down", not as a flood of
+  // false "missing in X" variances.
+  reportedByCity: Record<City, ReportedSources>;
 }
 
 async function runOne(c: Connector, runDate: string): Promise<ConnectorResult> {
@@ -68,9 +73,30 @@ export async function pullAll(runDate: string): Promise<PullAllResult> {
     }
   }
 
+  // reported = the connector succeeded AND returned ≥1 row for that city.
+  const FLAG: Record<SourceKind, keyof ReportedSources> = {
+    PHYSICAL: "P",
+    SHEET: "S",
+    DT: "D",
+    ODOO: "O",
+  };
+  const reportedByCity = Object.fromEntries(
+    CITIES.map((city) => {
+      const rep: ReportedSources = { P: false, S: false, D: false, O: false };
+      for (const r of results) {
+        if (!r.ok) continue;
+        if (r.rows.some((row) => (row as CityTaggedRow).city === city)) {
+          rep[FLAG[r.source]] = true;
+        }
+      }
+      return [city, rep];
+    })
+  ) as Record<City, ReportedSources>;
+
   return {
     rowsByCity,
     results,
     presentSources: results.filter((r) => r.ok).length,
+    reportedByCity,
   };
 }

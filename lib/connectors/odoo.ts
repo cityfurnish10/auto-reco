@@ -22,9 +22,20 @@
 
 import type { Connector, CityTaggedRow } from "./types";
 import type { Direction } from "../engine/types";
-import { istDayToUtcWindow } from "./ist-window";
+import { istDaySpanToUtcWindow, utcToIstDate } from "./ist-window";
 import { normalizeOdooWarehouse } from "./odoo-mapping";
 import { metabaseConfigured, runNativeSql } from "./metabase";
+
+// sml.date is the POSTING timestamp (Odoo stamps it at validation), not the
+// physical movement date. Measured on real data (2026-07-12): 237/607 DT
+// movements were posted same-day, 302 next-day, 0 the day before — so a pull
+// restricted to the run day's IST window misses half of Odoo and floods the
+// engine with false "Not in Odoo" variances. Pull [R-1 .. R+1] instead; the
+// engine's odoo-window (§4) then filters by posting date, and its "Odoo-only"
+// rung only fires for same-day postings (so R+1's own movements pulled here
+// as match-targets never surface as false Odoo-only rows for R).
+const POSTING_DAYS_BEFORE = 1;
+const POSTING_DAYS_AFTER = 1;
 
 // Native SQL, parameterized on the IST→UTC run-date window. Fetches both
 // directions, done-only, across all warehouses in one query; city split +
@@ -35,8 +46,6 @@ function buildQuery(startUtc: string, endUtcExclusive: string): string {
   return `
 SELECT
     sml.date                                        AS date,
-    sml.create_date                                 AS created_on,
-    sml.write_date                                  AS movement_date,
     sml.reference                                   AS ticket_id,
     so.name                                         AS so_number,
     sl.name                                         AS barcode,
@@ -90,7 +99,11 @@ export const odooConnector: Connector = {
     const dbId = Number(process.env.METABASE_ODOO_DB_ID);
     if (!dbId) throw new Error("METABASE_ODOO_DB_ID not set.");
 
-    const { startUtc, endUtcExclusive } = istDayToUtcWindow(runDate);
+    const { startUtc, endUtcExclusive } = istDaySpanToUtcWindow(
+      runDate,
+      POSTING_DAYS_BEFORE,
+      POSTING_DAYS_AFTER
+    );
     const table = await runNativeSql(dbId, buildQuery(startUtc, endUtcExclusive));
 
     const rows: CityTaggedRow[] = [];
@@ -106,13 +119,14 @@ export const odooConnector: Connector = {
         direction,
         barcode,
         status: "done", // query already filters state = 'done'
-        // `date` = the IST business date (uniform across all connectors — all
-        // emit runDate; sml.date is windowed to this IST day anyway). The
-        // full-precision UTC timestamps stay in createdOn/movementDate (the
-        // Odoo-window rule keys off createdOn, so it must retain time-of-day).
+        // `date` = the IST business date (uniform across all connectors).
         date: runDate,
-        createdOn: str(r.created_on),
-        movementDate: str(r.movement_date),
+        // `createdOn` = the IST calendar date this row was POSTED in Odoo
+        // (sml.date). The engine's §4 odoo-window keys off createdOn — it must
+        // be the posting date, NOT create_date (which is order creation, often
+        // weeks before the movement; feeding that in decimated Odoo coverage).
+        createdOn: utcToIstDate(r.date as string | null),
+        movementDate: str(r.date),
         soNumber: str(r.so_number),
         ticketId: str(r.ticket_id),
         customer: str(r.customer),

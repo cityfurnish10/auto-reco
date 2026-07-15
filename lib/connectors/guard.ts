@@ -39,9 +39,13 @@ export const guardConnector: Connector = {
           barcode,
           status: "done",
           date: runDate,
-          soNumber: row.cells.so_number || undefined,
+          // Vendor rows carry a PO number and a blank SO — PO stands in.
+          soNumber: row.cells.so_number || row.cells.po_number || undefined,
           ticketId: row.cells.ticket_id || undefined,
           product: row.cells.product || undefined,
+          // Operation Type (Delivery / Pick Up / Repair / …) — engine
+          // normalizes; REPAIR/REPLACE/NEW_RENTAL drive suppression rules.
+          jobType: row.cells.operation_type || undefined,
         });
       }
     }

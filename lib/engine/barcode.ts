@@ -16,6 +16,14 @@ export function isSpareOrConsumable(raw: string): boolean {
   return s.includes("spare") || s.includes("consumable");
 }
 
+// PP boxes (packing boxes) are logged in the ops sheet / guard register as
+// free-text counts ("PP BOX - 29", "PP Box 32\" TV - 03"), not real barcodes.
+// They must never run the per-barcode ladder — surfaced as one count-only
+// INFO row per direction instead (see run.ts).
+export function isPpBox(raw: string): boolean {
+  return /\bpp\s*box/i.test(raw);
+}
+
 // Valid = ≥5 chars, ≥1 alphanumeric, not a placeholder. Spare/consumable is
 // handled separately (surfaced as an INFO variance, not dropped here).
 export function isValidBarcode(raw: string): boolean {

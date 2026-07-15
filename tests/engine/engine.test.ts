@@ -72,24 +72,178 @@ describe("Section 5 — barcode validity & canonicalization", () => {
   });
 });
 
-describe("Section 4 — Odoo per-city window", () => {
-  const base = (city: "DELHI" | "BANGALORE") => [
+describe("Section 4 — Odoo posting-date window (uniform ±1 day)", () => {
+  const base = (createdOn: string) => [
     r({ source: "PHYSICAL", direction: "OUT", barcode: "ITEM-1", status: "done", date: RUN }),
-    r({ source: "ODOO", direction: "OUT", barcode: "ITEM-1", status: "done", createdOn: NEXT }),
+    r({ source: "ODOO", direction: "OUT", barcode: "ITEM-1", status: "done", createdOn }),
   ];
 
-  it("GUR (Delhi) keeps strictly next-day Odoo rows", () => {
-    const res = runReconciliation(base("DELHI"), "DELHI");
-    // Odoo present (next-day) + physical present, no S/D → not fully reconciled,
-    // but Odoo row was kept in-window (no warning about emptying).
-    expect(res.warnings).toHaveLength(0);
+  it("keeps a next-day posting for every city (posting lag is the norm)", () => {
+    for (const city of ["DELHI", "BANGALORE", "MUMBAI"] as const) {
+      const res = runReconciliation(base(NEXT), city);
+      expect(res.warnings).toHaveLength(0);
+      // Odoo matched the physical row → NOT "Register/DT"-style Odoo-missing.
+      expect(
+        res.variances.some((v) => v.variance_name.includes("Not in Odoo") || v.variance_name.includes("No Odoo"))
+      ).toBe(false);
+    }
   });
 
-  it("BAN keeps same-day Odoo; a next-day-only row falls back with a warning", () => {
-    const res = runReconciliation(base("BANGALORE"), "BANGALORE");
-    // BAN wants created_on == run; our row is next-day → window empties →
-    // fallback to all rows + warning (never silent zero).
+  it("a posting outside ±1 day falls back with a warning (never silent zero)", () => {
+    const res = runReconciliation(base("2026-07-20"), "BANGALORE");
     expect(res.warnings.length).toBeGreaterThan(0);
+  });
+
+  it("adjacent-day postings never surface as Odoo-Only (judged in their own run)", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        // Next-day posting, nothing else anywhere → match-target only.
+        r({ source: "ODOO", direction: "OUT", barcode: "LAGGED-1", status: "done", createdOn: NEXT }),
+      ],
+      "MUMBAI"
+    );
+    expect(
+      res.variances.find((v) => v.barcode === canonicalize("LAGGED-1"))
+    ).toBeUndefined();
+  });
+});
+
+describe("Reported-source gating (outage / no-guard modes)", () => {
+  const rep = (over: Partial<{ P: boolean; S: boolean; D: boolean; O: boolean }>) => ({
+    P: true, S: true, D: true, O: true, ...over,
+  });
+
+  it("no-guard mode: Sheet+DT agree, Odoo missing → REAL 'Not in Odoo' (the ops chase item)", () => {
+    const res = runReconciliation(
+      [
+        r({ source: "SHEET", direction: "OUT", barcode: "ITEM-2", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "ITEM-2", status: "done", date: RUN }),
+      ],
+      "MUMBAI",
+      rep({ P: false })
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-2"));
+    expect(v?.variance_name).toBe("Register/DT Logged — Not in Odoo");
+    expect(v?.bucket).toBe("REAL");
+  });
+
+  it("guard reported: same pattern stays the 4-source INFO cross-check", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "OUT", barcode: "ITEM-2", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "ITEM-2", status: "done", date: RUN }),
+      ],
+      "MUMBAI"
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-2"));
+    expect(v?.variance_name).toBe("Odoo Update Pending — Cross-Check");
+    expect(v?.bucket).toBe("INFO");
+  });
+
+  it("Odoo outage: absence variances against Odoo are silenced", () => {
+    const res = runReconciliation(
+      [
+        r({ source: "SHEET", direction: "OUT", barcode: "ITEM-3", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "ITEM-3", status: "done", date: RUN }),
+      ],
+      "MUMBAI",
+      rep({ P: false, O: false })
+    );
+    expect(
+      res.variances.find((x) => x.barcode === canonicalize("ITEM-3"))
+    ).toBeUndefined();
+  });
+
+  it("sheet not filled in (unreported): DT-only does NOT become Fake Scan Risk", () => {
+    const res = runReconciliation(
+      [
+        r({ source: "DT", direction: "OUT", barcode: "ITEM-4", status: "done", date: RUN }),
+        // Odoo reported for the city via another barcode:
+        r({ source: "ODOO", direction: "OUT", barcode: "OTHER-9", status: "done", createdOn: RUN }),
+      ],
+      "MUMBAI",
+      rep({ P: false, S: false })
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-4"));
+    // Floor sources both unreported → corroboration vacuous → Odoo-missing REAL.
+    expect(v?.variance_name).toBe("Register/DT Logged — Not in Odoo");
+  });
+
+  it("no-guard mode: Sheet+Odoo agree, DT missing → INFO (not Gate Log Missing)", () => {
+    const res = runReconciliation(
+      [
+        r({ source: "SHEET", direction: "OUT", barcode: "ITEM-5", status: "done" }),
+        r({ source: "ODOO", direction: "OUT", barcode: "ITEM-5", status: "done", createdOn: RUN }),
+        // date anchor (deriveRunDate needs a PHYSICAL/DT row):
+        r({ source: "DT", direction: "OUT", barcode: "ANCHOR-DT-1", status: "done", date: RUN }),
+        r({ source: "SHEET", direction: "OUT", barcode: "ANCHOR-DT-1", status: "done" }),
+        r({ source: "ODOO", direction: "OUT", barcode: "ANCHOR-DT-1", status: "done", createdOn: RUN }),
+      ],
+      "MUMBAI",
+      rep({ P: false })
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-5"));
+    expect(v?.variance_name).toBe("DT Missing — Ops & Odoo Agree");
+    expect(v?.bucket).toBe("INFO");
+  });
+});
+
+describe("Failed delivery & PP boxes (ops-practice rules)", () => {
+  it("OUT marked Not Delivered with no IN return entry → REAL chase item", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "OUT", barcode: "FAILED-1", status: "Not Delivered" }),
+      ],
+      "MUMBAI"
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("FAILED-1"));
+    expect(v?.variance_name).toBe("Failed Delivery — Return Not Logged");
+    expect(v?.bucket).toBe("REAL");
+  });
+
+  it("OUT Not Delivered WITH an IN return entry → silent (return was logged)", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "OUT", barcode: "FAILED-2", status: "Not Delivered" }),
+        r({ source: "SHEET", direction: "IN", barcode: "FAILED-2", status: "done" }),
+        r({ source: "DT", direction: "IN", barcode: "FAILED-2", status: "done", date: RUN }),
+        r({ source: "ODOO", direction: "IN", barcode: "FAILED-2", status: "done", createdOn: RUN }),
+      ],
+      "MUMBAI",
+      { P: false, S: true, D: true, O: true }
+    );
+    expect(
+      res.variances.find(
+        (x) => x.barcode === canonicalize("FAILED-2") && x.variance_name === "Failed Delivery — Return Not Logged"
+      )
+    ).toBeUndefined();
+    // And the not-delivered OUT row must not fire Sheet-Only either.
+    expect(
+      res.variances.find(
+        (x) => x.barcode === canonicalize("FAILED-2") && x.direction === "OUT"
+      )
+    ).toBeUndefined();
+  });
+
+  it("PP box entries collapse to one count-only INFO row per direction", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "OUT", barcode: "PP BOX - 29", status: "done" }),
+        r({ source: "SHEET", direction: "OUT", barcode: 'PP Box 32" TV - 03', status: "done" }),
+      ],
+      "MUMBAI"
+    );
+    const pp = res.variances.filter((v) => v.variance_name === "PP Box Movement (Count Only)");
+    expect(pp).toHaveLength(1);
+    expect(pp[0].bucket).toBe("INFO");
+    expect(pp[0].note).toContain("2 PP-box");
+    // They must never run the normal ladder as fake barcodes.
+    expect(res.variances.some((v) => v.variance_name === "Sheet-Only Dispatch — No Trail")).toBe(false);
   });
 });
 
@@ -107,12 +261,15 @@ describe("Section 6 — variance ladder", () => {
       "MUMBAI"
     );
 
-  it("Odoo-only → Odoo-Only Entry (REAL, High)", () => {
+  it("Odoo-only → Odoo-Only Entry (INFO tally; natural priority preserved)", () => {
     const res = one([{ source: "ODOO", createdOn: RUN }]);
     const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-1"));
     expect(v?.variance_name).toBe("Odoo-Only Entry — No Floor Record");
-    expect(v?.bucket).toBe("REAL");
-    expect(v?.priority).toBe("High");
+    // Measured on live data: these are overwhelmingly Odoo batch-posting
+    // earlier days' movements — an audit tally, not a morning chase item.
+    expect(v?.bucket).toBe("INFO");
+    expect(v?.priority).toBe("Info");
+    expect(v?.original_priority).toBe("High");
   });
 
   it("gate-only → Gate-Only Dispatch (REAL)", () => {

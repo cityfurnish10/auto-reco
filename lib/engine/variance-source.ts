@@ -19,8 +19,12 @@ const SOURCE_OF: Record<string, SourceLabel> = {
   // Delivery Tracker scan issue
   "Fake Scan Risk": "DT",
   "DT-Only — Fake Scan Risk": "DT",
+  "DT Missing — Ops & Odoo Agree": "DT",
   // Ops sheet is the source
   "Sheet-Only Dispatch — No Trail": "Sheet",
+  "Ops Sheet Missing — DT & Odoo Agree": "Sheet",
+  "Failed Delivery — Return Not Logged": "Sheet",
+  "PP Box Movement (Count Only)": "Sheet",
   // Physical / gate register
   "Gate-Only Dispatch — No Ops/Odoo Trail": "Physical",
   "Ops-Sheet Confirmed — Gate Log Missing": "Physical",
