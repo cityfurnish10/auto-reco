@@ -37,7 +37,7 @@
 import { google, sheets_v4 } from "googleapis";
 import type { Connector, CityTaggedRow } from "./types";
 import { normalizeCity } from "./types";
-import { resolveSheetDate } from "./sheets-mapping";
+import { detectDateOrder, resolveSheetDate } from "./sheets-mapping";
 import type { Direction } from "../engine/types";
 
 // Sized for backfill pulls, not just the nightly D-1 run: the busiest tab
@@ -227,8 +227,16 @@ export const sheetsConnector: Connector = {
           dataRows.push({ line: values[i], serialCell, displayCell });
         }
         const recentRows = dataRows.slice(-ROW_BUFFER); // last N real data rows only
+
+        // Detect THIS sheet's date field order from its own recent rows (the
+        // latest appended rows are the current month, so their day-of-month
+        // values 13..31 reveal whether it writes day-first or month-first —
+        // e.g. DELHI "7/13" = month-first, HYD "13-07" = day-first). Ambiguous
+        // both-≤12 dates (like the 12th) are then read with that order.
+        const dateOrder = detectDateOrder(recentRows.map((r) => r.displayCell));
+
         for (const { line, serialCell, displayCell } of recentRows) {
-          const date = resolveSheetDate(serialCell, displayCell, runDate);
+          const date = resolveSheetDate(serialCell, displayCell, dateOrder, runDate);
           if (date !== runDate) continue; // filter to the run's business date
 
           const barcode = str(line[idx.barcode]);

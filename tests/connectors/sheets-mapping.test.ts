@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseDisplayDate, resolveSheetDate } from "../../lib/connectors/sheets-mapping";
-
-const RUN = "2026-07-12";
+import {
+  detectDateOrder,
+  parseDisplayDate,
+  resolveSheetDate,
+} from "../../lib/connectors/sheets-mapping";
 
 describe("parseDisplayDate — timezone-safe, day-first-when-ambiguous", () => {
   it("reads ISO and unambiguous D/M or M/D", () => {
@@ -21,26 +23,50 @@ describe("parseDisplayDate — timezone-safe, day-first-when-ambiguous", () => {
   });
 });
 
-describe("resolveSheetDate — reconciles a raw serial with the displayed string", () => {
-  it("DELHI shape: correct serial, US M/D/Y display → trust the serial", () => {
-    // serial 46215 = 2026-07-12; display "7/12/2026" (month-first)
-    expect(resolveSheetDate(46215, "7/12/2026", RUN)).toBe("2026-07-12");
-    // the next day's row (serial 46216 = 13 Jul) stays the 13th, not the run
-    expect(resolveSheetDate(46216, "7/13/2026", RUN)).toBe("2026-07-13");
+describe("detectDateOrder — field order from a sheet's own recent rows", () => {
+  it("DELHI recent rows (7/13, 7/14, 7/25) → month-first", () => {
+    expect(detectDateOrder(["7/13/2026", "7/14/2026", "7/12/2026", "7/25/2026"])).toBe("MDY");
   });
 
-  it("HYD/MUM shape: MM/DD-corrupted serial, correct India display → trust display", () => {
-    // "12-07" entered as 12 Jul but stored MM-DD → serial 46363 = 7 Dec.
-    expect(resolveSheetDate(46363, "12-07-2026", RUN)).toBe("2026-07-12");
+  it("HYD recent rows (13-07, 14-07, 25-07) → day-first", () => {
+    expect(detectDateOrder(["13-07-2026", "14-07-2026", "12-07-2026", "25-07-2026"])).toBe("DMY");
   });
 
-  it("text-typed date cell (no serial) → day-first display", () => {
-    expect(resolveSheetDate("13-07-2026", "13-07-2026", RUN)).toBe("2026-07-13");
+  it("all-ambiguous sample → null (caller defaults day-first)", () => {
+    expect(detectDateOrder(["07-12-2026", "05-06-2026"])).toBeNull();
+  });
+});
+
+describe("resolveSheetDate — run-month anchor ('7 = July') + citywise order", () => {
+  const RUN = "2026-07-12";
+
+  it("DELHI (month-first '7/12'): 7 = July → 12 Jul; the 13th stays the 13th", () => {
+    expect(resolveSheetDate(46215, "7/12/2026", "MDY", RUN)).toBe("2026-07-12");
+    expect(resolveSheetDate(46216, "7/13/2026", "MDY", RUN)).toBe("2026-07-13");
   });
 
-  it("a genuine far-past row is not dragged onto the run date", () => {
-    // serial 46180 ≈ 7 Jun; display agrees → stays June, filtered out of a July run
-    const d = resolveSheetDate(46180, "07-06-2026", RUN);
-    expect(d).not.toBe(RUN);
+  it("HYD (day-first '12-07'): 07 = July → 12 Jul despite corrupt serial (46363=7 Dec)", () => {
+    expect(resolveSheetDate(46363, "12-07-2026", "DMY", RUN)).toBe("2026-07-12");
+  });
+
+  it("MUM (month-first sheet, operator typed '12/7' meaning 12 Jul): anchor recovers 12 Jul", () => {
+    // The killer case: sheet order is MDY so "12/7" renders/stores as 7 Dec,
+    // but the run-month anchor reads the 7 as July → 12 Jul.
+    expect(resolveSheetDate(46363, "12/7/2026", "MDY", RUN)).toBe("2026-07-12");
+  });
+
+  it("an unambiguous field (>12) is always the day, regardless of order", () => {
+    expect(resolveSheetDate(null, "13-07-2026", "MDY", RUN)).toBe("2026-07-13");
+    expect(resolveSheetDate(null, "7/13/2026", "DMY", RUN)).toBe("2026-07-13");
+  });
+
+  it("an ambiguous non-run-month date falls back to the sheet's order (and is filtered out)", () => {
+    // "05/06" with runMonth 7 → neither field is 7 → use order.
+    expect(resolveSheetDate(null, "05/06/2026", "DMY", RUN)).toBe("2026-06-05");
+    expect(resolveSheetDate(null, "05/06/2026", "MDY", RUN)).toBe("2026-05-06");
+  });
+
+  it("no parseable display → the raw serial", () => {
+    expect(resolveSheetDate(46215, "", null, RUN)).toBe("2026-07-12");
   });
 });

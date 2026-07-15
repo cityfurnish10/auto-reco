@@ -38,6 +38,36 @@ function fullYear(y: number): number {
   return y < 100 ? 2000 + y : y;
 }
 
+// Which field comes first in a sheet's displayed dates.
+//   "DMY" — day-first, e.g. HYD "13-07-2026" (13 = day, 07 = July)
+//   "MDY" — month-first, e.g. DELHI "7/13/2026" (7 = July, 13 = day)
+export type DateOrder = "DMY" | "MDY";
+
+// Detect a sheet column's field order from its OWN displayed dates. The signal
+// is the unambiguous rows: any date with a field > 12 pins the order (that
+// field can only be the day). The latest appended rows — the current month
+// (July) — are where this shows up, since real day-of-month values run 13..31
+// there. E.g. DELHI's recent "7/13/2026": 13 can't be a month, so 13 is the
+// day and the leading 7 is July-the-MONTH (month-first). HYD's "13-07-2026":
+// 13 leads, so day-first. Majority vote across the sampled cells; null when
+// every sampled date is ambiguous (all fields ≤ 12), in which case callers
+// fall back to day-first (the India default).
+export function detectDateOrder(displayCells: Iterable<unknown>): DateOrder | null {
+  let dmy = 0;
+  let mdy = 0;
+  for (const cell of displayCells) {
+    const m = RE_SEP.exec(String(cell ?? "").trim());
+    if (!m) continue;
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    if (a > 12 && b <= 12) dmy++; // first field must be the day → day-first
+    else if (b > 12 && a <= 12) mdy++; // second field must be the day → month-first
+  }
+  if (dmy === 0 && mdy === 0) return null;
+  return dmy >= mdy ? "DMY" : "MDY";
+}
+
+
 // Parse a DISPLAYED date string, day-first when ambiguous (India convention).
 // Timezone-safe (string arithmetic only — never Date.parse, whose result then
 // gets toISOString()'d and silently shifts a day at IST). A field > 12 forces
@@ -70,36 +100,52 @@ export function parseSheetDate(raw: unknown): string | null {
   return parseDisplayDate(raw);
 }
 
-function daysBetween(a: string, b: string): number {
-  const [ay, am, ad] = a.split("-").map(Number);
-  const [by, bm, bd] = b.split("-").map(Number);
-  return Math.abs((Date.UTC(ay, am - 1, ad) - Date.UTC(by, bm - 1, bd)) / 86400000);
-}
-
-// How far a serial can sit from the run date before we treat it as a
-// locale-corrupted entry and believe the displayed string instead. The real
-// posting/movement dates are within a day or two of the run; the corruption
-// we've seen throws dates ~150 days off, so 25 cleanly separates the two.
-const SERIAL_CORRUPTION_DAYS = 25;
-
 // The one function the connector calls per row. `serialCell` is the raw
 // UNFORMATTED value (a number for real date cells, a string for text-typed
-// ones); `displayCell` is the FORMATTED value (what the operator sees/typed).
-// Returns the row's business date, resolving the serial-vs-display conflict:
-//   1. serial present & plausibly near the run  → trust the machine value
-//      (handles DELHI: correct serial, US-format display).
-//   2. serial corrupt/missing                    → trust the day-first display
-//      (handles HYD/MUM: correct display, MM/DD-corrupted serial).
+// ones); `displayCell` is the FORMATTED value (what the operator sees/typed);
+// `order` is the sheet's own detected field order (fallback); `runDate` is the
+// IST business day being reconciled.
+//
+// Resolution priority for the displayed date string:
+//   1. ISO (yyyy-mm-dd) — unambiguous.
+//   2. A field > 12 must be the day — pins the order regardless of anything.
+//   3. RUN-MONTH ANCHOR ("7 = July"): the latest appended rows are the current
+//      operational month, so for an ambiguous date (both fields ≤ 12) the field
+//      that equals the run's month IS the month and the other is the day. This
+//      is the ONLY thing that recovers a locale mis-entry the sheet itself
+//      stored wrong — MUMBAI writes month-first and the operator typed "12/7"
+//      meaning 12 July, which the sheet saved/renders as 7 Dec; anchoring on
+//      the run month (7 = July) recovers 12 July. (Sound because the pipeline
+//      is strictly D-1 — there is no future-month data to alias onto today.)
+//   4. Otherwise fall back to the sheet's detected field order (day-first when
+//      none was detected — the India default).
+//   5. No parseable display → the raw serial.
 export function resolveSheetDate(
   serialCell: unknown,
   displayCell: unknown,
+  order: DateOrder | null,
   runDate: string
 ): string | null {
-  const serialIso = typeof serialCell === "number" ? serialToIso(serialCell) : parseDisplayDate(serialCell);
-  const displayIso = parseDisplayDate(displayCell);
+  const s = String(displayCell ?? "").trim();
 
-  if (serialIso && (!displayIso || daysBetween(serialIso, runDate) <= SERIAL_CORRUPTION_DAYS)) {
-    return serialIso;
+  const iso = RE_ISO.exec(s);
+  if (iso) return ymd(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+
+  const m = RE_SEP.exec(s);
+  if (m) {
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    const year = fullYear(Number(m[3]));
+    const runMonth = Number(runDate.slice(5, 7));
+
+    if (a > 12 && b <= 12) return ymd(year, b, a); // a is the day
+    if (b > 12 && a <= 12) return ymd(year, a, b); // b is the day
+    // Ambiguous (both ≤ 12) → run-month anchor: the "7" is July-the-month.
+    if (a === runMonth && b !== runMonth) return ymd(year, a, b); // a = month
+    if (b === runMonth && a !== runMonth) return ymd(year, b, a); // b = month
+    // Neither/both equal the run month → the sheet's own field order.
+    return order === "MDY" ? ymd(year, a, b) : ymd(year, b, a);
   }
-  return displayIso ?? serialIso;
+
+  return typeof serialCell === "number" ? serialToIso(serialCell) : null;
 }
