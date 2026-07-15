@@ -24,8 +24,12 @@ import { deriveDtDirection, DT_EXCLUDED_JOB_TYPES } from "./dt-mapping";
 
 const DT_PARENT_COLLECTION = process.env.DT_TASKS_COLLECTION ?? "deliveries";
 
+// Trim so identifiers/text match across sources (Sheets/Guard already trim);
+// stray whitespace in a barcode would otherwise be a distinct raw spelling.
 function str(v: unknown): string | undefined {
-  return v == null ? undefined : String(v);
+  if (v == null) return undefined;
+  const s = String(v).trim();
+  return s === "" ? undefined : s;
 }
 
 // Date fields come back from the driver as BSON Date objects. String(date)
@@ -164,12 +168,17 @@ export const dtConnector: Connector = {
           direction,
           barcode,
           status: "done", // pipeline already filtered to items.status === "2"
-          date: movementDate,
+          // `date` = the IST business date this row was reconciled for. The
+          // rows are windowed on scheduledDate == runDate, so runDate IS the
+          // business date; items.updatedAt (the completion timestamp, which can
+          // land on the next calendar day) is kept in movementDate. Uniform
+          // with every other connector — all emit runDate here (Section 3).
+          date: runDate,
           movementDate,
           createdOn: dateStr(doc.createdOn),
           soNumber: str(doc.soNumber),
           ticketId: str(doc.ticketId),
-          customer: str(doc.customer)?.trim(),
+          customer: str(doc.customer),
           product: str(doc.product),
           jobType: str(doc.jobType),
         });

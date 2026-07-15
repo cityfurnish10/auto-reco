@@ -1,6 +1,6 @@
 # Project Phase Status — CityFurnish Auto-Reconciliation Platform
 
-_Last updated: 2026-07-15 (Google Sheets + DT MongoDB connectors both live-verified against real data)_
+_Last updated: 2026-07-15 (DT + Google Sheets + Odoo connectors all live-verified — 3 of 4 sources live)_
 
 A running record of what's **done** and what's **to be done**. The detailed backend design lives
 in [DB_Plan.md](./DB_Plan.md) (original plan) and [IMPLEMENTATION_PLAN_1.md](./IMPLEMENTATION_PLAN_1.md)
@@ -22,7 +22,7 @@ in [DB_Plan.md](./DB_Plan.md) (original plan) and [IMPLEMENTATION_PLAN_1.md](./I
 | 4 | Source connectivity verification (DT MongoDB) | ✅ done |
 | 5 | Supabase database — schema live, 6 tables + RLS + 6 users, verified | ✅ **done, live** |
 | 6 | API routes (variances/runs/stats/sources) | ✅ done (code) — testable now, not yet tested |
-| 7 | Connectors (**DT + Sheets live-verified**; Guard OCR code+infra ready; Odoo code-ready) | 🟡 DT + Sheets live; Guard needs a sample PDF; Odoo 🔒 on Metabase creds |
+| 7 | Connectors (**DT + Sheets + Odoo all live-verified**; Guard OCR code+infra ready) | 🟢 3 of 4 sources live; Guard just needs a real sample PDF |
 | 8 | Dashboard reads from Supabase + retention | ⬜ |
 | 9 | Cron scheduling, System Health, Email digest | ⬜ |
 
@@ -168,12 +168,35 @@ directly against the live Mongo cluster:
 |---|------|--------|---------|
 | 7.1 | DT connector — `deliveries`+`orderfromcityfurnishes` aggregation (§18), direction derivation (§14, 6-rule switch), done-only filter (§15), city map (§20) | ✅ **code done + live-verified: 357 rows for D-1 across all 5 cities, both directions** | `lib/connectors/dt.ts`, `dt-mapping.ts` |
 | 7.2 | Shared IST-day→UTC window helper (§4/§17) | ✅ | `lib/connectors/ist-window.ts` |
-| 7.3 | Metabase REST client (API-key or session auth, native SQL) | ✅ | `lib/connectors/metabase.ts` |
-| 7.4 | Odoo connector rewritten to Metabase native SQL (§6), city map (§8) | ✅ code done, untested (no Metabase creds yet) | `lib/connectors/odoo.ts`, `odoo-mapping.ts` |
+| 7.3 | Metabase REST client (API-key or session auth, native SQL) | ✅ **live-verified** (username/password session against db 5) | `lib/connectors/metabase.ts` |
+| 7.4 | **Odoo connector — Metabase native SQL against `stock_move_line`** (denormalized `movement_type`→direction, `procurement_status`→jobType, JSONB product extraction, `sale_order` join for SO number), city map (§8) | ✅ **code done + live-verified: 445 rows for D-1 across all 5 cities, both directions** | `lib/connectors/odoo.ts`, `odoo-mapping.ts` |
 | 7.5 | ~~Get a working `DT_MONGODB_URI`~~ — **resolved 2026-07-15**: existing URI was fine; parent collection was `deliveries`, not the empty `tasks` | ✅ | `lib/connectors/dt.ts` |
-| 7.6 | **Get Metabase credentials** (API key, or username+password) + the Odoo database id in Metabase | ⬜ 🔒 | — |
+| 7.6 | ~~Get Metabase credentials + Odoo database id~~ — **resolved 2026-07-15**: username/password provided, "Odoo Live Database" = db id **5** (auto-discovered via GET /api/database) | ✅ | `.env.local` |
 | 7.7 | **Google Sheets — service-account read → `SourceRow`** (Sheets API v4, per-tab Outward/Inward direction, header-name column mapping, blank-template-row-safe 200-row buffer, Sheets-serial + text date parsing) | ✅ **code done + live-verified against real data** | `lib/connectors/sheets.ts`, `sheets-mapping.ts` |
 | 7.8 | **Guard OCR — full pipeline built** (Azure Vision v3.2 async Read, Storage signed upload, per-page table reconstruction + direction detection, mandatory human review UI, `guard.ts` wired to read confirmed rows) | ✅ code done, ✅ Azure + migration 0003 both confirmed live — 🔒 only a real sample PDF left | see "Phase 7b" below |
+
+### Phase 7e — Cross-source normalization audit (this session) — ✅
+
+Checked that all 4 connectors normalize into the shared `SourceRow` shape identically:
+
+| Field | DT | Odoo | Sheets | Guard | Verdict |
+|---|---|---|---|---|---|
+| **city** | `normalizeCity` (name) | `normalizeOdooWarehouse` (code) | `normalizeCity` (config key) | stored `City` | ✅ different inputs → same `City` union |
+| **direction** | §14 6-rule switch | `movement_type` | per-tab Outward/Inward | per-row (review) | ✅ all emit `IN`/`OUT`, skip if unresolved |
+| **status** | `"done"` | `"done"` | `"done"` | `"done"` | ✅ |
+| **barcode** | — | — | — | — | ✅ engine `canonicalize()` (upper + strip ws + OCR-fold) normalizes the join key uniformly; connectors now also all trim |
+| **date** | was raw UTC ISO ts | was raw UTC ISO ts | IST `YYYY-MM-DD` | IST `YYYY-MM-DD` | ⚠️ **was inconsistent → fixed** |
+
+**The one real discrepancy — the `date` field — fixed:** DT and Odoo were emitting full UTC ISO
+timestamps while Sheets/Guard emitted IST `YYYY-MM-DD`. Worse, DT sourced `date` from
+`items.updatedAt` (the barcode-scan completion time, which can land on the *next* calendar day),
+so a 2026-07-14 run produced DT `date`s spanning 07-12/07-14/07-15. That feeds
+`deriveRunDate()` (which only reads PHYSICAL+DT `date`) and risked the engine picking the wrong
+business day → variances filed under a date the dashboard doesn't query.
+Fix: every connector now sets `date = runDate` (the IST business date it was windowed on — the
+correct semantic; the precise completion timestamp is preserved separately in `movementDate`).
+Live-verified: DT 369 rows + Odoo 445 rows for a 2026-07-14 pull, all `date == "2026-07-14"`.
+Also unified field trimming (DT/Odoo `str()` now trims like Sheets/Guard).
 
 ### Phase 7c — Google Sheets connector (this session) — ✅ code complete, ✅ **live-verified against real data**
 
@@ -227,6 +250,38 @@ directly against the live Mongo cluster:
   (`todayISO()`). Reconciliation is a D-1 process (a business day is only complete, across all 4
   sources, after it's fully closed out overnight) — every connector's date-window logic is written
   against that assumption. Renamed to `defaultRunDate()` and fixed to return yesterday's date.
+
+### Phase 7d — Odoo connector (this session) — ✅ code complete, ✅ **live-verified against real data + a real export**
+
+- **Transport:** Metabase native SQL (`/api/dataset`) against the "**Odoo Live Database**" Postgres
+  connection, **database id 5** (auto-discovered via `GET /api/database`; DT's Mongo is id 6).
+  Auth: Metabase **username/password** session (`METABASE_USERNAME`/`METABASE_PASSWORD`), the
+  method the user has. Login + query confirmed live.
+- **Ground-truth reference:** the user supplied a real Odoo export (`BAN-system in out.xlsx` — the
+  BAN warehouse's In/Out `stock_move_line` rows for 12–13 Jul, 110 IN + 128 OUT). The connector
+  query was reverse-engineered and validated against it column-by-column.
+- **Key finding — everything is denormalized onto `stock_move_line`**, so the doc's (§6) multi-join
+  direction-derivation was unnecessary. The real fields:
+  - `movement_type` → `"In"`/`"Out"`/`"In Transit"` — **direction is a direct column** (we keep
+    In/Out, filter out "In Transit" + null).
+  - `procurement_status` → `"ok"`/`"new"`/`"damaged"`/`"partially_damaged"`/`"incomplete"` — this
+    is the export's "**Procurement Condition**" column → `jobType`. (The doc guessed `procure_method`,
+    which actually holds `make_to_stock`/`make_to_order` — a red herring.)
+  - `product_template.name` is **JSONB** (`{"en_US": "..."}`) — extracted with `->>'en_US'` (raw
+    column would have stored the whole translation map as the product name — a real bug avoided).
+  - `sale_order` join (`sml.sale_order_id`) → `so.name` = the `ON-RET-…` SO number; `sml.reference`
+    (e.g. `BAN/IN/22557`) → `ticketId`.
+- **Warehouse codes:** live DB has 8 (`BAN, GGN, GUR, HYD, JDH, MUM, NOI, PUN`); only 5 carry active
+  movements and map to the 5 cities. Added `GGN`/`NOI` → DELHI (NCR) defensively; `JDH` (Jodhpur)
+  intentionally unmapped → skipped (not a reco city). `odoo-mapping.ts`.
+- **Live verification (2026-07-15):** compiled + ran `odooConnector.pull()`. `pull("2026-07-14")`
+  (D-1) → **445 rows** across all 5 cities, both directions (BAN 97 IN/92 OUT, PUN 58/22, MUM
+  35/58, HYD 8/24, DELHI 34/17); `pull("2026-07-13")` → 490 rows (BAN 102 IN/112 OUT — closely
+  tracks the export's ~110/128 scale, the small delta being day-boundary bucketing: the export is
+  a naive 2-day manual pull, the connector uses precise IST windows).
+- **Open (unchanged, DB MODEL.md §10):** `procurement_status` values (ok/new/damaged/…) still don't
+  map to the engine's `REPAIR`/`REPLACE`/`NEW_RENTAL` jobType vocabulary. Passed through verbatim
+  for now — needs a business decision on the mapping, but doesn't block barcode-first reconciliation.
 
 ### Phase 7b — Guard Register OCR pipeline (this session, code complete)
 
@@ -293,10 +348,12 @@ unverified.
 actually consumes; would need a generic `extra?: Record<string,unknown>` bag threaded through
 `persist.ts` if you want full raw-field capture later.
 
-**Also flagged, not resolved (DB MODEL.md's own open decision, §10):** Odoo's `procure_method`
-values (`"Ok"`/`"New"`) don't match the engine's `REPAIR`/`REPLACE`/`NEW_RENTAL` vocabulary yet —
-`jobType` is passed through as-is; the Odoo-window/repair-suppression engine rules that key off
-those exact strings won't fire for Odoo rows until this is confirmed with an Odoo admin.
+**Also flagged, partly clarified (DB MODEL.md §10):** the real Odoo "job type" field is
+`stock_move_line.procurement_status` (NOT `procure_method`, which holds `make_to_stock`/
+`make_to_order`). Its live values are `ok`/`new`/`damaged`/`partially_damaged`/`incomplete`. These
+still don't match the engine's `REPAIR`/`REPLACE`/`NEW_RENTAL` vocabulary, so `jobType` is passed
+through as-is and the Odoo-window/repair-suppression rules keyed to those exact strings won't fire
+for Odoo rows until a business decision maps `procurement_status` → engine job types.
 
 ## ⬜ Phase 8 — Frontend Rewire
 - ⬜ Swap `admin-dashboard.tsx` / `manager-dashboard.tsx` off `demo-store.tsx` sample data onto
@@ -319,9 +376,10 @@ those exact strings won't fire for Odoo rows until this is confirmed with an Odo
 1. ~~A `DT_MONGODB_URI` with a populated `tasks` collection~~ — **resolved 2026-07-15.** The existing
    URI was correct; the parent collection is `deliveries`, not the empty `tasks`. DT is live
    (357 rows for D-1, all 5 cities). No longer a blocker.
-2. **Metabase credentials** — an API key (preferred, Admin → API Keys) or username+password, plus
-   the numeric database id for "Odoo Live Database" in Metabase (DT's is confirmed `6`; Odoo's
-   isn't given — `GET /api/database` will list it once authenticated).
+2. ~~Metabase credentials + Odoo database id~~ — **resolved 2026-07-15.** Username/password provided;
+   "Odoo Live Database" = db id **5**. Odoo connector is live (445 rows for D-1, all 5 cities). No
+   longer a blocker. (Optional hardening: swap the personal login for a dedicated Metabase **API
+   key** before go-live so the cron doesn't depend on one user's password.)
 3. ~~`AZURE_VISION_ENDPOINT` + `AZURE_VISION_API_KEY`~~ — **done.** Real credentials confirmed live
    against the v3.2 Read surface (not the newer PDF-incompatible v4.0 API). No longer a blocker.
 4. **A real sample guard-register PDF** — column *names* are now confirmed (`GUARD_COLUMNS`/
@@ -329,7 +387,9 @@ those exact strings won't fire for Odoo rows until this is confirmed with an Odo
    the OCR + reconstruction heuristic yet, so real-world accuracy on handwriting is still unknown.
 5. ~~Google Sheets — real values in `.env.local`~~ — **done 2026-07-15.** Real service account key +
    all 5 spreadsheet ids are live and pull-tested (see Phase 7c). No longer a blocker.
-6. **Confirm Odoo's `procure_method` values** with an Odoo admin (affects `jobType` mapping — see
+6. **Map Odoo `procurement_status` → engine job types** — the real field is now known
+   (`stock_move_line.procurement_status`, values ok/new/damaged/…); needs a business decision on how
+   those map to `REPAIR`/`REPLACE`/`NEW_RENTAL` (affects `jobType` — see
    Phase 7 note above).
 7. **Rotate the DT `atlasAdmin` password** (shared in plaintext during testing) before go-live.
 8. **Rotate the Supabase DB password** (shared in plaintext during setup) —
