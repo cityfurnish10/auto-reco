@@ -46,6 +46,10 @@
   /* Shadow — one style for cards, one slightly stronger for hover */
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.05);
+
+  /* Skeleton loading — a soft base block + a light shimmer sweep across it */
+  --skeleton-base: var(--surface-elevated);
+  --skeleton-shimmer: rgba(255, 255, 255, 0.6);
 }
 
 [data-theme="dark"] {
@@ -79,6 +83,10 @@
   /* Dark surfaces don't read shadows well — rely on the border instead */
   --shadow-card: none;
   --shadow-card-hover: none;
+
+  /* Dark: the shimmer is a faint light sweep, not a bright one */
+  --skeleton-base: var(--surface-elevated);
+  --skeleton-shimmer: rgba(255, 255, 255, 0.06);
 }
 
 body {
@@ -334,5 +342,41 @@ body {
   }
   .table-clean tbody tr:hover .row-action {
     opacity: 1;
+  }
+
+  /* Skeleton loading block — a rounded placeholder with a shimmer sweep.
+     Used by the route-level loading.tsx files. Sizing/shape comes from
+     utility classes on the element (h-*, w-*, rounded-*). */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: var(--skeleton-base);
+    border-radius: 6px;
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      var(--skeleton-shimmer) 50%,
+      transparent 100%
+    );
+    animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Respect reduced-motion — hold a static placeholder instead of sweeping. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    animation: none;
   }
 }
