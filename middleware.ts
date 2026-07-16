@@ -92,6 +92,23 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Admin-only pages: verify the app_users role. The lookup runs ONLY on these
+  // paths (not every request). RLS lets a user read only their own app_users
+  // row, so this can't leak anyone else's role. Non-admins bounce to /dashboard.
+  if (user && ADMIN_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
+    const { data: appUser } = await supabase
+      .from("app_users")
+      .select("role")
+      .eq("auth_id", user.id)
+      .single();
+    if (appUser?.role !== "admin") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+  }
+
   return response;
 }
 
