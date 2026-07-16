@@ -5,7 +5,8 @@
 // Query params (all optional): city, date (business_date exact match),
 // dateFrom, dateTo, bucket (REAL|INFO), source (Odoo|DT|Sheet|Physical|Cross —
 // maps to variance_source), priority (High|Medium|Info), status
-// (open|in_progress|closed), direction (IN|OUT|CROSS), page (1-based,
+// (open|in_progress|closed), direction (IN|OUT|CROSS), q (free-text search
+// across barcode / ticket_id / so_number / product / customer), page (1-based,
 // default 1), pageSize (default 50, max 200).
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -59,6 +60,25 @@ export async function GET(req: NextRequest) {
 
   const direction = sp.get("direction");
   if (direction) query = query.eq("direction", direction);
+
+  // Free-text search — case-insensitive substring across the identifier fields.
+  // Strip characters that would break PostgREST's or()/ilike grammar so the
+  // term is treated as a literal.
+  const q = sp.get("q")?.trim();
+  if (q) {
+    const safe = q.replace(/[%,()*\\]/g, " ").trim();
+    if (safe) {
+      query = query.or(
+        [
+          `barcode.ilike.%${safe}%`,
+          `ticket_id.ilike.%${safe}%`,
+          `so_number.ilike.%${safe}%`,
+          `product.ilike.%${safe}%`,
+          `customer.ilike.%${safe}%`,
+        ].join(",")
+      );
+    }
+  }
 
   const { data, error, count } = await query;
   if (error) {

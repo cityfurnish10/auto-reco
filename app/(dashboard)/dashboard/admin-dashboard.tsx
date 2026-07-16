@@ -5,7 +5,7 @@
 // Date, City, Item Name, Barcode, Ticket ID, Source, Ops Type, SO Number,
 // Variance, Priority, Status. Defaults to the REAL + open "chase list".
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SessionUser } from "@/lib/demo-auth";
 import { CITIES, type City } from "@/lib/sample-data";
 import type {
@@ -46,22 +46,36 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
   const [source, setSource] = useState<VarianceSource | "ALL">("ALL");
   const [priority, setPriority] = useState<Priority | "ALL">("ALL");
   const [status, setStatus] = useState<VarianceStatus | "ALL">("open");
+  const [searchInput, setSearchInput] = useState("");
+  const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Debounce the search box; a search finds across all buckets/statuses.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQ(searchInput.trim());
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   const { stats, loading: statsLoading, refetch: refetchStats } = useStats();
 
   const filters: VarianceFilters = useMemo(
     () => ({
       city: cityTab,
-      bucket,
-      source,
-      priority,
-      status,
+      // While searching, span every bucket/source/priority/status so a targeted
+      // barcode/ticket/SO lookup always surfaces the record (within the city tab).
+      bucket: q ? "ALL" : bucket,
+      source: q ? "ALL" : source,
+      priority: q ? "ALL" : priority,
+      status: q ? "ALL" : status,
+      q: q || undefined,
       page,
       pageSize: PAGE_SIZE,
     }),
-    [cityTab, bucket, source, priority, status, page]
+    [cityTab, bucket, source, priority, status, q, page]
   );
   const { rows, total, totalPages, loading, error, refetch } = useVariances(filters);
 
@@ -211,10 +225,30 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             </h3>
             <p className="text-xs text-text-muted mt-0.5">
               {loading ? "Loading…" : `${total} record${total === 1 ? "" : "s"}`}
+              {q && <span className="text-accent"> · results for “{q}” (filters paused)</span>}
               {error && <span className="text-danger"> · {error}</span>}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <div className="relative w-full sm:w-56">
+              <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+              <input
+                type="text"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search barcode / ticket / SO…"
+                className="input-clean pl-9 w-full"
+              />
+              {searchInput && (
+                <button
+                  onClick={() => setSearchInput("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
+                  title="Clear"
+                >
+                  <Icon name="close" size={16} />
+                </button>
+              )}
+            </div>
             <select value={bucket} onChange={(e) => resetPage(setBucket)(e.target.value as Bucket | "ALL")} className="input-clean font-semibold cursor-pointer">
               <option value="ALL">All Buckets</option>
               <option value="REAL">REAL only</option>

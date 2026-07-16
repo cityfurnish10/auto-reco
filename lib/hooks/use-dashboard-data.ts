@@ -21,6 +21,7 @@ export interface VarianceFilters {
   source?: VarianceSource | "ALL";
   priority?: Priority | "ALL";
   status?: VarianceStatus | "ALL";
+  q?: string; // free-text search: barcode / ticket / SO / product / customer
   page?: number;
   pageSize?: number;
 }
@@ -41,6 +42,7 @@ function toQuery(f: VarianceFilters): string {
   if (f.source && f.source !== "ALL") p.set("source", f.source);
   if (f.priority && f.priority !== "ALL") p.set("priority", f.priority);
   if (f.status && f.status !== "ALL") p.set("status", f.status);
+  if (f.q && f.q.trim()) p.set("q", f.q.trim());
   p.set("page", String(f.page ?? 1));
   p.set("pageSize", String(f.pageSize ?? 25));
   return p.toString();

@@ -4,7 +4,7 @@
 // ever sees their own city (enforced by RLS on the API; the city filter here
 // is belt-and-suspenders). Managers close variances with a reason (→ PATCH).
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SessionUser } from "@/lib/demo-auth";
 import type { City } from "@/lib/sample-data";
 import type { Bucket, Priority, VarianceStatus } from "@/lib/db/schema";
@@ -36,8 +36,19 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
   const [bucket, setBucket] = useState<Bucket | "ALL">("REAL");
   const [priority, setPriority] = useState<Priority | "ALL">("ALL");
   const [statusF, setStatusF] = useState<VarianceStatus | "ALL">("open");
+  const [searchInput, setSearchInput] = useState("");
+  const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [closing, setClosing] = useState<{ id: string; product: string; barcode: string } | null>(null);
+
+  // Debounce the search box; a search finds across all buckets/statuses.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQ(searchInput.trim());
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   const { stats, loading: statsLoading, refetch: refetchStats } = useStats();
   const cityAgg = useMemo(
@@ -46,8 +57,18 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
   );
 
   const filters: VarianceFilters = useMemo(
-    () => ({ city, bucket, priority, status: statusF, page, pageSize: PAGE_SIZE }),
-    [city, bucket, priority, statusF, page]
+    () => ({
+      city,
+      // While searching, span every bucket/priority/status so a targeted
+      // barcode/ticket/SO lookup always surfaces the record.
+      bucket: q ? "ALL" : bucket,
+      priority: q ? "ALL" : priority,
+      status: q ? "ALL" : statusF,
+      q: q || undefined,
+      page,
+      pageSize: PAGE_SIZE,
+    }),
+    [city, bucket, priority, statusF, q, page]
   );
   const { rows, total, totalPages, loading, error, refetch } = useVariances(filters);
 
@@ -108,10 +129,30 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
             <h3 className="font-headline text-lg text-text-primary">Variance Table — {city}</h3>
             <p className="text-xs text-text-muted mt-0.5">
               {loading ? "Loading…" : `${total} record${total === 1 ? "" : "s"}`}
+              {q && <span className="text-accent"> · results for “{q}” (filters paused)</span>}
               {error && <span className="text-danger"> · {error}</span>}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <div className="relative w-full sm:w-56">
+              <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+              <input
+                type="text"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search barcode / ticket / SO…"
+                className="input-clean pl-9 w-full"
+              />
+              {searchInput && (
+                <button
+                  onClick={() => setSearchInput("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
+                  title="Clear"
+                >
+                  <Icon name="close" size={16} />
+                </button>
+              )}
+            </div>
             <select value={bucket} onChange={(e) => resetPage(setBucket)(e.target.value as Bucket | "ALL")} className="input-clean font-semibold cursor-pointer">
               <option value="ALL">All Buckets</option>
               <option value="REAL">REAL only</option>
