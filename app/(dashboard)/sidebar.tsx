@@ -77,10 +77,10 @@ export default function Sidebar({
     >
       <div className="px-6 mb-8 flex items-start justify-between">
         <div>
-          <h1 className="font-headline text-lg font-bold text-white uppercase tracking-wider">
-            CityFurnish
-          </h1>
-          <p className="text-xs text-on-primary-container uppercase tracking-widest mt-1 opacity-60">
+          <span className="block font-headline text-2xl font-bold text-white lowercase tracking-tight leading-none">
+            cityfurnish
+          </span>
+          <p className="text-xs text-on-primary-container uppercase tracking-widest mt-1.5 opacity-60">
             Operations Portal
           </p>
         </div>
