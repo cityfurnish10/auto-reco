@@ -337,9 +337,9 @@ Fields NOT used by the engine but worth persisting in `source_rows.raw`:
 | `GUR` | Gurugram | `DELHI` _(engine uses DELHI, not GUR)_ |
 | `PUN` | Pune | `PUNE` |
 | `MUM` | Mumbai | `MUMBAI` |
-| `HYD` | Hyderabad | `HYDRABAD` _(engine legacy spelling)_ |
+| `HYD` | Hyderabad | `HYDERABAD` _(engine legacy spelling)_ |
 
-> The engine's `City` union (`lib/engine/types.ts`) uses `DELHI` and `HYDRABAD` (legacy spellings). Map warehouse codes → engine City in the connector. Any unknown warehouse code should be logged and the row skipped, not passed to the engine.
+> The engine's `City` union (`lib/engine/types.ts`) uses `DELHI` and `HYDERABAD` (legacy spellings). Map warehouse codes → engine City in the connector. Any unknown warehouse code should be logged and the row skipped, not passed to the engine.
 
 ---
 
@@ -711,8 +711,8 @@ Fields NOT used by the engine but worth persisting in `source_rows.raw`:
 | `"New Delhi"` | `"DELHI"` | |
 | `"Pune"` | `"PUNE"` | |
 | `"Mumbai"` | `"MUMBAI"` | |
-| `"Hyderabad"` | `"HYDRABAD"` | Engine legacy spelling (missing 'E') |
-| `"Hyd"` | `"HYDRABAD"` | Abbreviation seen in some DT records |
+| `"Hyderabad"` | `"HYDERABAD"` | Engine legacy spelling (missing 'E') |
+| `"Hyd"` | `"HYDERABAD"` | Abbreviation seen in some DT records |
 
 > **Unknown cities:** DT also contains `"Hosur"`, `"Chennai"`, `"Nasik"`, `"Jaipur"`, `"Karnal"` etc. These are cities the engine does not currently reconcile. The connector must log and drop rows with unknown city values rather than passing them to the engine.
 
@@ -786,6 +786,6 @@ Both connectors must produce the same `City` enum value for the same physical ci
 | Gurugram / NCR | `GUR` | `"Gurgaon"`, `"Gurugram"`, `"Noida"`, `"Delhi"`, `"New Delhi"` | `DELHI` |
 | Pune | `PUN` | `"Pune"` | `PUNE` |
 | Mumbai | `MUM` | `"Mumbai"` | `MUMBAI` |
-| Hyderabad | `HYD` | `"Hyderabad"`, `"Hyd"` | `HYDRABAD` |
+| Hyderabad | `HYD` | `"Hyderabad"`, `"Hyd"` | `HYDERABAD` |
 
 > **Single source of truth:** This table is the canonical normalisation map. Whenever city strings change in DT or new Odoo warehouses are added, update this table first, then update both connectors to match.

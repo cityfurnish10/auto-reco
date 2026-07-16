@@ -22,7 +22,7 @@ export const DEMO_USERS: DemoUser[] = [
   { name: "Rajesh Kumar", email: "delhi.manager@cityfurnish.com", password: "delhi123", role: "MANAGER", city: "DELHI" },
   { name: "Amit Sharma", email: "mumbai.manager@cityfurnish.com", password: "mumbai123", role: "MANAGER", city: "MUMBAI" },
   { name: "Rohan Khanna", email: "pune.manager@cityfurnish.com", password: "pune123", role: "MANAGER", city: "PUNE" },
-  { name: "Sneha Joshi", email: "hydrabad.manager@cityfurnish.com", password: "hydrabad123", role: "MANAGER", city: "HYDRABAD" },
+  { name: "Sneha Joshi", email: "hydrabad.manager@cityfurnish.com", password: "hydrabad123", role: "MANAGER", city: "HYDERABAD" },
   { name: "Vikram Patel", email: "bangalore.manager@cityfurnish.com", password: "bangalore123", role: "MANAGER", city: "BANGALORE" },
 ];
 

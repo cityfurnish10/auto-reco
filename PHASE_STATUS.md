@@ -194,7 +194,7 @@ The engine as-specced produced **727 false HIGH variances for one day** (ops man
 2. **Reported-source gating** (`ReportedSources`, threaded `pullAll → runAllCities → classify`):
    a rung blaming a source's ABSENCE only fires when that source reported (connector OK, ≥1 row
    for the city). Outage/unfilled-sheet now reads as "source down", not hundreds of false HIGHs
-   (MUMBAI: 129 false HIGHs → 4 real; HYDRABAD: 88 → 0). In the no-guard mode (the normal
+   (MUMBAI: 129 false HIGHs → 4 real; HYDERABAD: 88 → 0). In the no-guard mode (the normal
    nightly case), Sheet+DT-agree-Odoo-missing **escalates from INFO to REAL "Not in Odoo"** —
    exactly the ops team's main manual chase item ("Odoo out missing" on WhatsApp).
 3. **jobType now sourced DT > Guard > Sheet > Odoo** (`views.ts` rank map). DT's values
@@ -258,7 +258,7 @@ Also unified field trimming (DT/Odoo `str()` now trims like Sheets/Guard).
   ⚠️ Must be pasted as **one line** in `.env.local` — a raw multi-line JSON blob breaks standard
   `.env` parsing (only `"{"` gets read as the value). Caught and fixed for the real key.
 - **Config:** `SHEETS_CONFIG` — one JSON env var, all 5 real spreadsheet ids now live:
-  `{"DELHI":{"spreadsheetId":"1KVN_..."},"PUNE":{...},"MUMBAI":{...},"BANGALORE":{...},"HYDRABAD":{...}}`
+  `{"DELHI":{"spreadsheetId":"1KVN_..."},"PUNE":{...},"MUMBAI":{...},"BANGALORE":{...},"HYDERABAD":{...}}`
   (city codes the user gave — GUR/PUN/MUM/BAN/HYD — mapped to the engine's full City names).
 - **Real layout discovered live (differs from the original IMPLEMENTATION_PLAN.md §A3 guess):**
   each city's spreadsheet has separate **"Outward" and "Inward" tabs**, not one tab with an "Ops
@@ -288,7 +288,7 @@ Also unified field trimming (DT/Odoo `str()` now trims like Sheets/Guard).
   IMPLEMENTATION_PLAN.md §A3's rule.
 - **Live verification (2026-07-15):** compiled `sheets.ts` in isolation and ran `sheetsConnector.pull()`
   against the real 5 sheets for several candidate dates. `pull("2026-07-14")` (D-1 from today)
-  returned 137 real rows (PUNE 25 OUT + 44 IN, HYDRABAD 40 OUT + 28 IN); `pull("2026-07-13")`
+  returned 137 real rows (PUNE 25 OUT + 44 IN, HYDERABAD 40 OUT + 28 IN); `pull("2026-07-13")`
   returned 491 rows across all 5 cities. DELHI/MUMBAI/BANGALORE had no rows yet for 2026-07-14 at
   test time — their sheets' most recent entries were 1-2 days further behind (2026-07-11/12/13),
   a real data-entry lag on the ops side, not a connector bug — worth knowing before assuming a

@@ -6,7 +6,7 @@ export const CITIES = [
   "DELHI",
   "MUMBAI",
   "PUNE",
-  "HYDRABAD",
+  "HYDERABAD",
   "BANGALORE",
 ] as const;
 
@@ -102,7 +102,7 @@ export const CITY_SUMMARIES: CitySummary[] = [
     trend: "down",
   },
   {
-    city: "HYDRABAD",
+    city: "HYDERABAD",
     station: "HYD-WH-01",
     accuracy: 81.7,
     openVariances: 57,
@@ -160,12 +160,12 @@ export const VARIANCES: VarianceRow[] = [
   row(17, "CF-DIN-2S119", "2-Seater Breakfast Table", "PUNE", 33, 33, 32, 32, "LOW", "CLOSED"),
   row(18, "CF-REF-S190", "Single-Door Refrigerator 190L", "PUNE", 48, 44, 44, 44, "HIGH", "OPEN"),
   row(19, "CF-STD-C455", "Computer Desk — Compact", "PUNE", 112, 110, 110, 110, "MEDIUM", "OPEN"),
-  row(20, "CF-SOF-2S110", "2-Seater Fabric Sofa (Beige)", "HYDRABAD", 68, 59, 59, 58, "HIGH", "OPEN"),
-  row(21, "CF-AC-W10T", "Window AC 1 Ton", "HYDRABAD", 41, 38, 38, 38, "HIGH", "DISPUTED"),
-  row(22, "CF-WRD-2D301", "2-Door Wardrobe — Oak", "HYDRABAD", 55, 52, 52, 52, "MEDIUM", "OPEN"),
-  row(23, "CF-BED-Q202", "Queen Bed — Solid Wood", "HYDRABAD", 84, 76, 77, 76, "HIGH", "OPEN"),
-  row(24, "CF-MAT-K111", "King Latex Mattress", "HYDRABAD", 62, 62, 61, 61, "LOW", "CLOSED"),
-  row(25, "CF-TVU-B120", "TV Unit — Black 120cm", "HYDRABAD", 39, 36, 36, 36, "MEDIUM", "OPEN"),
+  row(20, "CF-SOF-2S110", "2-Seater Fabric Sofa (Beige)", "HYDERABAD", 68, 59, 59, 58, "HIGH", "OPEN"),
+  row(21, "CF-AC-W10T", "Window AC 1 Ton", "HYDERABAD", 41, 38, 38, 38, "HIGH", "DISPUTED"),
+  row(22, "CF-WRD-2D301", "2-Door Wardrobe — Oak", "HYDERABAD", 55, 52, 52, 52, "MEDIUM", "OPEN"),
+  row(23, "CF-BED-Q202", "Queen Bed — Solid Wood", "HYDERABAD", 84, 76, 77, 76, "HIGH", "OPEN"),
+  row(24, "CF-MAT-K111", "King Latex Mattress", "HYDERABAD", 62, 62, 61, 61, "LOW", "CLOSED"),
+  row(25, "CF-TVU-B120", "TV Unit — Black 120cm", "HYDERABAD", 39, 36, 36, 36, "MEDIUM", "OPEN"),
   row(26, "CF-CHR-OF451", "Mesh Office Chair — High Back", "BANGALORE", 176, 175, 175, 175, "LOW", "CLOSED"),
   row(27, "CF-SOF-3S115", "3-Seater Leatherette Sofa", "BANGALORE", 54, 54, 53, 53, "LOW", "CLOSED"),
   row(28, "CF-BED-B404", "Bunk Bed — Kids", "BANGALORE", 27, 25, 25, 25, "MEDIUM", "OPEN"),
@@ -236,7 +236,7 @@ export const PLATFORM_USERS: PlatformUser[] = [
     name: "Sneha Joshi",
     email: "hydrabad.manager@cityfurnish.com",
     role: "MANAGER",
-    city: "HYDRABAD",
+    city: "HYDERABAD",
     status: "ACTIVE",
   },
   {
@@ -270,10 +270,10 @@ export const GUARD_UPLOADS: GuardUpload[] = [
   { id: "UPL-101", city: "DELHI", date: "2026-07-10", fileName: "delhi_guard_jul10.xlsx", status: "PARSED", uploadedBy: "Rajesh Kumar", time: "09:42 PM", rows: 118 },
   { id: "UPL-102", city: "MUMBAI", date: "2026-07-10", fileName: "mumbai_guard_jul10.xlsx", status: "PARSED", uploadedBy: "Amit Sharma", time: "09:15 PM", rows: 96 },
   { id: "UPL-103", city: "PUNE", date: "2026-07-10", fileName: "pune_guard_jul10.xlsx", status: "UPLOADED", uploadedBy: "Rohan Khanna", time: "09:58 PM", rows: 74 },
-  { id: "UPL-104", city: "HYDRABAD", date: "2026-07-10", fileName: "hydrabad_guard_jul10_retry.xlsx", status: "ERROR", uploadedBy: "Sneha Joshi", time: "10:04 PM" },
+  { id: "UPL-104", city: "HYDERABAD", date: "2026-07-10", fileName: "hydrabad_guard_jul10_retry.xlsx", status: "ERROR", uploadedBy: "Sneha Joshi", time: "10:04 PM" },
   { id: "UPL-105", city: "BANGALORE", date: "2026-07-10", fileName: "bangalore_guard_jul10.xlsx", status: "PARSED", uploadedBy: "Vikram Patel", time: "08:51 PM", rows: 131 },
   { id: "UPL-106", city: "DELHI", date: "2026-07-09", fileName: "delhi_guard_jul09.xlsx", status: "PARSED", uploadedBy: "Rajesh Kumar", time: "09:30 PM", rows: 122 },
-  { id: "UPL-107", city: "HYDRABAD", date: "2026-07-09", fileName: "hydrabad_guard_jul09.xlsx", status: "PARSED", uploadedBy: "Sneha Joshi", time: "09:47 PM", rows: 83 },
+  { id: "UPL-107", city: "HYDERABAD", date: "2026-07-09", fileName: "hydrabad_guard_jul09.xlsx", status: "PARSED", uploadedBy: "Sneha Joshi", time: "09:47 PM", rows: 83 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -309,5 +309,5 @@ export const ERROR_LOGS: ErrorLog[] = [
   { timestamp: "2026-07-11 14:15:22", source: "Odoo ERP", sourceColor: "bg-primary", city: "MUMBAI", message: "Connection timeout: Retrying in 5s...", status: "RETRYING" },
   { timestamp: "2026-07-11 13:50:11", source: "Delivery Tracker", sourceColor: "bg-blue-500", city: "DELHI", message: "Success: Backlog data sync completed (452 rows)", status: "RESOLVED" },
   { timestamp: "2026-07-11 12:44:09", source: "Guard Register", sourceColor: "bg-slate-400", city: "PUNE", message: "Validation Error: Row 44 contains invalid character set", status: "UNRESOLVED" },
-  { timestamp: "2026-07-11 11:20:55", source: "Google Sheets Sync", sourceColor: "bg-amber-400", city: "HYDRABAD", message: "Quota Exceeded: Daily API read limit reached", status: "UNRESOLVED" },
+  { timestamp: "2026-07-11 11:20:55", source: "Google Sheets Sync", sourceColor: "bg-amber-400", city: "HYDERABAD", message: "Quota Exceeded: Daily API read limit reached", status: "UNRESOLVED" },
 ];

@@ -18,7 +18,7 @@ const WAREHOUSE_TO_CITY: Record<string, City> = {
   NOI: "DELHI", // Noida (NCR)
   PUN: "PUNE",
   MUM: "MUMBAI",
-  HYD: "HYDRABAD", // engine's legacy spelling
+  HYD: "HYDERABAD", // engine's legacy spelling
 };
 
 export function normalizeOdooWarehouse(code: unknown): City | null {

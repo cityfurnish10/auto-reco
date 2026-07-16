@@ -9,7 +9,7 @@ const strOrNum = z.union([z.string(), z.number()]);
 
 export const cityTaggedRowSchema = z.object({
   source: z.enum(["PHYSICAL", "SHEET", "DT", "ODOO"]),
-  city: z.enum(["DELHI", "MUMBAI", "PUNE", "HYDRABAD", "BANGALORE"]),
+  city: z.enum(["DELHI", "MUMBAI", "PUNE", "HYDERABAD", "BANGALORE"]),
   direction: z.enum(["IN", "OUT"]),
   barcode: z.string().min(1),
   status: z.string().optional(),

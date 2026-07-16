@@ -33,7 +33,7 @@ export function cityToCode(city: City): CityCode {
       return "BAN";
     case "MUMBAI":
       return "MUM";
-    case "HYDRABAD":
+    case "HYDERABAD":
       return "HYD";
   }
 }

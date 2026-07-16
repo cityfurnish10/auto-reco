@@ -86,7 +86,7 @@ The 8 columns the user cares about, plus the operational columns that stay:
 | # | Column | Source Field | Notes |
 |---|--------|-------------|-------|
 | 1 | **DATE** | `variances.date` | Movement date from source row |
-| 2 | **CITY** | `variances.city` | DELHI / MUMBAI / PUNE / HYDRABAD / BANGALORE |
+| 2 | **CITY** | `variances.city` | DELHI / MUMBAI / PUNE / HYDERABAD / BANGALORE |
 | 3 | **ITEM NAME** | `variances.product` | Product/item description |
 | 4 | **BARCODE** | `variances.barcode` | Canonical barcode |
 | 5 | **TICKET ID** | `variances.ticket_id` | Zoho Desk ticket |

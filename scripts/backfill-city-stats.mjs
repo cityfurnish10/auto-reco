@@ -23,7 +23,7 @@ for (const line of readFileSync(new URL("../.env.local", import.meta.url), "utf-
   env[t.slice(0, e).trim()] = t.slice(e + 1).trim();
 }
 const db = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
-const CITIES = ["DELHI", "MUMBAI", "PUNE", "HYDRABAD", "BANGALORE"];
+const CITIES = ["DELHI", "MUMBAI", "PUNE", "HYDERABAD", "BANGALORE"];
 
 async function pageAll(table, columns, runId) {
   let all = [];

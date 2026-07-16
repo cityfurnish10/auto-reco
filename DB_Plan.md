@@ -55,8 +55,8 @@ persists the variances, and serves them to the dashboard — with closed varianc
 ## Database schema (`supabase/migrations/0001_init.sql`)
 
 All tables use `gen_random_uuid()` PKs and `timestamptz` timestamps. City stored as text to
-match the engine's `City` union (`DELHI|MUMBAI|PUNE|HYDRABAD|BANGALORE` — note the existing
-`HYDRABAD` spelling). Status/role/etc. enforced with `CHECK` constraints (simpler than PG enums).
+match the engine's `City` union (`DELHI|MUMBAI|PUNE|HYDERABAD|BANGALORE` — note the existing
+`HYDERABAD` spelling). Status/role/etc. enforced with `CHECK` constraints (simpler than PG enums).
 
 ### 1. `app_users` — replaces `PLATFORM_USERS` + demo-auth
 `id uuid PK REFERENCES auth.users(id)`, `name`, `email unique`, `role CHECK (ADMIN|MANAGER)`,

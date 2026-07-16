@@ -415,7 +415,7 @@ describe("Section 8 — direction conflict", () => {
 
 describe("Section 10/11 — buckets & output contract", () => {
   it("splits variances into real_variances and info_variances", () => {
-    const res = runReconciliation(buildSampleRowsByCity(RUN).HYDRABAD, "HYDRABAD");
+    const res = runReconciliation(buildSampleRowsByCity(RUN).HYDERABAD, "HYDERABAD");
     expect(res.real_variances.every((v) => v.bucket === "REAL")).toBe(true);
     expect(res.info_variances.every((v) => v.bucket === "INFO")).toBe(true);
     expect(res.summary.total).toBe(

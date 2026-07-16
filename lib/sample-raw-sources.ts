@@ -13,7 +13,7 @@ type Row = Omit<SourceRow, "date" | "createdOn"> & {
 };
 
 // Given a run date, build a realistic-ish set of rows per city. Deviations
-// increase down the demo accuracy ladder (BANGALORE cleanest … HYDRABAD worst).
+// increase down the demo accuracy ladder (BANGALORE cleanest … HYDERABAD worst).
 function scenarioFor(city: City, runDate: string, nextDay: string): SourceRow[] {
   const rows: SourceRow[] = [];
   const push = (r: Row) =>
@@ -46,11 +46,11 @@ function scenarioFor(city: City, runDate: string, nextDay: string): SourceRow[] 
   push({ source: "DT", direction: "OUT", barcode: rdl, status: "done", soNumber: `SO-${city.slice(0, 3)}-9003`, product: "Dining Set" });
 
   // Extra REAL variances for the weaker cities.
-  if (city === "DELHI" || city === "HYDRABAD") {
+  if (city === "DELHI" || city === "HYDERABAD") {
     // Sheet-Only Dispatch — No Trail (OUT).
     push({ source: "SHEET", direction: "OUT", barcode: `${city.slice(0, 3)}-SHEETONLY-1`, status: "done", soNumber: `SO-${city.slice(0, 3)}-9004`, product: "Study Table" });
   }
-  if (city === "HYDRABAD") {
+  if (city === "HYDERABAD") {
     // Fake Scan Risk — DT status non_match.
     push({ source: "PHYSICAL", direction: "OUT", barcode: `HYD-FAKE-1`, status: "done", soNumber: "SO-HYD-9005", product: "Office Chair" });
     push({ source: "DT", direction: "OUT", barcode: "HYD-FAKE-1", status: "non_match", soNumber: "SO-HYD-9005", product: "Office Chair" });

@@ -45,9 +45,9 @@ const CITY_ALIASES: Record<string, City> = {
   mumbai: "MUMBAI",
   bombay: "MUMBAI",
   pune: "PUNE",
-  hyderabad: "HYDRABAD",
-  hydrabad: "HYDRABAD",
-  hyd: "HYDRABAD",
+  hyderabad: "HYDERABAD",
+  hydrabad: "HYDERABAD",
+  hyd: "HYDERABAD",
   bangalore: "BANGALORE",
   bengaluru: "BANGALORE",
 };
