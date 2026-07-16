@@ -156,6 +156,32 @@ export async function saveIngestionLogs(
   if (error) throw new Error(`saveIngestionLogs failed: ${error.message}`);
 }
 
+// Audit one digest email send for the System Health timeline. Best-effort —
+// callers wrap in .catch so a logging failure never fails a reconcile.
+export async function saveEmailLog(
+  db: DB,
+  entry: {
+    runId?: string | null;
+    kind: "digest" | "test";
+    businessDate?: string | null;
+    status: "sent" | "skipped" | "failed";
+    recipients: string[];
+    messageId?: string | null;
+    error?: string | null;
+  }
+): Promise<void> {
+  const { error } = await db.from("email_logs").insert({
+    run_id: entry.runId ?? null,
+    kind: entry.kind,
+    business_date: entry.businessDate ?? null,
+    status: entry.status,
+    recipients: entry.recipients ?? [],
+    message_id: entry.messageId ?? null,
+    error: entry.error ?? null,
+  });
+  if (error) throw new Error(`saveEmailLog failed: ${error.message}`);
+}
+
 export async function finalizeRun(
   db: DB,
   runId: string,

@@ -23,6 +23,7 @@ import {
   upsertVariances,
   saveCityStats,
   saveIngestionLogs,
+  saveEmailLog,
   finalizeRun,
   markRunFailed,
   prune,
@@ -118,17 +119,35 @@ async function handle(req: NextRequest) {
       ok: r.ok,
       rows: r.rowsPulled,
     }));
-    let email: unknown = { sent: false, skipped: "email disabled (?email=0)" };
+    type EmailOutcome = {
+      sent: boolean;
+      skipped?: string;
+      error?: string;
+      recipients?: string[];
+      messageId?: string;
+    };
+    let email: EmailOutcome = { sent: false, skipped: "email disabled (?email=0)" };
     if (req.nextUrl.searchParams.get("email") !== "0") {
       if (isEmailConfigured()) {
         const digest = buildDigestFromRun(run, sources);
         email = await sendReconciliationDigest(digest).catch((e) => ({
           sent: false,
           error: e instanceof Error ? e.message : String(e),
+          recipients: [],
         }));
       } else {
         email = { sent: false, skipped: "email not configured" };
       }
+      // Audit the send for the System Health timeline (best-effort).
+      await saveEmailLog(db, {
+        runId,
+        kind: "digest",
+        businessDate: runDate,
+        status: email.sent ? "sent" : email.error ? "failed" : "skipped",
+        recipients: email.recipients ?? [],
+        messageId: email.messageId ?? null,
+        error: email.error ?? email.skipped ?? null,
+      }).catch(() => {});
     }
 
     return NextResponse.json({

@@ -12,6 +12,7 @@ import {
   sendReconciliationDigest,
   isEmailConfigured,
 } from "@/lib/email";
+import { saveEmailLog } from "@/lib/db/persist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,6 +59,16 @@ export async function POST(req: NextRequest) {
   const digest = await buildDigestFromDb(db, date);
   const to = body.to?.trim() ? [body.to.trim()] : me.email ? [me.email] : undefined;
   const result = await sendReconciliationDigest(digest, to);
+
+  // Audit the test send for the System Health timeline (best-effort).
+  await saveEmailLog(db, {
+    kind: "test",
+    businessDate: date,
+    status: result.sent ? "sent" : result.error ? "failed" : "skipped",
+    recipients: result.recipients ?? [],
+    messageId: result.messageId ?? null,
+    error: result.error ?? result.skipped ?? null,
+  }).catch(() => {});
 
   if (!result.sent) {
     return NextResponse.json(
