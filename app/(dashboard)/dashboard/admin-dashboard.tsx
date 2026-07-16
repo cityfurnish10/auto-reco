@@ -1,107 +1,109 @@
 "use client";
 
+// Admin dashboard — real reconciliation data from the RLS-scoped API routes
+// (/api/stats/summary + /api/variances). Columns match the DB variances table:
+// Date, City, Item Name, Barcode, Ticket ID, Source, Ops Type, SO Number,
+// Variance, Priority, Status. Defaults to the REAL + open "chase list".
+
 import { useMemo, useState } from "react";
-import { useDemoStore } from "@/lib/demo-store";
 import type { SessionUser } from "@/lib/demo-auth";
-import {
-  CITIES,
-  CITY_SUMMARIES,
-  OVERALL,
-  type City,
-  type Severity,
-  type VarianceStatus,
-} from "@/lib/sample-data";
-import RunResultsPanel from "./run-results-panel";
+import { CITIES, type City } from "@/lib/sample-data";
+import type {
+  Bucket,
+  Priority,
+  VarianceSource,
+  VarianceStatus,
+} from "@/lib/db/schema";
+import { SourceBadge } from "@/components/source-badge";
 import { Icon } from "@/components/icon";
+import {
+  useStats,
+  useVariances,
+  patchVariance,
+  type VarianceFilters,
+} from "@/lib/hooks/use-dashboard-data";
 
 type CityTab = "ALL" | City;
 
-const SEVERITY_BADGE: Record<Severity, string> = {
-  HIGH: "badge badge-high",
-  MEDIUM: "badge badge-medium",
-  LOW: "badge badge-done",
+const PRIORITY_BADGE: Record<Priority, string> = {
+  High: "badge badge-high",
+  Medium: "badge badge-medium",
+  Info: "badge badge-done",
 };
 
 const STATUS_BADGE: Record<VarianceStatus, string> = {
-  OPEN: "badge badge-medium",
-  DISPUTED: "badge badge-suppressed",
-  CLOSED: "badge badge-done",
+  open: "badge badge-medium",
+  in_progress: "badge badge-suppressed",
+  closed: "badge badge-done",
 };
 
-const PAGE_SIZE = 10;
+const SOURCES: VarianceSource[] = ["Odoo", "DT", "Sheet", "Physical", "Cross"];
+const PAGE_SIZE = 25;
 
 export default function AdminDashboard({ user }: { user: SessionUser }) {
-  const { variances, disputeVariance, lastRun } = useDemoStore();
   const [cityTab, setCityTab] = useState<CityTab>("ALL");
-  const [severityFilter, setSeverityFilter] = useState<"ALL" | Severity>("ALL");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | VarianceStatus>("ALL");
+  const [bucket, setBucket] = useState<Bucket | "ALL">("REAL");
+  const [source, setSource] = useState<VarianceSource | "ALL">("ALL");
+  const [priority, setPriority] = useState<Priority | "ALL">("ALL");
+  const [status, setStatus] = useState<VarianceStatus | "ALL">("open");
   const [page, setPage] = useState(1);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  const citySummaries = useMemo(
-    () =>
-      cityTab === "ALL"
-        ? CITY_SUMMARIES
-        : CITY_SUMMARIES.filter((c) => c.city === cityTab),
-    [cityTab]
+  const { stats, loading: statsLoading, refetch: refetchStats } = useStats();
+
+  const filters: VarianceFilters = useMemo(
+    () => ({
+      city: cityTab,
+      bucket,
+      source,
+      priority,
+      status,
+      page,
+      pageSize: PAGE_SIZE,
+    }),
+    [cityTab, bucket, source, priority, status, page]
   );
+  const { rows, total, totalPages, loading, error, refetch } = useVariances(filters);
 
-  const filteredVariances = useMemo(
-    () =>
-      variances.filter(
-        (v) =>
-          (cityTab === "ALL" || v.city === cityTab) &&
-          (severityFilter === "ALL" || v.severity === severityFilter) &&
-          (statusFilter === "ALL" || v.status === statusFilter)
-      ),
-    [variances, cityTab, severityFilter, statusFilter]
-  );
+  const agg = useMemo(() => {
+    if (!stats) return null;
+    return cityTab === "ALL"
+      ? stats.overall
+      : stats.byCity.find((c) => c.city === cityTab) ?? {
+          city: cityTab, total: 0, open: 0, inProgress: 0, closed: 0,
+          high: 0, medium: 0, info: 0, real: 0, infoBucket: 0,
+        };
+  }, [stats, cityTab]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredVariances.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const pageRows = filteredVariances.slice(
-    (safePage - 1) * PAGE_SIZE,
-    safePage * PAGE_SIZE
-  );
+  function resetPage<T>(setter: (v: T) => void) {
+    return (v: T) => {
+      setter(v);
+      setPage(1);
+    };
+  }
 
-  const stats = useMemo(() => {
-    const rows = variances.filter(
-      (v) => cityTab === "ALL" || v.city === cityTab
-    );
-    const open = rows.filter((v) => v.status !== "CLOSED").length;
-    const high = rows.filter(
-      (v) => v.severity === "HIGH" && v.status !== "CLOSED"
-    ).length;
-    const accuracy =
-      cityTab === "ALL"
-        ? OVERALL.avgAccuracy
-        : CITY_SUMMARIES.find((c) => c.city === cityTab)?.accuracy ?? 0;
-    return { total: rows.length, open, high, accuracy };
-  }, [variances, cityTab]);
-
-  function selectTab(tab: CityTab) {
-    setCityTab(tab);
-    setPage(1);
+  async function dispute(id: string) {
+    setBusyId(id);
+    try {
+      await patchVariance(id, "dispute");
+      refetch();
+      refetchStats();
+    } catch (e) {
+      alert(`Could not dispute: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusyId(null);
+    }
   }
 
   function exportCsv() {
     const header =
-      "ID,Item Code,Item Name,City,Odoo Qty,DT Qty,Sheet Qty,Guard Qty,Delta,Severity,Status,Closure Reason,Closed By\n";
-    const body = filteredVariances
+      "Date,City,Direction,Item Name,Barcode,Ticket ID,Source,Ops Type,SO Number,Variance,Priority,Bucket,Status\n";
+    const body = rows
       .map((v) =>
         [
-          v.id,
-          v.itemCode,
-          `"${v.itemName}"`,
-          v.city,
-          v.odooQty,
-          v.dtQty,
-          v.sheetQty,
-          v.guardQty,
-          v.delta,
-          v.severity,
-          v.status,
-          v.closureReason ?? "",
-          v.closedBy ?? "",
+          v.business_date, v.city, v.direction, `"${(v.product ?? "").replace(/"/g, "'")}"`,
+          v.barcode, v.ticket_id ?? "", v.variance_source ?? "", v.job_type ?? "",
+          v.so_number ?? "", `"${v.variance_name}"`, v.priority, v.bucket, v.status,
         ].join(",")
       )
       .join("\n");
@@ -114,14 +116,18 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     URL.revokeObjectURL(url);
   }
 
+  const runLabel = stats?.run
+    ? `Run ${stats.run.business_date}${stats.usedFallbackRun ? " (latest available)" : ""} · ${stats.run.status}`
+    : "No reconciliation run yet";
+
   return (
     <section className="p-container-margin space-y-8">
-      {/* City Tabs */}
+      {/* City tabs */}
       <div className="border-b border-border flex gap-1 overflow-x-auto scrollbar-hide">
         {(["ALL", ...CITIES] as CityTab[]).map((tab) => (
           <button
             key={tab}
-            onClick={() => selectTab(tab)}
+            onClick={() => resetPage(setCityTab)(tab)}
             className={
               cityTab === tab
                 ? "px-4 py-2.5 text-sm font-semibold text-accent border-b-2 border-accent whitespace-nowrap transition-colors duration-150"
@@ -133,198 +139,104 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         ))}
       </div>
 
-      {/* Latest reconciliation-engine run output (barcode-level) */}
-      <RunResultsPanel cityFilter={cityTab} />
-
-      {/* Summary Stats Cards */}
+      {/* KPI cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="kpi-tile kpi-tile--accent card-hover flex flex-col justify-between">
-          <span className="kpi-label">Total Variances Today</span>
-          <div className="flex items-end justify-between mt-2">
-            <span className="kpi-value">{stats.total}</span>
-          </div>
-          <span className="text-xs text-text-muted mt-1">
-            {cityTab === "ALL"
-              ? `Across all ${CITIES.length} connected cities`
-              : `${cityTab} warehouse`}
-          </span>
+        <div className="kpi-tile kpi-tile--accent flex flex-col justify-between">
+          <span className="kpi-label">Total Variances</span>
+          <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.total ?? 0}</span>
+          <span className="text-xs text-text-muted mt-1">{runLabel}</span>
         </div>
-
-        <div className="kpi-tile kpi-tile--danger card-hover flex flex-col justify-between">
-          <span className="kpi-label">Open Variances</span>
+        <div className="kpi-tile kpi-tile--danger flex flex-col justify-between">
+          <span className="kpi-label">REAL — chase today</span>
           <div className="flex items-end justify-between mt-2">
-            <span className="kpi-value">{stats.open}</span>
-            {stats.high > 0 && (
-              <span className="badge badge-high">{stats.high} High</span>
-            )}
+            <span className="kpi-value">{statsLoading ? "…" : agg?.real ?? 0}</span>
+            {(agg?.high ?? 0) > 0 && <span className="badge badge-high">{agg?.high} High</span>}
           </div>
-          <span className="text-xs text-text-muted mt-1">
-            Closed by city managers with a reason
-          </span>
+          <span className="text-xs text-text-muted mt-1">Genuine cross-source gaps</span>
         </div>
-
-        <div
-          className={`kpi-tile card-hover flex flex-col justify-between ${
-            stats.accuracy < 90 ? "kpi-tile--danger" : "kpi-tile--success"
-          }`}
-        >
-          <span className="kpi-label">Accuracy %</span>
-          <div className="flex items-end justify-between mt-2">
-            <span
-              className={`kpi-value ${stats.accuracy < 90 ? "text-danger" : ""}`}
-            >
-              {stats.accuracy}%
-            </span>
-          </div>
-          <span className="text-xs text-text-muted mt-1">
-            Benchmark target: 95.0%
-          </span>
+        <div className="kpi-tile flex flex-col justify-between">
+          <span className="kpi-label">INFO — audit</span>
+          <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.infoBucket ?? 0}</span>
+          <span className="text-xs text-text-muted mt-1">Posting lag / hygiene, no action</span>
         </div>
-
-        <div className="kpi-tile card-hover flex flex-col justify-between">
-          <span className="kpi-label">Items Reconciled Today</span>
-          <div className="flex items-end justify-between mt-2">
-            <span className="kpi-value">
-              {OVERALL.itemsReconciledToday.toLocaleString()}
-            </span>
-            <span className="text-text-muted font-semibold flex items-center gap-1 text-xs">
-              <Icon name="schedule" size={16} />
-              On-track
-            </span>
-          </div>
+        <div className="kpi-tile flex flex-col justify-between">
+          <span className="kpi-label">Open</span>
+          <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.open ?? 0}</span>
           <span className="text-xs text-text-muted mt-1">
-            {lastRun
-              ? `Last run: ${new Date(lastRun.at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`
-              : "Sample data — no run yet"}
+            {agg?.closed ?? 0} closed · {agg?.inProgress ?? 0} in progress
           </span>
         </div>
       </div>
 
-      {/* City-wise Breakdown */}
-      <div className="space-y-4">
-        <div className="flex justify-between items-center">
-          <h3 className="font-headline text-lg text-text-primary">
-            City-wise Variance Breakdown
-          </h3>
-          <span className="text-xs text-text-muted uppercase tracking-wider font-semibold">
-            Ranked by accuracy
-          </span>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {citySummaries.map((c) => {
-            const liveOpen = variances.filter(
-              (v) => v.city === c.city && v.status !== "CLOSED"
-            ).length;
-            return (
+      {/* City-wise breakdown */}
+      {cityTab === "ALL" && stats && stats.byCity.length > 0 && (
+        <div className="space-y-4">
+          <h3 className="font-headline text-lg text-text-primary">City-wise Breakdown</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            {stats.byCity.map((c) => (
               <div
                 key={c.city}
-                className={`card card-hover p-4 flex flex-col gap-4 border-l-[3px] ${
-                  c.accuracy < 90 ? "border-l-danger" : "border-l-border"
+                className={`card card-hover p-4 flex flex-col gap-3 border-l-[3px] ${
+                  c.real > 0 ? "border-l-danger" : "border-l-success"
                 }`}
               >
                 <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="font-headline text-base text-text-primary flex items-center gap-2">
-                      {c.city}
-                      <span className="bg-surface-elevated text-text-secondary px-1.5 py-0.5 rounded text-xs font-bold">
-                        #{c.rank}
-                      </span>
-                    </h4>
-                    <span className="text-xs text-text-muted">
-                      Station: {c.station}
-                    </span>
-                  </div>
-                  <span
-                    className={`font-bold text-lg ${
-                      c.accuracy < 90 ? "text-danger" : "text-text-primary"
-                    }`}
-                  >
-                    {c.accuracy}%
+                  <h4 className="font-headline text-base text-text-primary">{c.city}</h4>
+                  <span className={`font-bold text-lg ${c.real > 0 ? "text-danger" : "text-success"}`}>
+                    {c.real}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-text-primary">
-                    {liveOpen}
-                  </span>
-                  <span className="text-xs text-text-muted">
-                    Open Variances
-                  </span>
-                </div>
-                <div className="space-y-1">
-                  <div className="flex h-2 w-full bg-surface-elevated overflow-hidden rounded-full">
-                    <div
-                      className="bg-danger"
-                      style={{ width: `${c.highPct}%` }}
-                      title="High Severity"
-                    ></div>
-                    <div
-                      className="bg-status-warning"
-                      style={{ width: `${c.medPct}%` }}
-                      title="Medium Severity"
-                    ></div>
-                    <div
-                      className="bg-success"
-                      style={{ width: `${c.lowPct}%` }}
-                      title="Low Severity"
-                    ></div>
-                  </div>
-                  <div className="flex justify-between text-xs font-semibold text-text-muted uppercase">
-                    <span>High</span>
-                    <span>Med</span>
-                    <span>Low</span>
-                  </div>
+                <div className="text-xs text-text-muted">
+                  <span className="text-danger font-semibold">{c.real} REAL</span> ·{" "}
+                  {c.infoBucket} INFO · {c.open} open
                 </div>
                 <button
-                  onClick={() => selectTab(c.city)}
+                  onClick={() => resetPage(setCityTab)(c.city as City)}
                   className="btn btn-compact btn-secondary w-full"
                 >
                   VIEW DETAIL
                 </button>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Variance Table */}
+      {/* Variance table */}
       <div className="card overflow-hidden">
         <div className="p-4 border-b border-border bg-surface-elevated flex flex-col lg:flex-row justify-between lg:items-center gap-4">
           <div>
             <h3 className="font-headline text-lg text-text-primary">
-              {cityTab === "ALL" ? "All Cities" : cityTab} Variance Table
+              {cityTab === "ALL" ? "All Cities" : cityTab} Variances
             </h3>
             <p className="text-xs text-text-muted mt-0.5">
-              Showing {filteredVariances.length} records (sample data)
+              {loading ? "Loading…" : `${total} record${total === 1 ? "" : "s"}`}
+              {error && <span className="text-danger"> · {error}</span>}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <select
-              value={severityFilter}
-              onChange={(e) => {
-                setSeverityFilter(e.target.value as "ALL" | Severity);
-                setPage(1);
-              }}
-              className="input-clean font-semibold cursor-pointer"
-            >
-              <option value="ALL">All Severity</option>
-              <option value="HIGH">High</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="LOW">Low</option>
+          <div className="flex flex-wrap items-center gap-2">
+            <select value={bucket} onChange={(e) => resetPage(setBucket)(e.target.value as Bucket | "ALL")} className="input-clean font-semibold cursor-pointer">
+              <option value="ALL">All Buckets</option>
+              <option value="REAL">REAL only</option>
+              <option value="INFO">INFO only</option>
             </select>
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value as "ALL" | VarianceStatus);
-                setPage(1);
-              }}
-              className="input-clean font-semibold cursor-pointer"
-            >
+            <select value={source} onChange={(e) => resetPage(setSource)(e.target.value as VarianceSource | "ALL")} className="input-clean font-semibold cursor-pointer">
+              <option value="ALL">All Sources</option>
+              {SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select value={priority} onChange={(e) => resetPage(setPriority)(e.target.value as Priority | "ALL")} className="input-clean font-semibold cursor-pointer">
+              <option value="ALL">All Priority</option>
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Info">Info</option>
+            </select>
+            <select value={status} onChange={(e) => resetPage(setStatus)(e.target.value as VarianceStatus | "ALL")} className="input-clean font-semibold cursor-pointer">
               <option value="ALL">All Status</option>
-              <option value="OPEN">Open</option>
-              <option value="DISPUTED">Disputed</option>
-              <option value="CLOSED">Closed</option>
+              <option value="open">Open</option>
+              <option value="in_progress">In Progress</option>
+              <option value="closed">Closed</option>
             </select>
-            <button onClick={exportCsv} className="btn btn-primary">
+            <button onClick={exportCsv} disabled={rows.length === 0} className="btn btn-primary disabled:opacity-40">
               <Icon name="download" size={18} />
               Export
             </button>
@@ -335,94 +247,61 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
           <table className="table-clean">
             <thead>
               <tr>
-                <th>Item Code</th>
-                <th>Item Name</th>
+                <th>Date</th>
                 <th>City</th>
-                <th className="text-right">Odoo Qty</th>
-                <th className="text-right">DT Qty</th>
-                <th className="text-right">Sheet Qty</th>
-                <th className="text-right">Guard Qty</th>
-                <th className="text-right">Delta</th>
-                <th>Severity</th>
+                <th>Item Name</th>
+                <th>Barcode</th>
+                <th>Ticket ID</th>
+                <th>Source</th>
+                <th>Ops Type</th>
+                <th>SO Number</th>
+                <th>Variance</th>
+                <th>Priority</th>
                 <th>Status</th>
                 <th className="text-center">Action</th>
               </tr>
             </thead>
             <tbody>
-              {pageRows.map((v) => (
+              {rows.map((v) => (
                 <tr key={v.id}>
-                  <td className="font-mono font-semibold text-text-primary">
-                    {v.itemCode}
-                  </td>
-                  <td className="max-w-[220px] truncate">{v.itemName}</td>
+                  <td className="whitespace-nowrap text-text-secondary">{v.business_date}</td>
                   <td>{v.city}</td>
-                  <td className="text-right">{v.odooQty.toLocaleString()}</td>
-                  <td className="text-right">{v.dtQty.toLocaleString()}</td>
-                  <td className="text-right">{v.sheetQty.toLocaleString()}</td>
-                  <td className="text-right">{v.guardQty.toLocaleString()}</td>
-                  <td
-                    className={`text-right font-semibold ${
-                      v.delta < 0
-                        ? "text-danger"
-                        : v.delta > 0
-                          ? "text-success"
-                          : "text-text-muted"
-                    }`}
-                  >
-                    {v.delta > 0 ? `+${v.delta}` : v.delta}
+                  <td className="max-w-[200px] truncate" title={v.product ?? ""}>{v.product ?? "—"}</td>
+                  <td className="font-mono font-semibold text-text-primary">{v.barcode}</td>
+                  <td className="text-text-secondary">{v.ticket_id ?? "—"}</td>
+                  <td><SourceBadge source={v.variance_source} /></td>
+                  <td className="text-text-secondary text-xs">{v.job_type ?? "—"}</td>
+                  <td className="text-text-secondary">{v.so_number ?? "—"}</td>
+                  <td className="max-w-[220px]" title={v.note ?? ""}>
+                    <span className="text-text-primary">{v.variance_name}</span>
                   </td>
+                  <td><span className={PRIORITY_BADGE[v.priority]}>{v.priority}</span></td>
                   <td>
-                    <span className={SEVERITY_BADGE[v.severity]}>
-                      {v.severity}
-                    </span>
-                  </td>
-                  <td>
-                    <span
-                      className={`${STATUS_BADGE[v.status]} uppercase`}
-                      title={
-                        v.status === "CLOSED" && v.closureReason
-                          ? `${v.closureReason}${v.closureNote ? ` — ${v.closureNote}` : ""} (by ${v.closedBy})`
-                          : v.status === "DISPUTED"
-                            ? v.closureNote
-                            : undefined
-                      }
-                    >
-                      {v.status}
+                    <span className={`${STATUS_BADGE[v.status]} uppercase`} title={v.closure_reason ?? undefined}>
+                      {v.status.replace("_", " ")}
                     </span>
                   </td>
                   <td className="text-center">
-                    {v.status === "OPEN" ? (
+                    {v.status === "open" ? (
                       <button
-                        onClick={() => disputeVariance(v.id, user.name)}
+                        onClick={() => dispute(v.id)}
+                        disabled={busyId === v.id}
                         title="Flag as disputed — escalate to city manager"
-                        className="btn-icon row-action hover:text-danger"
+                        className="btn-icon row-action hover:text-danger disabled:opacity-40"
                       >
                         <Icon name="flag" size={18} />
                       </button>
                     ) : (
-                      <span
-                        className="text-text-disabled inline-flex p-1"
-                        title={
-                          v.status === "CLOSED"
-                            ? `Closed by ${v.closedBy ?? "manager"}`
-                            : "Disputed"
-                        }
-                      >
-                        <Icon
-                          name={v.status === "CLOSED" ? "task_alt" : "flag"}
-                          size={18}
-                        />
+                      <span className="text-text-disabled inline-flex p-1" title={v.status}>
+                        <Icon name={v.status === "closed" ? "task_alt" : "flag"} size={18} />
                       </span>
                     )}
                   </td>
                 </tr>
               ))}
-              {pageRows.length === 0 && (
+              {!loading && rows.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={11}
-                    className="text-center py-10 text-text-muted"
-                  >
+                  <td colSpan={12} className="text-center py-10 text-text-muted">
                     <div className="flex flex-col items-center gap-2">
                       <Icon name="search_off" size={32} className="text-text-disabled" />
                       No variances match the selected filters.
@@ -436,34 +315,21 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
 
         <div className="p-3 border-t border-border bg-surface-elevated flex justify-between items-center px-4">
           <span className="text-xs text-text-muted">
-            Showing{" "}
-            {filteredVariances.length === 0
-              ? 0
-              : (safePage - 1) * PAGE_SIZE + 1}{" "}
-            to {Math.min(safePage * PAGE_SIZE, filteredVariances.length)} of{" "}
-            {filteredVariances.length} variances
+            Page {page} of {Math.max(1, totalPages)} · {total} total
           </span>
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={safePage <= 1}
-              className="btn-icon border border-border disabled:opacity-40"
-            >
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} className="btn-icon border border-border disabled:opacity-40">
               <Icon name="chevron_left" size={18} />
             </button>
-            <span className="px-3 text-xs font-semibold text-text-secondary">
-              {safePage} / {totalPages}
-            </span>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={safePage >= totalPages}
-              className="btn-icon border border-border disabled:opacity-40"
-            >
+            <span className="px-3 text-xs font-semibold text-text-secondary">{page} / {Math.max(1, totalPages)}</span>
+            <button onClick={() => setPage((p) => (totalPages ? Math.min(totalPages, p + 1) : p))} disabled={page >= totalPages} className="btn-icon border border-border disabled:opacity-40">
               <Icon name="chevron_right" size={18} />
             </button>
           </div>
         </div>
       </div>
+      {/* user prop reserved for future per-admin audit; referenced to satisfy lint */}
+      <span className="hidden">{user.email}</span>
     </section>
   );
 }

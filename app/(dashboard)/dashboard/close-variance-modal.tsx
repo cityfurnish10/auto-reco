@@ -1,8 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import type { ClosureReason, VarianceRow } from "@/lib/sample-data";
 import { Icon } from "@/components/icon";
+
+// Closure reasons (kept as a stable enum for the analytics breakdown).
+export type ClosureReason =
+  | "Data Entry Error"
+  | "Transit Delay"
+  | "Theft"
+  | "System Glitch"
+  | "Other";
 
 const REASONS: ClosureReason[] = [
   "Data Entry Error",
@@ -13,24 +20,29 @@ const REASONS: ClosureReason[] = [
 ];
 
 export default function CloseVarianceModal({
-  variance,
+  itemName,
+  itemCode,
   onConfirm,
   onCancel,
 }: {
-  variance: VarianceRow;
-  onConfirm: (reason: ClosureReason, note: string) => void;
+  itemName: string;
+  itemCode: string;
+  onConfirm: (reason: ClosureReason, note: string) => void | Promise<void>;
   onCancel: () => void;
 }) {
   const [reason, setReason] = useState<ClosureReason | "">("");
   const [note, setNote] = useState("");
   const [processing, setProcessing] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!reason) return;
     setProcessing(true);
-    // Brief delay for the processing affordance, then commit to the store.
-    setTimeout(() => onConfirm(reason, note), 500);
+    try {
+      await onConfirm(reason, note);
+    } finally {
+      setProcessing(false);
+    }
   }
 
   return (
@@ -43,9 +55,7 @@ export default function CloseVarianceModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-border flex justify-between items-center">
-          <h2 className="font-headline text-lg text-text-primary">
-            Close Variance
-          </h2>
+          <h2 className="font-headline text-lg text-text-primary">Close Variance</h2>
           <button onClick={onCancel} className="btn-icon">
             <Icon name="close" size={20} />
           </button>
@@ -57,15 +67,11 @@ export default function CloseVarianceModal({
               <Icon name="inventory_2" size={22} className="text-accent" />
             </div>
             <div>
-              <p className="text-xs text-text-muted uppercase tracking-wider mb-0.5">
-                Affected Item
-              </p>
+              <p className="text-xs text-text-muted uppercase tracking-wider mb-0.5">Affected Item</p>
               <div className="flex items-center gap-2">
-                <span className="font-headline text-base text-text-primary">
-                  {variance.itemName}
-                </span>
+                <span className="font-headline text-base text-text-primary">{itemName || "—"}</span>
                 <span className="bg-surface-card border border-border text-text-secondary text-xs px-1.5 py-0.5 rounded font-mono">
-                  {variance.itemCode}
+                  {itemCode}
                 </span>
               </div>
             </div>
@@ -73,10 +79,7 @@ export default function CloseVarianceModal({
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label
-                className="block text-sm font-medium text-text-secondary mb-1.5"
-                htmlFor="reason"
-              >
+              <label className="block text-sm font-medium text-text-secondary mb-1.5" htmlFor="reason">
                 Reason for Closure <span className="text-danger">*</span>
               </label>
               <div className="relative">
@@ -87,14 +90,8 @@ export default function CloseVarianceModal({
                   onChange={(e) => setReason(e.target.value as ClosureReason)}
                   className="input-clean w-full h-11! appearance-none cursor-pointer"
                 >
-                  <option value="" disabled>
-                    Select a reason...
-                  </option>
-                  {REASONS.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
+                  <option value="" disabled>Select a reason...</option>
+                  {REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
                 <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
                   <Icon name="expand_more" size={20} className="text-text-muted" />
@@ -103,10 +100,7 @@ export default function CloseVarianceModal({
             </div>
 
             <div>
-              <label
-                className="block text-sm font-medium text-text-secondary mb-1.5"
-                htmlFor="note"
-              >
+              <label className="block text-sm font-medium text-text-secondary mb-1.5" htmlFor="note">
                 Add a note (optional)
               </label>
               <textarea
@@ -122,14 +116,8 @@ export default function CloseVarianceModal({
             <div className="h-px bg-border my-2"></div>
 
             <div className="flex items-center justify-end gap-3 pt-2">
-              <button type="button" onClick={onCancel} className="btn btn-secondary">
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={processing || !reason}
-                className="btn btn-primary"
-              >
+              <button type="button" onClick={onCancel} className="btn btn-secondary">Cancel</button>
+              <button type="submit" disabled={processing || !reason} className="btn btn-primary">
                 <Icon
                   name={processing ? "progress_activity" : "check_circle"}
                   size={18}

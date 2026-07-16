@@ -1,10 +1,11 @@
 // Server-side session resolution. Pages call getSessionUser() and stay
-// agnostic to the auth backend: demo cookie today, Supabase Auth + app_users
-// once the central DB is provided.
+// agnostic to the auth backend: demo cookie when Supabase isn't configured,
+// Supabase Auth + app_users (real role + city, RLS-scoped) when it is.
 
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, parseSessionCookie, type SessionUser } from "./demo-auth";
 import { createClient } from "./supabase/server";
+import { getCurrentAppUser } from "./db/current-user";
 
 export const supabaseConfigured =
   !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -15,13 +16,26 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     return parseSessionCookie((await cookies()).get(SESSION_COOKIE)?.value);
   }
 
+  // Real role + city from app_users (admin → ADMIN sees all cities; manager /
+  // viewer → MANAGER scoped to their own city). RLS enforces write
+  // authorization regardless of what the UI shows.
+  const appUser = await getCurrentAppUser();
+  if (appUser) {
+    return {
+      name: appUser.name,
+      email: appUser.email,
+      role: appUser.role === "admin" ? "ADMIN" : "MANAGER",
+      city: appUser.city,
+    };
+  }
+
+  // Authenticated but no app_users row yet — minimal admin-scoped fallback so
+  // the app is usable; RLS still limits what the queries can actually return.
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return null;
-
-  // Until app_users exists in Supabase, authenticated users get admin scope.
   return {
     name: user.email ?? "User",
     email: user.email ?? "",
