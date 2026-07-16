@@ -28,6 +28,8 @@ interface CityAgg {
   info: number;
   real: number;
   infoBucket: number;
+  ppBox: number; // count-only PP-box movements for the run (from run_city_stats)
+  consumable: number; // count-only spare/consumable movements for the run
 }
 
 function emptyAgg(city: string): CityAgg {
@@ -42,6 +44,8 @@ function emptyAgg(city: string): CityAgg {
     info: 0,
     real: 0,
     infoBucket: 0,
+    ppBox: 0,
+    consumable: 0,
   };
 }
 
@@ -114,6 +118,21 @@ export async function GET(req: NextRequest) {
       else if (v.bucket === "INFO") target.infoBucket += 1;
     }
     byCityMap.set(v.city, agg);
+  }
+
+  // Overlay count-only PP-box / consumable movements from run_city_stats for
+  // this run's date (RLS-scoped: a manager sees only their own city's row).
+  const { data: cityStats } = await supabase
+    .from("run_city_stats")
+    .select("city, pp_box_count, consumable_count")
+    .eq("business_date", run.business_date);
+  for (const s of cityStats ?? []) {
+    const agg = byCityMap.get(s.city) ?? emptyAgg(s.city);
+    agg.ppBox = s.pp_box_count ?? 0;
+    agg.consumable = s.consumable_count ?? 0;
+    byCityMap.set(s.city, agg);
+    overall.ppBox += s.pp_box_count ?? 0;
+    overall.consumable += s.consumable_count ?? 0;
   }
 
   return NextResponse.json({

@@ -127,6 +127,8 @@ export async function saveCityStats(
     real_count: c.summary.real_count,
     info_count: c.summary.info_count,
     high_count: c.summary.high_priority,
+    pp_box_count: c.summary.pp_box_count,
+    consumable_count: c.summary.consumable_count,
   }));
   if (payload.length === 0) return 0;
   const { error } = await db

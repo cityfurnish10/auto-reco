@@ -132,6 +132,9 @@ export interface CityRunResult {
     // Total distinct directional movements (IN + OUT reconciliation universe) —
     // the accuracy-rate denominator for the leaderboard.
     movements: number;
+    // Count-only movements surfaced separately (not in the variance list).
+    pp_box_count: number;
+    consumable_count: number;
     by_variance: Record<string, number>;
   };
   warnings: string[];

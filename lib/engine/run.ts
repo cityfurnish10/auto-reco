@@ -163,52 +163,13 @@ export function runReconciliation(
   classifyViews(inViews, "IN");
   classifyViews(outViews, "OUT");
 
-  // Spare/Consumable Movement (INFO) — one row per distinct spare barcode.
+  // PP boxes and spares/consumables are count-only movements (packing boxes are
+  // free-text counts, spares aren't barcode-reconciled) — they are NOT variances.
+  // Surface them as per-city counts (summary) instead of flooding the INFO list.
+  const pp_box_count = ppBoxRows.length;
   const seenSpare = new Set<string>();
-  for (const r of spareRows) {
-    const kk = `${r.direction}::${r.barcode.toUpperCase()}`;
-    if (seenSpare.has(kk)) continue;
-    seenSpare.add(kk);
-    variances.push(
-      applyBucket({
-        barcode: r.barcode.toUpperCase(),
-        city,
-        direction: r.direction,
-        variance_name: "Spare/Consumable Movement",
-        priority: "Info",
-        ticket_id: r.ticketId ?? null,
-        so_number: r.soNumber ?? null,
-        customer: r.customer ?? null,
-        product: r.product ?? null,
-        job_type: null,
-        date: runDate,
-      })
-    );
-  }
-
-  // PP Box Movement — count-only per direction (packing boxes are free-text
-  // counts, not barcodes; the ops email digest needs the number, nothing else).
-  for (const dir of ["IN", "OUT"] as Direction[]) {
-    const boxRows = ppBoxRows.filter((r) => r.direction === dir);
-    if (boxRows.length === 0) continue;
-    const sources = Array.from(new Set(boxRows.map((r) => r.source))).join(", ");
-    variances.push(
-      applyBucket({
-        barcode: "PP-BOX",
-        city,
-        direction: dir,
-        variance_name: "PP Box Movement (Count Only)",
-        priority: "Info",
-        ticket_id: null,
-        so_number: null,
-        customer: null,
-        product: "PP Box",
-        job_type: null,
-        date: runDate,
-        note: `${boxRows.length} PP-box ${dir} entr${boxRows.length === 1 ? "y" : "ies"} logged (${sources}) — count-only, not barcode-tracked.`,
-      })
-    );
-  }
+  for (const r of spareRows) seenSpare.add(`${r.direction}::${r.barcode.toUpperCase()}`);
+  const consumable_count = seenSpare.size;
 
   // Section 8 — direction conflict (already bucketed REAL).
   const conflicts = detectDirectionConflicts(inViews, outViews, suppressed).map(
@@ -246,6 +207,8 @@ export function runReconciliation(
       high_priority: variances.filter((v) => v.priority === "High").length,
       medium_priority: variances.filter((v) => v.priority === "Medium").length,
       movements,
+      pp_box_count,
+      consumable_count,
       by_variance,
     },
     warnings,

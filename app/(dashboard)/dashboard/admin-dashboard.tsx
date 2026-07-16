@@ -87,7 +87,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
       ? stats.overall
       : stats.byCity.find((c) => c.city === cityTab) ?? {
           city: cityTab, total: 0, open: 0, inProgress: 0, closed: 0,
-          high: 0, medium: 0, info: 0, real: 0, infoBucket: 0,
+          high: 0, medium: 0, info: 0, real: 0, infoBucket: 0, ppBox: 0, consumable: 0,
         };
   }, [stats, cityTab]);
 
@@ -184,6 +184,22 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         </div>
       </div>
 
+      {/* Count-only movements (PP boxes & consumables) — not variances */}
+      <div className="card px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-1">
+        <span className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
+          Count-only movements{cityTab === "ALL" ? "" : ` · ${cityTab}`}
+        </span>
+        <span className="text-sm text-text-muted flex items-center gap-1.5">
+          <Icon name="inventory_2" size={16} className="text-accent" /> PP-Box{" "}
+          <b className="text-text-primary">{statsLoading ? "…" : agg?.ppBox ?? 0}</b>
+        </span>
+        <span className="text-sm text-text-muted flex items-center gap-1.5">
+          <Icon name="category" size={16} className="text-accent" /> Consumables{" "}
+          <b className="text-text-primary">{statsLoading ? "…" : agg?.consumable ?? 0}</b>
+        </span>
+        <span className="text-xs text-text-disabled">for this run — tracked as counts, not variances</span>
+      </div>
+
       {/* City-wise breakdown */}
       {cityTab === "ALL" && stats && stats.byCity.length > 0 && (
         <div className="space-y-4">
@@ -205,6 +221,9 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 <div className="text-xs text-text-muted">
                   <span className="text-danger font-semibold">{c.real} REAL</span> ·{" "}
                   {c.infoBucket} INFO · {c.open} open
+                </div>
+                <div className="text-xs text-text-disabled">
+                  PP-Box {c.ppBox} · Consumable {c.consumable}
                 </div>
                 <button
                   onClick={() => resetPage(setCityTab)(c.city as City)}

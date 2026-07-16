@@ -7,11 +7,14 @@ import type { MultiCityRun } from "../engine/run";
 
 export interface CityDigestRow {
   city: string;
-  real: number;
+  accuracy: number | null; // 1 - real/movements, %
+  open: number; // open REAL variances (the chase list)
+  ppBox: number; // count-only PP-box movements
+  topIssue: string | null; // dominant REAL category, short label + count ("Odoo lag (57)")
+  real: number; // REAL detected (as-found)
   info: number;
   total: number;
   high: number;
-  topIssue: string | null; // most common REAL variance, e.g. "Sheet-Only Dispatch (13)"
 }
 
 export interface DigestData {
@@ -22,12 +25,30 @@ export interface DigestData {
   sources?: { source: string; ok: boolean; rows: number }[];
 }
 
+const clampPct = (x: number) => Math.round(Math.max(0, Math.min(100, x)) * 10) / 10;
+const accuracyOf = (movements: number, real: number): number | null =>
+  movements > 0 ? clampPct((1 - real / movements) * 100) : null;
+
+// Short category label for the dominant variance type — the "Top Gap" column.
+function shortLabel(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes("not in odoo")) return "Odoo lag"; // Register/DT Logged — Not in Odoo
+  if (n.includes("sheet-only")) return "Reg only"; // Sheet-Only Dispatch
+  if (n.includes("dt-only")) return "DT only"; // DT-Only — Fake Scan Risk
+  if (n.includes("odoo-only")) return "Odoo only"; // Odoo-Only Entry
+  if (n.includes("dt missing")) return "DT missing"; // DT Missing — Ops & Odoo Agree
+  if (n.includes("duplicate")) return "Duplicate";
+  if (n.includes("direction conflict")) return "Dir conflict";
+  if (n.includes("failed delivery")) return "Failed delivery";
+  return name;
+}
+
 function topIssueOf(names: string[]): string | null {
   if (names.length === 0) return null;
   const tally: Record<string, number> = {};
   for (const n of names) tally[n] = (tally[n] ?? 0) + 1;
   const [name, count] = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
-  return `${name} (${count})`;
+  return `${shortLabel(name)} (${count})`;
 }
 
 // From a live engine run (cron): read straight off the per-city summaries.
@@ -37,13 +58,16 @@ export function buildDigestFromRun(
 ): DigestData {
   const cities: CityDigestRow[] = run.perCity.map((c) => ({
     city: c.city,
+    accuracy: accuracyOf(c.summary.movements, c.summary.real_count),
+    open: c.summary.real_count, // freshly reconciled — every REAL is open
+    ppBox: c.summary.pp_box_count,
+    topIssue: topIssueOf(c.real_variances.map((v) => v.variance_name)),
     real: c.summary.real_count,
     info: c.summary.info_count,
     total: c.summary.total,
     high: c.summary.high_priority,
-    topIssue: topIssueOf(c.real_variances.map((v) => v.variance_name)),
   }));
-  cities.sort((a, b) => b.real - a.real);
+  cities.sort((a, b) => b.open - a.open);
   return {
     date: run.date,
     generatedAt: run.ranAt,
@@ -68,13 +92,14 @@ export async function buildDigestFromDb(
     city: string;
     bucket: string;
     priority: string;
+    status: string;
     variance_name: string;
   }[] = [];
   let from = 0;
   for (;;) {
     const { data, error } = await db
       .from("variances")
-      .select("city,bucket,priority,variance_name")
+      .select("city,bucket,priority,status,variance_name")
       .eq("business_date", businessDate)
       .range(from, from + 999);
     if (error) throw new Error(`buildDigestFromDb: ${error.message}`);
@@ -83,25 +108,38 @@ export async function buildDigestFromDb(
     from += 1000;
   }
 
+  // Per-city movements / pp-box / real-count for accuracy + PP (the variance
+  // table no longer carries PP-box or consumable rows — see run_city_stats).
+  const { data: stats } = await db
+    .from("run_city_stats")
+    .select("city, movements, real_count, pp_box_count")
+    .eq("business_date", businessDate);
+  const statByCity = new Map((stats ?? []).map((s) => [s.city, s]));
+
   const byCity = new Map<string, typeof rows>();
   for (const r of rows) {
     if (!byCity.has(r.city)) byCity.set(r.city, []);
     byCity.get(r.city)!.push(r);
   }
+  for (const s of stats ?? []) if (!byCity.has(s.city)) byCity.set(s.city, []);
 
   const cities: CityDigestRow[] = [];
   for (const [city, cr] of byCity) {
-    const real = cr.filter((v) => v.bucket === "REAL");
+    const realRows = cr.filter((v) => v.bucket === "REAL");
+    const st = statByCity.get(city);
     cities.push({
       city,
-      real: real.length,
-      info: cr.length - real.length,
+      accuracy: accuracyOf(st?.movements ?? 0, st?.real_count ?? realRows.length),
+      open: realRows.filter((v) => v.status !== "closed").length,
+      ppBox: st?.pp_box_count ?? 0,
+      topIssue: topIssueOf(realRows.map((v) => v.variance_name)),
+      real: realRows.length,
+      info: cr.length - realRows.length,
       total: cr.length,
       high: cr.filter((v) => v.priority === "High").length,
-      topIssue: topIssueOf(real.map((v) => v.variance_name)),
     });
   }
-  cities.sort((a, b) => b.real - a.real);
+  cities.sort((a, b) => b.open - a.open);
 
   return {
     date: businessDate,
@@ -136,16 +174,16 @@ export function renderDigestHtml(data: DigestData, dashboardUrl?: string): strin
   const dateLabel = fmtDate(data.date);
   const cityRows = data.cities
     .map((c) => {
-      const flag = c.real > 0;
+      const flag = c.open > 0;
       const nameStyle = flag ? "color:#b91c1c;font-weight:700;" : "color:#111827;";
-      const realStyle = flag ? "color:#b91c1c;font-weight:700;" : "color:#111827;";
       const bg = flag ? "background:#fef2f2;" : "";
+      const acc = c.accuracy === null ? "—" : `${c.accuracy}%`;
       return `
       <tr style="${bg}">
         <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;${nameStyle}">${esc(c.city)}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;${realStyle}">${c.real}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280;">${c.info}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:${c.high ? "#b91c1c" : "#6b7280"};">${c.high}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#111827;">${acc}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;${flag ? "color:#b91c1c;font-weight:700;" : "color:#6b7280;"}">${c.open}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280;">${c.ppBox}</td>
         <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;color:#374151;font-size:12px;">${c.topIssue ? esc(c.topIssue) : "—"}</td>
       </tr>`;
     })
@@ -198,14 +236,14 @@ export function renderDigestHtml(data: DigestData, dashboardUrl?: string): strin
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#ffffff;">
             <thead><tr style="background:#f3f4f6;">
               <th style="padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;">City</th>
-              <th style="padding:10px 12px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;">Action</th>
-              <th style="padding:10px 12px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;">Info</th>
-              <th style="padding:10px 12px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;">High</th>
-              <th style="padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;">Top Issue</th>
+              <th style="padding:10px 12px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;">Accuracy</th>
+              <th style="padding:10px 12px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;">Open</th>
+              <th style="padding:10px 12px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;">PP</th>
+              <th style="padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;">Top Gap</th>
             </tr></thead>
             <tbody>${cityRows}</tbody>
           </table>
-          <p style="margin:12px 0 0;color:#9ca3af;font-size:12px;">Cities with open action items are highlighted red. "Action" = REAL variances a manager must chase; "Info" = context (Odoo-only postings, spares, PP-boxes).</p>
+          <p style="margin:12px 0 0;color:#9ca3af;font-size:12px;">Cities with open items are highlighted red. Accuracy = 1 − REAL/movements. Open = REAL variances to chase. PP = count-only packing-box movements. Top Gap = the dominant variance category (Odoo lag / Reg only / DT only …).</p>
           ${cta}
         </td></tr>
 
@@ -226,10 +264,11 @@ export function renderDigestText(data: DigestData): string {
   lines.push("");
   lines.push(`Total ${data.totals.total} | Need action (REAL) ${data.totals.real} | Info ${data.totals.info} | High ${data.totals.high}`);
   lines.push("");
-  lines.push("CITY         ACTION  INFO  HIGH  TOP ISSUE");
+  lines.push("CITY          ACC%   OPEN   PP   TOP GAP");
   for (const c of data.cities) {
+    const acc = c.accuracy === null ? "-" : `${c.accuracy}%`;
     lines.push(
-      `${c.city.padEnd(12)} ${String(c.real).padStart(6)} ${String(c.info).padStart(5)} ${String(c.high).padStart(5)}  ${c.topIssue ?? "-"}`
+      `${c.city.padEnd(13)} ${acc.padStart(5)} ${String(c.open).padStart(5)} ${String(c.ppBox).padStart(4)}   ${c.topIssue ?? "-"}`
     );
   }
   lines.push("");

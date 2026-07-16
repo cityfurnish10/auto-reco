@@ -124,6 +124,22 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
         </div>
       </div>
 
+      {/* Count-only movements (PP boxes & consumables) — not variances */}
+      <div className="card px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-1">
+        <span className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
+          Count-only movements · {city}
+        </span>
+        <span className="text-sm text-text-muted flex items-center gap-1.5">
+          <Icon name="inventory_2" size={16} className="text-accent" /> PP-Box{" "}
+          <b className="text-text-primary">{statsLoading ? "…" : cityAgg?.ppBox ?? 0}</b>
+        </span>
+        <span className="text-sm text-text-muted flex items-center gap-1.5">
+          <Icon name="category" size={16} className="text-accent" /> Consumables{" "}
+          <b className="text-text-primary">{statsLoading ? "…" : cityAgg?.consumable ?? 0}</b>
+        </span>
+        <span className="text-xs text-text-disabled">for this run — tracked as counts, not variances</span>
+      </div>
+
       {/* Variance table */}
       <section className="card overflow-hidden flex flex-col">
         <div className="p-4 border-b border-border flex flex-col lg:flex-row justify-between lg:items-center gap-3 bg-surface-elevated">

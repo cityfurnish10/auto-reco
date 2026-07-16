@@ -229,7 +229,7 @@ describe("Failed delivery & PP boxes (ops-practice rules)", () => {
     ).toBeUndefined();
   });
 
-  it("PP box entries collapse to one count-only INFO row per direction", () => {
+  it("PP box entries are counted (summary.pp_box_count), not variance rows", () => {
     const res = runReconciliation(
       [
         ...anchor(),
@@ -238,10 +238,9 @@ describe("Failed delivery & PP boxes (ops-practice rules)", () => {
       ],
       "MUMBAI"
     );
-    const pp = res.variances.filter((v) => v.variance_name === "PP Box Movement (Count Only)");
-    expect(pp).toHaveLength(1);
-    expect(pp[0].bucket).toBe("INFO");
-    expect(pp[0].note).toContain("2 PP-box");
+    // No longer a variance row — surfaced as a per-city count instead.
+    expect(res.variances.some((v) => v.variance_name === "PP Box Movement (Count Only)")).toBe(false);
+    expect(res.summary.pp_box_count).toBe(2);
     // They must never run the normal ladder as fake barcodes.
     expect(res.variances.some((v) => v.variance_name === "Sheet-Only Dispatch — No Trail")).toBe(false);
   });
@@ -354,7 +353,7 @@ describe("Section 7 — suppressions", () => {
     ).toBeUndefined();
   });
 
-  it("spare/consumable label → Spare/Consumable Movement (INFO), not the ladder", () => {
+  it("spare/consumable label → counted (summary.consumable_count), not the ladder", () => {
     const res = runReconciliation(
       [
         ...anchor(),
@@ -362,11 +361,9 @@ describe("Section 7 — suppressions", () => {
       ],
       "MUMBAI"
     );
-    const spare = res.variances.find(
-      (v) => v.variance_name === "Spare/Consumable Movement"
-    );
-    expect(spare).toBeDefined();
-    expect(spare?.bucket).toBe("INFO");
+    // No longer a variance row — surfaced as a per-city count instead.
+    expect(res.variances.some((v) => v.variance_name === "Spare/Consumable Movement")).toBe(false);
+    expect(res.summary.consumable_count).toBe(1);
     // It must NOT have been classified as a gate-only REAL variance.
     expect(
       res.variances.some(

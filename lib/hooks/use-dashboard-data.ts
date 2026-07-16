@@ -105,6 +105,8 @@ export interface CityAgg {
   info: number;
   real: number;
   infoBucket: number;
+  ppBox: number;
+  consumable: number;
 }
 
 export interface StatsResponse {
