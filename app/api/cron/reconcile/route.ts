@@ -21,6 +21,7 @@ import {
   createRun,
   saveSourceRows,
   upsertVariances,
+  saveCityStats,
   saveIngestionLogs,
   finalizeRun,
   markRunFailed,
@@ -96,6 +97,9 @@ async function handle(req: NextRequest) {
 
     // 4. Upsert variances (dedup key; human closures preserved).
     const varianceCount = await upsertVariances(db, runId, run.perCity);
+
+    // 4b. Per-city rollup for the leaderboard (movements + REAL count per city).
+    await saveCityStats(db, runId, runDate, run.perCity);
 
     // 5. Log ingestion health per source.
     await saveIngestionLogs(db, runId, results);

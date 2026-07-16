@@ -110,6 +110,32 @@ export async function upsertVariances(
   return payload.length;
 }
 
+// Per-city rollup for the leaderboard (movements = accuracy denominator,
+// real_count = numerator, as-found at reconcile time). Upsert on
+// (business_date, city) so a re-run of a date overwrites rather than duplicates.
+export async function saveCityStats(
+  db: DB,
+  runId: string,
+  runDate: string,
+  perCity: CityRunResult[]
+): Promise<number> {
+  const payload = perCity.map((c) => ({
+    run_id: runId,
+    business_date: c.date || runDate,
+    city: c.city,
+    movements: c.summary.movements,
+    real_count: c.summary.real_count,
+    info_count: c.summary.info_count,
+    high_count: c.summary.high_priority,
+  }));
+  if (payload.length === 0) return 0;
+  const { error } = await db
+    .from("run_city_stats")
+    .upsert(payload, { onConflict: "business_date,city" });
+  if (error) throw new Error(`saveCityStats failed: ${error.message}`);
+  return payload.length;
+}
+
 export async function saveIngestionLogs(
   db: DB,
   runId: string,

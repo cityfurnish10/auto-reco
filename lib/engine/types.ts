@@ -129,6 +129,9 @@ export interface CityRunResult {
     info_count: number;
     high_priority: number;
     medium_priority: number;
+    // Total distinct directional movements (IN + OUT reconciliation universe) —
+    // the accuracy-rate denominator for the leaderboard.
+    movements: number;
     by_variance: Record<string, number>;
   };
   warnings: string[];

@@ -223,6 +223,9 @@ export function runReconciliation(
   // Summary.
   const real_variances = variances.filter((v) => v.bucket === "REAL");
   const info_variances = variances.filter((v) => v.bucket === "INFO");
+  // Reconciliation universe size = distinct valid barcodes examined per
+  // direction (the leaderboard accuracy denominator).
+  const movements = inViews.size + outViews.size;
   const by_variance: Record<string, number> = {};
   for (const v of variances) {
     by_variance[v.variance_name] = (by_variance[v.variance_name] ?? 0) + 1;
@@ -242,6 +245,7 @@ export function runReconciliation(
       info_count: info_variances.length,
       high_priority: variances.filter((v) => v.priority === "High").length,
       medium_priority: variances.filter((v) => v.priority === "Medium").length,
+      movements,
       by_variance,
     },
     warnings,
