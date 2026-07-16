@@ -343,6 +343,13 @@ body {
   .table-clean tbody tr:hover .row-action {
     opacity: 1;
   }
+  /* Touch devices have no hover — always show row actions so they're reachable
+     on a phone/tablet (otherwise the dispute/delete buttons are invisible). */
+  @media (hover: none) {
+    .table-clean .row-action {
+      opacity: 1;
+    }
+  }
 
   /* Skeleton loading block — a rounded placeholder with a shimmer sweep.
      Used by the route-level loading.tsx files. Sizing/shape comes from

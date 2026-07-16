@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Hanken_Grotesk, Inter } from "next/font/google";
 import "./globals.css";
 
@@ -17,6 +17,11 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "CityFurnish | Operations Portal",
   description: "Warehouse Reconciliation Platform",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 // Inline, pre-hydration theme init — reads the saved preference (or system

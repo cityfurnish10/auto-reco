@@ -243,7 +243,49 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile: card list (below md) */}
+        <div className="md:hidden divide-y divide-border">
+          {rows.map((v) => (
+            <div key={v.id} className="p-4 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <span className="font-mono font-semibold text-text-primary text-sm break-all">{v.barcode}</span>
+                <span className={`${PRIORITY_BADGE[v.priority]} shrink-0`}>{v.priority}</span>
+              </div>
+              {v.product && <p className="text-sm text-text-secondary">{v.product}</p>}
+              <p className="text-sm text-text-primary font-medium">{v.variance_name}</p>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
+                <span>{v.business_date}</span>
+                <span>{v.city}</span>
+                <SourceBadge source={v.variance_source} />
+                {v.job_type && <span>{v.job_type}</span>}
+                <span className={`${STATUS_BADGE[v.status]} uppercase`}>{v.status.replace("_", " ")}</span>
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-text-muted">
+                {v.so_number && <span>SO: {v.so_number}</span>}
+                {v.ticket_id && <span>Ticket: {v.ticket_id}</span>}
+              </div>
+              {v.status === "open" && (
+                <button
+                  onClick={() => dispute(v.id)}
+                  disabled={busyId === v.id}
+                  className="btn btn-compact btn-secondary w-full mt-1 disabled:opacity-40"
+                >
+                  <Icon name="flag" size={16} />
+                  Dispute
+                </button>
+              )}
+            </div>
+          ))}
+          {!loading && rows.length === 0 && (
+            <div className="text-center py-10 text-text-muted flex flex-col items-center gap-2">
+              <Icon name="search_off" size={32} className="text-text-disabled" />
+              No variances match the selected filters.
+            </div>
+          )}
+        </div>
+
+        {/* Tablet/desktop: full table (md+) */}
+        <div className="overflow-x-auto hidden md:block">
           <table className="table-clean">
             <thead>
               <tr>

@@ -49,14 +49,14 @@ export default function UsersPage() {
   return (
     <div className="p-container-margin">
       {/* Header row */}
-      <div className="flex justify-between items-end mb-6">
+      <div className="flex flex-col gap-4 md:flex-row md:justify-between md:items-end mb-6">
         <div>
           <p className="text-text-muted text-sm mb-2">
             Operational Personnel Overview
           </p>
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
             <div className="card px-4 py-3 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-control bg-accent flex items-center justify-center">
+              <div className="w-10 h-10 rounded-control bg-accent flex items-center justify-center shrink-0">
                 <Icon name="group" size={22} className="text-white" />
               </div>
               <div>
@@ -65,7 +65,7 @@ export default function UsersPage() {
               </div>
             </div>
             <div className="card px-4 py-3 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-control bg-success-soft flex items-center justify-center">
+              <div className="w-10 h-10 rounded-control bg-success-soft flex items-center justify-center shrink-0">
                 <Icon name="verified_user" size={22} className="text-success" />
               </div>
               <div>
@@ -73,7 +73,7 @@ export default function UsersPage() {
                 <p className="text-lg font-bold text-text-primary">{active}</p>
               </div>
             </div>
-            <div className="relative self-center">
+            <div className="relative self-stretch sm:self-center">
               <Icon
                 name="search"
                 size={18}
@@ -84,12 +84,12 @@ export default function UsersPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search operations team..."
-                className="input-clean pl-9 w-[280px]"
+                className="input-clean pl-9 w-full sm:w-[280px]"
               />
             </div>
           </div>
         </div>
-        <button onClick={() => setPanelOpen(true)} className="btn btn-primary">
+        <button onClick={() => setPanelOpen(true)} className="btn btn-primary shrink-0">
           <Icon name="person_add" size={18} />
           Add User
         </button>
@@ -97,6 +97,7 @@ export default function UsersPage() {
 
       {/* Users table */}
       <div className="card overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="table-clean">
           <thead>
             <tr>
@@ -160,6 +161,7 @@ export default function UsersPage() {
             ))}
           </tbody>
         </table>
+        </div>
         <div className="px-4 py-3 bg-surface-elevated flex justify-between items-center border-t border-border">
           <p className="text-xs text-text-muted">
             Showing {rows.length} of {users.length} users • Provisioned from
@@ -175,7 +177,7 @@ export default function UsersPage() {
             className="fixed inset-0 bg-primary-container/40 z-[60]"
             onClick={() => setPanelOpen(false)}
           ></div>
-          <div className="fixed right-0 top-0 h-full w-[440px] bg-surface-card shadow-card-hover z-[70] flex flex-col">
+          <div className="fixed right-0 top-0 h-full w-full max-w-[440px] bg-surface-card shadow-card-hover z-[70] flex flex-col">
             <div className="p-container-margin border-b border-border flex justify-between items-center">
               <h3 className="font-headline text-lg font-bold text-text-primary">
                 Add New User

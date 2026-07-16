@@ -252,7 +252,7 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
                 handleFiles(e.dataTransfer.files);
               }}
               onClick={() => fileInputRef.current?.click()}
-              className={`bg-surface-card border-2 border-dashed rounded-card p-16 flex flex-col items-center justify-center text-center transition-colors duration-150 cursor-pointer ${
+              className={`bg-surface-card border-2 border-dashed rounded-card p-8 md:p-16 flex flex-col items-center justify-center text-center transition-colors duration-150 cursor-pointer ${
                 dragOver ? "border-accent bg-surface-elevated" : "border-border hover:border-accent"
               }`}
             >
@@ -405,7 +405,7 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
       )}
 
       {toast && (
-        <div className="fixed bottom-8 right-8 card bg-accent text-white px-6 py-4 flex items-center gap-4 z-[60] shadow-card-hover">
+        <div className="fixed inset-x-4 bottom-4 md:inset-x-auto md:right-8 md:bottom-8 card bg-accent text-white px-6 py-4 flex items-center gap-4 z-[60] shadow-card-hover">
           <div className="w-8 h-8 bg-success-soft text-success rounded-full flex items-center justify-center">
             <Icon name="check" size={18} />
           </div>
@@ -538,7 +538,7 @@ function DemoUploadsClient({ user }: { user: SessionUser }) {
               handleFiles(e.dataTransfer.files);
             }}
             onClick={() => fileInputRef.current?.click()}
-            className={`bg-surface-card border-2 border-dashed rounded-card p-16 flex flex-col items-center justify-center text-center transition-colors duration-150 cursor-pointer ${
+            className={`bg-surface-card border-2 border-dashed rounded-card p-8 md:p-16 flex flex-col items-center justify-center text-center transition-colors duration-150 cursor-pointer ${
               dragOver ? "border-accent bg-surface-elevated" : "border-border hover:border-accent"
             }`}
           >
@@ -690,7 +690,7 @@ function DemoUploadsClient({ user }: { user: SessionUser }) {
       </div>
 
       {toast && (
-        <div className="fixed bottom-8 right-8 card bg-accent text-white px-6 py-4 flex items-center gap-4 z-[60] shadow-card-hover">
+        <div className="fixed inset-x-4 bottom-4 md:inset-x-auto md:right-8 md:bottom-8 card bg-accent text-white px-6 py-4 flex items-center gap-4 z-[60] shadow-card-hover">
           <div className="w-8 h-8 bg-success-soft text-success rounded-full flex items-center justify-center">
             <Icon name="check" size={18} />
           </div>

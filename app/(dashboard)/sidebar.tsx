@@ -24,7 +24,15 @@ const NAV_ITEMS = [
   { href: "/email-digest", label: "Email Digest", icon: "mail", roles: ["ADMIN"] },
 ];
 
-export default function Sidebar({ user }: { user: SessionUser }) {
+export default function Sidebar({
+  user,
+  open = false,
+  onClose,
+}: {
+  user: SessionUser;
+  open?: boolean;
+  onClose?: () => void;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const { applyReconciliationRun } = useDemoStore();
@@ -62,14 +70,28 @@ export default function Sidebar({ user }: { user: SessionUser }) {
   const items = NAV_ITEMS.filter((i) => i.roles.includes(user.role));
 
   return (
-    <aside className="w-sidebar-width h-screen fixed left-0 top-0 bg-primary-container flex flex-col py-6 z-50 shadow-xl">
-      <div className="px-6 mb-8">
-        <h1 className="font-headline text-lg font-bold text-white uppercase tracking-wider">
-          CityFurnish
-        </h1>
-        <p className="text-xs text-on-primary-container uppercase tracking-widest mt-1 opacity-60">
-          Operations Portal
-        </p>
+    <aside
+      className={`w-sidebar-width h-screen fixed left-0 top-0 bg-primary-container flex flex-col py-6 z-50 shadow-xl transition-transform duration-200 lg:translate-x-0 ${
+        open ? "translate-x-0" : "-translate-x-full"
+      }`}
+    >
+      <div className="px-6 mb-8 flex items-start justify-between">
+        <div>
+          <h1 className="font-headline text-lg font-bold text-white uppercase tracking-wider">
+            CityFurnish
+          </h1>
+          <p className="text-xs text-on-primary-container uppercase tracking-widest mt-1 opacity-60">
+            Operations Portal
+          </p>
+        </div>
+        {/* Close button — drawer only (mobile) */}
+        <button
+          onClick={onClose}
+          className="lg:hidden text-on-primary-container hover:text-white -mr-1"
+          title="Close menu"
+        >
+          <Icon name="close" size={22} />
+        </button>
       </div>
 
       <nav className="flex-1 px-3 space-y-0.5">
@@ -79,6 +101,7 @@ export default function Sidebar({ user }: { user: SessionUser }) {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onClose}
               className={
                 active
                   ? "flex items-center gap-3 px-3 py-2.5 rounded-control bg-white/10 text-white border-l-[3px] border-primary-fixed-dim font-semibold transition-[background-color,border-color] duration-150"
@@ -110,7 +133,7 @@ export default function Sidebar({ user }: { user: SessionUser }) {
       )}
 
       {runToast && (
-        <div className="fixed bottom-8 left-[276px] card bg-primary-container text-white px-6 py-4 flex items-center gap-4 z-[80] border-white/10">
+        <div className="fixed inset-x-4 bottom-4 lg:inset-x-auto lg:left-[276px] lg:bottom-8 card bg-primary-container text-white px-6 py-4 flex items-center gap-4 z-[80] border-white/10">
           <div className="w-8 h-8 rounded-full bg-success-soft text-success flex items-center justify-center">
             <Icon name="check" size={18} />
           </div>

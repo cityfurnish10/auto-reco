@@ -78,7 +78,7 @@ export default function LeaderboardPage() {
             active regions.
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="bg-surface-elevated rounded-control p-1 flex">
             {(["Day", "Week", "Month"] as Range[]).map((r) => (
               <button
@@ -163,7 +163,37 @@ export default function LeaderboardPage() {
 
       {/* Ranking Table */}
       <section className="card overflow-hidden flex flex-col">
-        <div className="overflow-x-auto">
+        {/* Mobile: card list (below md) */}
+        <div className="md:hidden divide-y divide-border">
+          {rows.map((r) => {
+            const trend = TREND_ICON[r.trend];
+            return (
+              <div key={r.city} className={`p-4 ${r.rank === 1 ? "row-gold" : ""}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {r.rank === 1 ? (
+                      <Icon name="workspace_premium" size={20} className="text-[#b9aa83] shrink-0" />
+                    ) : (
+                      <span className="font-headline text-base text-text-muted shrink-0">#{r.rank}</span>
+                    )}
+                    <span className="font-headline text-base text-text-primary truncate">{r.city}</span>
+                    <Icon name={trend.icon} size={18} className={`shrink-0 ${trend.cls}`} />
+                  </div>
+                  <span className="font-bold text-text-primary shrink-0">{r.accuracy}%</span>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted mt-2">
+                  <span>{r.totalItems.toLocaleString()} items</span>
+                  <span>{r.liveOpen} open</span>
+                  <span>{r.liveClosed} closed</span>
+                  <span className={r.liveHigh > 0 ? "text-danger font-semibold" : ""}>{r.liveHigh} high</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Tablet/desktop: full table (md+) */}
+        <div className="overflow-x-auto hidden md:block">
           <table className="table-clean">
             <thead>
               <tr>

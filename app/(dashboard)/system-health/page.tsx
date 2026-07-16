@@ -19,7 +19,7 @@ export default function SystemHealthPage() {
   return (
     <div className="p-container-margin space-y-8">
       {/* Header */}
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-3">
         <h2 className="font-headline text-xl text-text-primary">
           System Health
         </h2>
@@ -79,7 +79,32 @@ export default function SystemHealthPage() {
             </p>
           </div>
         </div>
-        <div className="overflow-x-auto">
+        {/* Mobile: card list (below md) */}
+        <div className="md:hidden divide-y divide-border">
+          {ERROR_LOGS.map((log, i) => (
+            <div key={i} className="p-4 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${log.sourceColor}`}></span>
+                  <span className="font-medium text-sm truncate">{log.source}</span>
+                  <span className="text-xs text-text-muted">· {log.city}</span>
+                </div>
+                <span className={`${LOG_BADGE[log.status]} shrink-0`}>{log.status}</span>
+              </div>
+              <p
+                className={`font-mono text-xs break-words ${
+                  log.status === "RESOLVED" ? "text-success" : log.status === "RETRYING" ? "text-text-secondary" : "text-danger"
+                }`}
+              >
+                {log.message}
+              </p>
+              <p className="text-xs text-text-muted">{log.timestamp}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Tablet/desktop: full table (md+) */}
+        <div className="overflow-x-auto hidden md:block">
           <table className="table-clean">
             <thead>
               <tr>

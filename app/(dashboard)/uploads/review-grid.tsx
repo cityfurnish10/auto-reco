@@ -160,6 +160,9 @@ export default function ReviewGrid({
                 {!pageDirection && <span className="badge badge-medium">Needs confirmation</span>}
               </div>
             </div>
+            <p className="md:hidden px-4 py-2 text-xs text-text-muted bg-surface-elevated border-b border-border">
+              This grid is best reviewed on a larger screen — scroll sideways to see all columns.
+            </p>
             <div className="overflow-x-auto">
               <table className="table-clean">
                 <thead>
