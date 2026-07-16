@@ -115,5 +115,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   // Protect everything except static assets and cron/api routes that carry
   // their own auth (cron uses CRON_SECRET, added in Phase 5).
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|api/cron).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|robots.txt|sitemap.xml|api/cron).*)",
+  ],
 };
