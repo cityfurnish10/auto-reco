@@ -29,8 +29,11 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     };
   }
 
-  // Authenticated but no app_users row yet — minimal admin-scoped fallback so
-  // the app is usable; RLS still limits what the queries can actually return.
+  // Authenticated but no app_users row (unprovisioned, or the app_users lookup
+  // errored). FAIL CLOSED — never grant admin here. Return a MANAGER with no
+  // city: they land on the (empty, city-scoped) manager view and RLS returns
+  // nothing, rather than getting all-cities admin access. An admin must
+  // provision them in app_users to give real access.
   const supabase = await createClient();
   const {
     data: { user },
@@ -39,7 +42,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   return {
     name: user.email ?? "User",
     email: user.email ?? "",
-    role: "ADMIN",
+    role: "MANAGER",
     city: null,
   };
 }
