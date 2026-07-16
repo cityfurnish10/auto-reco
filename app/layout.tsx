@@ -15,7 +15,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "CityFurnish | Operations Portal",
+  title: "Cityfurnish | Operations Portal",
   description: "Warehouse Reconciliation Platform",
 };
 

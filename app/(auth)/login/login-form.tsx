@@ -62,7 +62,7 @@ export default function LoginForm() {
         <div className="w-full max-w-[400px] card login-card-shadow overflow-hidden p-10 flex flex-col items-center">
           <header className="mb-10 text-center">
             <h1 className="font-headline text-xl font-black text-accent tracking-tighter uppercase">
-              CityFurnish
+              Cityfurnish
             </h1>
             <p className="text-xs text-text-muted tracking-widest mt-1">
               OPERATIONS PORTAL
