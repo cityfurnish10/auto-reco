@@ -6,6 +6,7 @@
 // enforces its own bearer-token check. Node runtime (uses the mongodb driver).
 // Handles GET (Vercel Cron) and POST (manual / external scheduler / curl).
 
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runAllCities } from "@/lib/engine/run";
@@ -24,11 +25,15 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // Hobby ceiling; raise to 300 on Vercel Pro.
 
+// Constant-time bearer check — avoids leaking the secret via response-timing.
 function authorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
-  const header = req.headers.get("authorization");
-  return header === `Bearer ${secret}`;
+  const header = req.headers.get("authorization") ?? "";
+  const expected = `Bearer ${secret}`;
+  const a = Buffer.from(header);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 // Reconciliation runs one day behind ("D-1") — it's only reliable once a
