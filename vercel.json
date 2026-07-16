@@ -3,6 +3,10 @@
   "regions": ["bom1"],
   "crons": [
     {
+      "path": "/api/cron/ocr",
+      "schedule": "0 0 * * *"
+    },
+    {
       "path": "/api/cron/reconcile",
       "schedule": "30 0 * * *"
     }

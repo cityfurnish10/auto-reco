@@ -39,3 +39,9 @@ next-env.d.ts
 *.xlsx
 *.xls
 *.csv
+
+# local working artifacts
+/reports/
+/tsc.log
+/eslint.log
+scratch_*

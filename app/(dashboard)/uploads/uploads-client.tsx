@@ -4,10 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useDemoStore } from "@/lib/demo-store";
 import type { SessionUser } from "@/lib/demo-auth";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import type { GuardUpload, ParsedGuardRow, UploadStatus } from "@/lib/db/schema";
+import type { GuardUpload, UploadStatus } from "@/lib/db/schema";
 import { CITIES, type City, type UploadStatus as DemoUploadStatus } from "@/lib/sample-data";
 import { Icon } from "@/components/icon";
-import ReviewGrid from "./review-grid";
 
 const supabaseConfigured =
   !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -28,15 +27,14 @@ const REAL_STATUS_BADGE: Record<UploadStatus, string> = {
 };
 
 const REAL_STATUS_LABEL: Record<UploadStatus, string> = {
-  pending: "Uploaded",
-  ocr_running: "Running OCR…",
-  needs_review: "Needs review",
+  pending: "Queued for OCR",
+  ocr_running: "Processing…",
+  needs_review: "Processing…", // legacy rows; new flow never stops here
   processed: "Processed",
   failed: "Failed",
 };
 
 const MAX_SIZE_MB = 20;
-const POLL_INTERVAL_MS = 3000;
 
 export default function UploadsClient({ user }: { user: SessionUser }) {
   if (supabaseConfigured) {
@@ -46,9 +44,11 @@ export default function UploadsClient({ user }: { user: SessionUser }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Real pipeline: PDF → Supabase Storage (signed URL) → Azure OCR (async,
-// polled) → human review grid → confirmed rows feed the next reconciliation
-// run. See the approved Guard Register OCR Pipeline plan for the full design.
+// Real pipeline (no review step): PDF → Supabase Storage (signed URL) →
+// guard_uploads row (status 'pending'). A background job (/api/cron/ocr, and a
+// safety-net pass inside the reconcile cron) OCRs it, stores every row RAW, and
+// marks it 'processed'. Those rows then feed reconciliation alongside the other
+// three sources. The uploader just drops the file and walks away.
 // ─────────────────────────────────────────────────────────────────────────
 function RealUploadsClient({ user }: { user: SessionUser }) {
   const isManager = user.role === "MANAGER";
@@ -58,9 +58,6 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
   const [toast, setToast] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const [activeUpload, setActiveUpload] = useState<GuardUpload | null>(null);
-  const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [history, setHistory] = useState<GuardUpload[]>([]);
 
   async function refreshHistory() {
@@ -78,25 +75,6 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
     refreshHistory();
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
-
-  function pollStatus(id: string) {
-    const tick = async () => {
-      const res = await fetch(`/api/uploads/guard/${id}/status`);
-      const json = await res.json();
-      if (!res.ok) {
-        setUploadError(json.error ?? "status check failed");
-        return;
-      }
-      const upload = json.data as GuardUpload;
-      setActiveUpload(upload);
-      if (upload.status === "ocr_running" || upload.status === "pending") {
-        setTimeout(tick, POLL_INTERVAL_MS);
-      } else {
-        refreshHistory();
-      }
-    };
-    tick();
-  }
 
   async function handleFiles(files: FileList | null) {
     setUploadError(null);
@@ -129,44 +107,17 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
         .uploadToSignedUrl(created.filePath, created.token, file);
       if (uploadErr) throw new Error(uploadErr.message);
 
-      const submitRes = await fetch(`/api/uploads/guard/${created.id}/submit`, {
-        method: "POST",
-      });
-      const submitJson = await submitRes.json();
-      if (!submitRes.ok) throw new Error(submitJson.error ?? "failed to start OCR");
-
-      setUploading(false);
-      pollStatus(created.id);
-      refreshHistory();
-    } catch (e) {
-      setUploading(false);
-      setUploadError(e instanceof Error ? e.message : String(e));
-    }
-
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }
-
-  async function handleReviewSubmit(rows: ParsedGuardRow[]) {
-    if (!activeUpload) return;
-    setReviewSubmitting(true);
-    try {
-      const res = await fetch(`/api/uploads/guard/${activeUpload.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "failed to submit review");
+      // Done — the file is in Storage. OCR happens in the background; no review.
       setToast(
-        `"${activeUpload.file_name}" confirmed — ${json.data.rows_valid} rows staged for ${activeUpload.city}.`
+        `"${file.name}" uploaded for ${selectedCity} — it will be OCR'd and included in the next reconciliation.`
       );
       setTimeout(() => setToast(null), 6000);
-      setActiveUpload(null);
       refreshHistory();
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : String(e));
     } finally {
-      setReviewSubmitting(false);
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
@@ -174,8 +125,6 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
     () => (isManager ? history.filter((u) => u.city === user.city) : history),
     [history, isManager, user.city]
   );
-
-  const showingReview = activeUpload?.status === "needs_review";
 
   return (
     <div className="p-container-margin">
@@ -218,191 +167,164 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
         </div>
       )}
 
-      {showingReview && activeUpload.parsed_rows ? (
-        <section className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-headline text-lg text-text-primary">
-              Review: {activeUpload.file_name}
-            </h3>
-            <button
-              onClick={() => setActiveUpload(null)}
-              className="btn btn-ghost btn-compact"
-            >
-              Cancel
-            </button>
-          </div>
-          <ReviewGrid
-            initialRows={activeUpload.parsed_rows}
-            onSubmit={handleReviewSubmit}
-            submitting={reviewSubmitting}
-          />
-        </section>
-      ) : (
-        <div className="grid grid-cols-12 gap-gutter">
-          <section className="col-span-12 lg:col-span-8">
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(true);
-              }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragOver(false);
-                handleFiles(e.dataTransfer.files);
-              }}
-              onClick={() => fileInputRef.current?.click()}
-              className={`bg-surface-card border-2 border-dashed rounded-card p-8 md:p-16 flex flex-col items-center justify-center text-center transition-colors duration-150 cursor-pointer ${
-                dragOver ? "border-accent bg-surface-elevated" : "border-border hover:border-accent"
-              }`}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="application/pdf"
-                className="hidden"
-                onChange={(e) => handleFiles(e.target.files)}
-              />
-              {uploading || activeUpload?.status === "ocr_running" ? (
-                <div className="flex flex-col items-center">
-                  <div className="w-16 h-16 border-4 border-accent-soft border-t-accent rounded-full animate-spin mb-4"></div>
-                  <p className="text-sm font-medium text-accent">
-                    {uploading ? "Uploading…" : "Running OCR — this can take a minute for a multi-page PDF…"}
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <div className="w-20 h-20 bg-surface-elevated rounded-full flex items-center justify-center mb-6 border border-border">
-                    <Icon name="cloud_upload" size={40} className="text-accent" />
-                  </div>
-                  <h3 className="font-headline text-lg text-text-primary mb-2">
-                    Drag the register PDF here or click to browse
-                  </h3>
-                  <p className="text-sm text-text-muted mb-6">
-                    Supports .pdf only (both IN and OUT pages in one file). Maximum {MAX_SIZE_MB}MB.
-                  </p>
-                  <button type="button" className="btn btn-secondary">
-                    Browse Files
-                  </button>
-                </>
-              )}
-            </div>
-
-            {uploadError && (
-              <div className="mt-4 flex items-center gap-3 p-4 bg-danger-soft rounded-card border border-danger/20">
-                <Icon name="error" size={22} className="text-danger" />
-                <p className="text-sm text-danger font-semibold">{uploadError}</p>
+      <div className="grid grid-cols-12 gap-gutter">
+        <section className="col-span-12 lg:col-span-8">
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              handleFiles(e.dataTransfer.files);
+            }}
+            onClick={() => fileInputRef.current?.click()}
+            className={`bg-surface-card border-2 border-dashed rounded-card p-8 md:p-16 flex flex-col items-center justify-center text-center transition-colors duration-150 cursor-pointer ${
+              dragOver ? "border-accent bg-surface-elevated" : "border-border hover:border-accent"
+            }`}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf"
+              className="hidden"
+              onChange={(e) => handleFiles(e.target.files)}
+            />
+            {uploading ? (
+              <div className="flex flex-col items-center">
+                <div className="w-16 h-16 border-4 border-accent-soft border-t-accent rounded-full animate-spin mb-4"></div>
+                <p className="text-sm font-medium text-accent">Uploading…</p>
               </div>
-            )}
-
-            <div className="mt-6 flex items-start gap-3 p-4 bg-warning-soft rounded-card border border-status-warning/20">
-              <Icon name="info" size={22} className="text-status-warning" />
-              <div>
-                <p className="text-sm text-status-warning font-semibold mb-0.5">How this works</p>
-                <p className="text-sm text-text-secondary">
-                  Azure OCR reads the scanned register, then you review and correct every row —
-                  including confirming each page&apos;s direction (IN/OUT) — before it feeds the
-                  next reconciliation run. Nothing reaches the engine unreviewed.
+            ) : (
+              <>
+                <div className="w-20 h-20 bg-surface-elevated rounded-full flex items-center justify-center mb-6 border border-border">
+                  <Icon name="cloud_upload" size={40} className="text-accent" />
+                </div>
+                <h3 className="font-headline text-lg text-text-primary mb-2">
+                  Drag the register PDF here or click to browse
+                </h3>
+                <p className="text-sm text-text-muted mb-6">
+                  Supports .pdf only (both IN and OUT pages in one file). Maximum {MAX_SIZE_MB}MB.
                 </p>
-              </div>
-            </div>
-          </section>
+                <button type="button" className="btn btn-secondary">
+                  Browse Files
+                </button>
+              </>
+            )}
+          </div>
 
-          <section className="col-span-12 lg:col-span-4">
-            <div className="card p-6 h-full">
-              <h4 className="font-headline text-lg text-text-primary mb-4">Quick Insights</h4>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-3 bg-surface-elevated rounded-control">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-control flex items-center justify-center text-accent bg-accent-soft">
-                      <Icon name="history" size={22} />
-                    </div>
-                    <span className="text-sm font-medium">Uploads Recorded</span>
+          {uploadError && (
+            <div className="mt-4 flex items-center gap-3 p-4 bg-danger-soft rounded-card border border-danger/20">
+              <Icon name="error" size={22} className="text-danger" />
+              <p className="text-sm text-danger font-semibold">{uploadError}</p>
+            </div>
+          )}
+
+          <div className="mt-6 flex items-start gap-3 p-4 bg-warning-soft rounded-card border border-status-warning/20">
+            <Icon name="info" size={22} className="text-status-warning" />
+            <div>
+              <p className="text-sm text-status-warning font-semibold mb-0.5">How this works</p>
+              <p className="text-sm text-text-secondary">
+                Just drop the register PDF. It&apos;s stored securely, then read by
+                OCR in the background — no manual review — and the extracted rows are
+                included automatically in the next reconciliation run alongside Odoo,
+                DT and the movement sheet.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="col-span-12 lg:col-span-4">
+          <div className="card p-6 h-full">
+            <h4 className="font-headline text-lg text-text-primary mb-4">Quick Insights</h4>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-surface-elevated rounded-control">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-control flex items-center justify-center text-accent bg-accent-soft">
+                    <Icon name="history" size={22} />
                   </div>
-                  <span className="text-sm font-bold">{visibleHistory.length}</span>
+                  <span className="text-sm font-medium">Uploads Recorded</span>
                 </div>
-                <div className="pt-4">
-                  <p className="text-xs text-text-muted uppercase tracking-wider mb-3">
-                    Validation Rules
-                  </p>
-                  <ul className="space-y-2">
-                    <li className="flex items-center gap-2 text-sm">
-                      <Icon name="check_circle" size={16} className="text-success" />
-                      .pdf format, ≤ {MAX_SIZE_MB}MB
-                    </li>
-                    <li className="flex items-center gap-2 text-sm">
-                      <Icon name="check_circle" size={16} className="text-success" />
-                      Every row must have a barcode + a confirmed direction
-                    </li>
-                    <li className="flex items-center gap-2 text-sm">
-                      <Icon name="check_circle" size={16} className="text-success" />
-                      One PDF may contain both IN and OUT pages
-                    </li>
-                  </ul>
-                </div>
+                <span className="text-sm font-bold">{visibleHistory.length}</span>
+              </div>
+              <div className="pt-4">
+                <p className="text-xs text-text-muted uppercase tracking-wider mb-3">
+                  Validation Rules
+                </p>
+                <ul className="space-y-2">
+                  <li className="flex items-center gap-2 text-sm">
+                    <Icon name="check_circle" size={16} className="text-success" />
+                    .pdf format, ≤ {MAX_SIZE_MB}MB
+                  </li>
+                  <li className="flex items-center gap-2 text-sm">
+                    <Icon name="check_circle" size={16} className="text-success" />
+                    OCR runs automatically — no manual review
+                  </li>
+                  <li className="flex items-center gap-2 text-sm">
+                    <Icon name="check_circle" size={16} className="text-success" />
+                    One PDF may contain both IN and OUT pages
+                  </li>
+                </ul>
               </div>
             </div>
-          </section>
+          </div>
+        </section>
 
-          <section className="col-span-12 mt-4">
-            <div className="card overflow-hidden">
-              <div className="px-6 py-4 border-b border-border flex justify-between items-center bg-surface-elevated">
-                <h4 className="font-headline text-lg text-text-primary">
-                  Upload Status{isManager ? ` — ${user.city}` : " — All Cities"}
-                </h4>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="table-clean">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>File Name</th>
-                      {!isManager && <th>City</th>}
-                      <th>Status</th>
-                      <th>Rows</th>
-                      <th>Reviewed</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleHistory.map((u) => (
-                      <tr key={u.id}>
-                        <td className="text-text-secondary">{u.business_date}</td>
-                        <td className="font-medium text-text-primary">{u.file_name}</td>
-                        {!isManager && <td>{u.city}</td>}
-                        <td>
-                          <span className={REAL_STATUS_BADGE[u.status]}>
-                            {REAL_STATUS_LABEL[u.status]}
-                          </span>
-                          {u.status === "needs_review" && (
-                            <button
-                              onClick={() => setActiveUpload(u)}
-                              className="btn-icon ml-2"
-                              title="Review now"
-                            >
-                              <Icon name="chevron_right" size={16} />
-                            </button>
-                          )}
-                        </td>
-                        <td className="text-text-secondary">{u.rows_valid || u.rows_parsed || "—"}</td>
-                        <td className="text-text-secondary">
-                          {u.reviewed_at ? new Date(u.reviewed_at).toLocaleString("en-IN") : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                    {visibleHistory.length === 0 && (
-                      <tr>
-                        <td colSpan={isManager ? 5 : 6} className="text-center py-8 text-text-muted">
-                          No uploads recorded yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+        <section className="col-span-12 mt-4">
+          <div className="card overflow-hidden">
+            <div className="px-6 py-4 border-b border-border flex justify-between items-center bg-surface-elevated">
+              <h4 className="font-headline text-lg text-text-primary">
+                Upload Status{isManager ? ` — ${user.city}` : " — All Cities"}
+              </h4>
+              <button onClick={refreshHistory} className="btn-icon" title="Refresh">
+                <Icon name="refresh" size={18} />
+              </button>
             </div>
-          </section>
-        </div>
-      )}
+            <div className="overflow-x-auto">
+              <table className="table-clean">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>File Name</th>
+                    {!isManager && <th>City</th>}
+                    <th>Status</th>
+                    <th>Rows</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleHistory.map((u) => (
+                    <tr key={u.id}>
+                      <td className="text-text-secondary">{u.business_date}</td>
+                      <td className="font-medium text-text-primary">{u.file_name}</td>
+                      {!isManager && <td>{u.city}</td>}
+                      <td>
+                        <span className={REAL_STATUS_BADGE[u.status]}>
+                          {REAL_STATUS_LABEL[u.status]}
+                        </span>
+                        {u.status === "failed" && u.error && (
+                          <span className="block text-xs text-danger mt-1 max-w-[240px] truncate" title={u.error}>
+                            {u.error}
+                          </span>
+                        )}
+                      </td>
+                      <td className="text-text-secondary">{u.rows_parsed || "—"}</td>
+                    </tr>
+                  ))}
+                  {visibleHistory.length === 0 && (
+                    <tr>
+                      <td colSpan={isManager ? 4 : 5} className="text-center py-8 text-text-muted">
+                        No uploads recorded yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
 
       {toast && (
         <div className="fixed inset-x-4 bottom-4 md:inset-x-auto md:right-8 md:bottom-8 card bg-accent text-white px-6 py-4 flex items-center gap-4 z-[60] shadow-card-hover">
@@ -410,7 +332,7 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
             <Icon name="check" size={18} />
           </div>
           <div>
-            <p className="text-sm font-medium">Upload confirmed!</p>
+            <p className="text-sm font-medium">Upload received!</p>
             <p className="text-xs opacity-70">{toast}</p>
           </div>
           <button onClick={() => setToast(null)} className="btn-icon text-white/60! hover:text-white! ml-4">

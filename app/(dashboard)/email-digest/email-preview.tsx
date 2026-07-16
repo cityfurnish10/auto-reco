@@ -15,6 +15,7 @@ const ACCURACY_THRESHOLD = 90;
 export default function EmailPreview() {
   const { lastRun } = useDemoStore();
   const [toast, setToast] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
 
   const today = new Date().toLocaleDateString("en-IN", {
     weekday: "long",
@@ -32,9 +33,26 @@ export default function EmailPreview() {
     ? lastRun.total
     : rows.reduce((s, c) => s + c.openVariances, 0);
 
-  function sendTest() {
-    setToast("Test digest queued (demo) — Resend delivery arrives in Phase 5.");
-    setTimeout(() => setToast(null), 5000);
+  async function sendTest() {
+    setSending(true);
+    try {
+      const res = await fetch("/api/email/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({}),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      setToast(
+        `Test digest for ${json.date} sent to ${(json.recipients ?? []).join(", ")}.`
+      );
+    } catch (err) {
+      setToast(`Send failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSending(false);
+      setTimeout(() => setToast(null), 6000);
+    }
   }
 
   return (
@@ -55,9 +73,9 @@ export default function EmailPreview() {
             <Icon name="schedule" size={16} />
             Scheduled 11:00 IST
           </span>
-          <button onClick={sendTest} className="btn btn-primary">
+          <button onClick={sendTest} disabled={sending} className="btn btn-primary disabled:opacity-50">
             <Icon name="send" size={18} />
-            Send Test
+            {sending ? "Sending…" : "Send Test"}
           </button>
         </div>
       </div>

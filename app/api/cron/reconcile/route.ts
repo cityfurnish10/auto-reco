@@ -11,6 +11,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runAllCities } from "@/lib/engine/run";
 import { pullAll } from "@/lib/connectors";
+import { processPendingGuardUploads } from "@/lib/connectors/ocr/process";
+import {
+  buildDigestFromRun,
+  sendReconciliationDigest,
+  isEmailConfigured,
+} from "@/lib/email";
 import {
   createRun,
   saveSourceRows,
@@ -67,6 +73,15 @@ async function handle(req: NextRequest) {
   const runId = await createRun(db, { runDate, trigger });
 
   try {
+    // 0. OCR any guard registers uploaded for this date that haven't been
+    //    processed yet, so the PHYSICAL connector below sees them. Safety net —
+    //    the dedicated /api/cron/ocr job normally does this in the background.
+    //    Best-effort: a stuck OCR must never block the reconcile.
+    const guardOcr = await processPendingGuardUploads(db, {
+      businessDate: runDate,
+      limit: 10,
+    }).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+
     // 1. Pull all 4 sources (tolerant of individual failures).
     const { rowsByCity, results, presentSources, reportedByCity } =
       await pullAll(runDate);
@@ -92,6 +107,26 @@ async function handle(req: NextRequest) {
     // 7. Retention backstop.
     await prune(db);
 
+    // 8. Email the management digest. Never let a mail failure fail the run —
+    //    the reconcile is already persisted. Skip with ?email=0 on manual reruns.
+    const sources = results.map((r) => ({
+      source: r.source,
+      ok: r.ok,
+      rows: r.rowsPulled,
+    }));
+    let email: unknown = { sent: false, skipped: "email disabled (?email=0)" };
+    if (req.nextUrl.searchParams.get("email") !== "0") {
+      if (isEmailConfigured()) {
+        const digest = buildDigestFromRun(run, sources);
+        email = await sendReconciliationDigest(digest).catch((e) => ({
+          sent: false,
+          error: e instanceof Error ? e.message : String(e),
+        }));
+      } else {
+        email = { sent: false, skipped: "email not configured" };
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       runId,
@@ -106,6 +141,8 @@ async function handle(req: NextRequest) {
       sourceRowsStored: sourceRowCount,
       variancesUpserted: varianceCount,
       combined: run.combined,
+      guardOcr,
+      email,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

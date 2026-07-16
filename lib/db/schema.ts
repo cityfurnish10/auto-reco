@@ -140,12 +140,14 @@ export type UploadStatus =
   | "failed";
 
 // One reconstructed body row from a page of the register. `direction` is the
-// page-level guess/override — see lib/connectors/ocr/direction-detect.ts.
+// page-level direction (OUT/IN) detected from the printed register title.
 export interface ParsedGuardRow {
   page: number;
   rowIndex: number;
   direction: Direction | null;
-  cells: Record<string, string>; // keyed by lib/connectors/ocr/table-reconstruct.ts's GUARD_COLUMNS
+  // keyed by the guard columns produced in lib/connectors/ocr/document-intelligence.ts:
+  // date, so_number, ticket_id, product, po_number, barcode, operation_type.
+  cells: Record<string, string>;
   confidence: number | null;
 }
 
