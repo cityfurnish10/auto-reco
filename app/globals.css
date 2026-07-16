@@ -330,6 +330,11 @@ body {
     color: var(--text-primary);
     border-bottom: 1px solid var(--border-color);
   }
+  /* Vertical column separators — same subtle border token as the row lines. */
+  .table-clean th:not(:last-child),
+  .table-clean td:not(:last-child) {
+    border-right: 1px solid var(--border-color);
+  }
   .table-clean tbody tr {
     transition: background-color 120ms ease;
   }

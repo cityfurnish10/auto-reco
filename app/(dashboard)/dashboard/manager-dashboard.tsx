@@ -38,6 +38,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
   const [statusF, setStatusF] = useState<VarianceStatus | "ALL">("open");
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
+  const [dateF, setDateF] = useState(""); // "" = latest run
   const [page, setPage] = useState(1);
   const [closing, setClosing] = useState<{ id: string; product: string; barcode: string } | null>(null);
 
@@ -50,7 +51,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const { stats, loading: statsLoading, refetch: refetchStats } = useStats();
+  const { stats, loading: statsLoading, refetch: refetchStats } = useStats(dateF || undefined);
   const cityAgg = useMemo(
     () => stats?.byCity.find((c) => c.city === city) ?? null,
     [stats, city]
@@ -59,16 +60,17 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
   const filters: VarianceFilters = useMemo(
     () => ({
       city,
-      // While searching, span every bucket/priority/status so a targeted
+      // While searching, span every bucket/priority/status/date so a targeted
       // barcode/ticket/SO lookup always surfaces the record.
       bucket: q ? "ALL" : bucket,
       priority: q ? "ALL" : priority,
       status: q ? "ALL" : statusF,
+      date: q ? undefined : dateF || undefined,
       q: q || undefined,
       page,
       pageSize: PAGE_SIZE,
     }),
-    [city, bucket, priority, statusF, q, page]
+    [city, bucket, priority, statusF, dateF, q, page]
   );
   const { rows, total, totalPages, loading, error, refetch } = useVariances(filters);
 
@@ -153,6 +155,13 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                 </button>
               )}
             </div>
+            <input
+              type="date"
+              value={dateF}
+              onChange={(e) => resetPage(setDateF)(e.target.value)}
+              className="input-clean cursor-pointer"
+              title="View a past reconciliation date (blank = latest)"
+            />
             <select value={bucket} onChange={(e) => resetPage(setBucket)(e.target.value as Bucket | "ALL")} className="input-clean font-semibold cursor-pointer">
               <option value="ALL">All Buckets</option>
               <option value="REAL">REAL only</option>

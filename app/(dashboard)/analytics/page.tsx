@@ -162,8 +162,8 @@ export default function AnalyticsPage() {
                     className="w-full max-w-[64px] rounded-t transition-all"
                     style={{ height: `${barHeight(c.accuracy)}%`, backgroundColor: bandColor(c.accuracy) }}
                   ></div>
-                  <span className="text-xs text-text-secondary mt-2 font-medium">{c.city}</span>
-                  <span className="text-[10px] text-text-muted">{c.real} REAL</span>
+                  <span className="font-headline text-sm text-text-primary mt-2 text-center leading-tight">{c.city}</span>
+                  <span className="text-xs text-text-muted mt-0.5">{c.real} REAL</span>
                 </div>
               ))}
             </div>
