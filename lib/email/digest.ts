@@ -172,6 +172,14 @@ export function digestSubject(data: DigestData): string {
 // Email-client-safe HTML: tables + inline styles only (no fl+grid, no <style>).
 export function renderDigestHtml(data: DigestData, dashboardUrl?: string): string {
   const dateLabel = fmtDate(data.date);
+  // Logo must be a hosted URL — Gmail strips inline/base64 images. Derive it from
+  // the app base (VERCEL_URL / NEXT_PUBLIC_APP_URL); fall back to the wordmark
+  // text when no absolute base is available (e.g. a local send).
+  const base = dashboardUrl ? dashboardUrl.replace(/\/dashboard\/?$/, "") : undefined;
+  const logoUrl = base ? `${base}/apple-icon.png` : undefined;
+  const brand = logoUrl
+    ? `<img src="${logoUrl}" alt="Cityfurnish" width="40" height="40" style="display:block;border-radius:9px;" />`
+    : `<span style="font-size:20px;font-weight:800;color:#111827;">Cityfurnish</span>`;
   const cityRows = data.cities
     .map((c) => {
       const flag = c.open > 0;
@@ -208,7 +216,7 @@ export function renderDigestHtml(data: DigestData, dashboardUrl?: string): strin
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
         <tr><td style="padding:28px 32px 20px;border-bottom:1px solid #e5e7eb;">
           <table role="presentation" width="100%"><tr>
-            <td style="font-size:20px;font-weight:800;color:#111827;">Cityfurnish</td>
+            <td>${brand}</td>
             <td style="text-align:right;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9ca3af;">Daily Digest</td>
           </tr></table>
           <h2 style="margin:18px 0 6px;font-size:18px;color:#111827;">Warehouse Reconciliation Report</h2>
