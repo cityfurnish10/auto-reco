@@ -54,6 +54,7 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
   const isManager = user.role === "MANAGER";
   const [selectedCity, setSelectedCity] = useState<City>(isManager ? user.city! : "DELHI");
   const [uploading, setUploading] = useState(false);
+  const [processing, setProcessing] = useState(false); // OCR running right after upload
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -107,16 +108,30 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
         .uploadToSignedUrl(created.filePath, created.token, file);
       if (uploadErr) throw new Error(uploadErr.message);
 
-      // Done — the file is in Storage. OCR happens in the background; no review.
+      // OCR it immediately (synchronous) and store the rows — no waiting for the
+      // nightly run. This can take ~15–30s while Document Intelligence reads the PDF.
+      setUploading(false);
+      setProcessing(true);
+      refreshHistory();
+      const procRes = await fetch(`/api/uploads/guard/${created.id}/process`, {
+        method: "POST",
+        credentials: "same-origin",
+      });
+      const proc = await procRes.json();
+      if (!procRes.ok) {
+        throw new Error(proc.error ?? proc.reason ?? `OCR failed (HTTP ${procRes.status})`);
+      }
       setToast(
-        `"${file.name}" uploaded for ${selectedCity} — it will be OCR'd and included in the next reconciliation.`
+        `"${file.name}" processed — ${proc.rows ?? 0} rows extracted and stored for ${selectedCity}.`
       );
       setTimeout(() => setToast(null), 6000);
       refreshHistory();
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : String(e));
+      refreshHistory();
     } finally {
       setUploading(false);
+      setProcessing(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
@@ -180,10 +195,10 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
               setDragOver(false);
               handleFiles(e.dataTransfer.files);
             }}
-            onClick={() => fileInputRef.current?.click()}
-            className={`bg-surface-card border-2 border-dashed rounded-card p-8 md:p-16 flex flex-col items-center justify-center text-center transition-colors duration-150 cursor-pointer ${
-              dragOver ? "border-accent bg-surface-elevated" : "border-border hover:border-accent"
-            }`}
+            onClick={() => !uploading && !processing && fileInputRef.current?.click()}
+            className={`bg-surface-card border-2 border-dashed rounded-card p-8 md:p-16 flex flex-col items-center justify-center text-center transition-colors duration-150 ${
+              uploading || processing ? "cursor-default" : "cursor-pointer"
+            } ${dragOver ? "border-accent bg-surface-elevated" : "border-border hover:border-accent"}`}
           >
             <input
               ref={fileInputRef}
@@ -192,10 +207,12 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
               className="hidden"
               onChange={(e) => handleFiles(e.target.files)}
             />
-            {uploading ? (
+            {uploading || processing ? (
               <div className="flex flex-col items-center">
                 <div className="w-16 h-16 border-4 border-accent-soft border-t-accent rounded-full animate-spin mb-4"></div>
-                <p className="text-sm font-medium text-accent">Uploading…</p>
+                <p className="text-sm font-medium text-accent">
+                  {uploading ? "Uploading…" : "Reading the register (OCR) — this takes a few seconds…"}
+                </p>
               </div>
             ) : (
               <>
@@ -227,10 +244,10 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
             <div>
               <p className="text-sm text-status-warning font-semibold mb-0.5">How this works</p>
               <p className="text-sm text-text-secondary">
-                Just drop the register PDF. It&apos;s stored securely, then read by
-                OCR in the background — no manual review — and the extracted rows are
-                included automatically in the next reconciliation run alongside Odoo,
-                DT and the movement sheet.
+                Just drop the register PDF. It&apos;s stored securely and read by OCR
+                <b> immediately</b> — the extracted rows are saved to the database within
+                seconds (no manual review). They then feed the next reconciliation run
+                alongside Odoo, DT and the movement sheet.
               </p>
             </div>
           </div>

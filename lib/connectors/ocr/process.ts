@@ -7,8 +7,9 @@
 //     → status='processed', parsed_rows saved
 //
 // The reconcile cron's guard connector then reads status='processed' rows for
-// the run date, same as the other three sources. Runs from /api/cron/ocr (its
-// own background job) and, as a safety net, at the start of the reconcile cron.
+// the run date, same as the other three sources. OCR runs IMMEDIATELY on upload
+// (/api/uploads/guard/[id]/process), with a safety-net pass at the start of the
+// reconcile cron and an on-demand batch job (/api/cron/ocr).
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -44,6 +45,42 @@ export interface OcrProcessSummary {
   details: OcrProcessDetail[];
 }
 
+// OCR one guard upload: download its PDF, run Document Intelligence, store the
+// rows, mark it processed (or failed). Used both immediately on upload (the
+// /api/uploads/guard/[id]/process route) and by the batch job below.
+export async function processGuardUpload(
+  admin: SupabaseClient,
+  upload: GuardUpload
+): Promise<OcrProcessDetail> {
+  const base = { id: upload.id, file: upload.file_name, city: upload.city };
+  try {
+    const { data: blob, error: dErr } = await admin.storage.from(BUCKET).download(upload.file_path);
+    if (dErr || !blob) {
+      return { ...base, result: "skipped", reason: "file not in storage yet" };
+    }
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const rows = await ocrPdfToRows(bytes);
+    const rowsValid = rows.filter((r) => r.cells?.barcode?.trim() && r.direction).length;
+    const { error: upErr } = await admin
+      .from("guard_uploads")
+      .update({
+        status: "processed",
+        parsed_rows: rows, // stored RAW — the reconcile guard connector filters downstream
+        ocr_raw_snapshot: rows,
+        rows_parsed: rows.length,
+        rows_valid: rowsValid,
+        error: null,
+      })
+      .eq("id", upload.id);
+    if (upErr) throw new Error(upErr.message);
+    return { ...base, result: "processed", rows: rows.length };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    await admin.from("guard_uploads").update({ status: "failed", error: reason }).eq("id", upload.id).then(() => {});
+    return { ...base, result: "failed", reason };
+  }
+}
+
 // Process every 'pending' guard upload (optionally scoped to one business date).
 // A pending row whose file isn't in Storage yet is skipped (left pending) so the
 // next run retries it — never a hard failure.
@@ -71,40 +108,11 @@ export async function processPendingGuardUploads(
   const uploads = (data ?? []) as GuardUpload[];
 
   for (const u of uploads) {
-    try {
-      const { data: blob, error: dErr } = await admin.storage.from(BUCKET).download(u.file_path);
-      if (dErr || !blob) {
-        // File not uploaded yet (or gone) — leave pending, retry next run.
-        summary.skipped++;
-        summary.details.push({ id: u.id, file: u.file_name, city: u.city, result: "skipped", reason: "file not in storage yet" });
-        continue;
-      }
-
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      const rows = await ocrPdfToRows(bytes);
-      const rowsValid = rows.filter((r) => r.cells?.barcode?.trim() && r.direction).length;
-
-      const { error: upErr } = await admin
-        .from("guard_uploads")
-        .update({
-          status: "processed",
-          parsed_rows: rows, // stored RAW — reconcile's guard connector filters downstream
-          ocr_raw_snapshot: rows,
-          rows_parsed: rows.length,
-          rows_valid: rowsValid,
-          error: null,
-        })
-        .eq("id", u.id);
-      if (upErr) throw new Error(upErr.message);
-
-      summary.processed++;
-      summary.details.push({ id: u.id, file: u.file_name, city: u.city, result: "processed", rows: rows.length });
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      await admin.from("guard_uploads").update({ status: "failed", error: reason }).eq("id", u.id).then(() => {});
-      summary.failed++;
-      summary.details.push({ id: u.id, file: u.file_name, city: u.city, result: "failed", reason });
-    }
+    const detail = await processGuardUpload(admin, u);
+    summary.details.push(detail);
+    if (detail.result === "processed") summary.processed++;
+    else if (detail.result === "failed") summary.failed++;
+    else summary.skipped++;
   }
 
   return summary;
