@@ -152,6 +152,20 @@ function rowsFromTable(t: DiTable, dir: Direction | null): ParsedGuardRow[] {
   }
   const productCol = bcCols.length ? bcCols[0] - 1 : null;
 
+  // Ticket-ID band: the ticket (5–7 digits) is written one digit per box, just
+  // like the barcode. Walk RIGHT from the Ticket-ID header column collecting the
+  // contiguous single-char columns, stopping at the first wide column (Customer
+  // Name) and never reaching the barcode band. Empty band → fall back to the
+  // single header cell (no regression).
+  const tkCols: number[] = [];
+  if (ticketCol != null) {
+    const tkRightBound = bcCols.length ? bcCols[0] : productCol ?? t.columnCount;
+    for (let c = ticketCol; c < tkRightBound && tkCols.length < 8; c++) {
+      if (narrow[c] >= 0.35) tkCols.push(c);
+      else break;
+    }
+  }
+
   const rows: ParsedGuardRow[] = [];
   for (let r = bodyStart; r < t.rowCount; r++) {
     const barcode = bcCols
@@ -160,6 +174,11 @@ function rowsFromTable(t: DiTable, dir: Direction | null): ParsedGuardRow[] {
       .join("")
       .replace(/[^A-Za-z0-9]/g, "")
       .toUpperCase();
+    const ticketBand = tkCols
+      .map((c) => cell(r, c))
+      .filter((v) => !/selected/i.test(v))
+      .join("")
+      .replace(/[^A-Za-z0-9]/g, "");
     rows.push({
       page: page ?? 0,
       rowIndex: r - bodyStart,
@@ -167,7 +186,7 @@ function rowsFromTable(t: DiTable, dir: Direction | null): ParsedGuardRow[] {
       cells: {
         date: cell(r, dateCol),
         so_number: cell(r, soCol),
-        ticket_id: cell(r, ticketCol),
+        ticket_id: ticketBand || cell(r, ticketCol),
         product: cell(r, productCol),
         po_number: "",
         barcode,

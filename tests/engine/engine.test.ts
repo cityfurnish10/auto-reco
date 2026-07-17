@@ -443,3 +443,105 @@ describe("Section 10/11 — buckets & output contract", () => {
     }
   });
 });
+
+describe("OCR-tolerant merge — dampen guard variances from OCR slips", () => {
+  const REAL_NAMES = [
+    "Gate-Only Dispatch — No Ops/Odoo Trail",
+    "Ops-Sheet Confirmed — Gate Log Missing",
+  ];
+  const hasReal = (res: ReturnType<typeof runReconciliation>, name: string) =>
+    res.variances.some((v) => v.variance_name === name);
+
+  it("(a) ticket match: mangled guard barcode folds into the typed-source item — no false REAL pair", () => {
+    // Typed sources carry the correct barcode; the guard's OCR mangled it beyond
+    // the canonicalize fold set (barcode agreement < 70%) but the ticket matches.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "OUT", barcode: "COUCHAAAAA", status: "done", ticketId: "654321" }),
+        r({ source: "DT", direction: "OUT", barcode: "COUCHAAAAA", status: "done", date: RUN }),
+        r({ source: "ODOO", direction: "OUT", barcode: "COUCHAAAAA", status: "done", createdOn: RUN }),
+        // guard's mangled spelling → its own canonical, same ticket:
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "C0UCHXYZ99", status: "done", ticketId: "654321" }),
+      ],
+      "MUMBAI"
+    );
+    // Both false REAL variances are gone …
+    expect(hasReal(res, "Gate-Only Dispatch — No Ops/Odoo Trail")).toBe(false);
+    expect(hasReal(res, "Ops-Sheet Confirmed — Gate Log Missing")).toBe(false);
+    // … the mangled orphan view no longer exists …
+    expect(res.variances.find((v) => v.barcode === canonicalize("C0UCHXYZ99"))).toBeUndefined();
+    // … and whatever remains on the merged item is at most an INFO audit note.
+    expect(
+      res.variances.filter((v) => v.barcode === canonicalize("COUCHAAAAA")).every((v) => v.bucket === "INFO")
+    ).toBe(true);
+    expect(res.warnings.some((w) => w.startsWith("OCR merge"))).toBe(true);
+  });
+
+  it("(b) fuzzy barcode match (≥70% same-length): merges with no ticket/SO signal", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "OUT", barcode: "TABLE1234567890", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "TABLE1234567890", status: "done", date: RUN }),
+        r({ source: "ODOO", direction: "OUT", barcode: "TABLE1234567890", status: "done", createdOn: RUN }),
+        // one digit off → 14/15 positions match (≥ 0.70):
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "TABLE1234567891", status: "done" }),
+      ],
+      "MUMBAI"
+    );
+    for (const name of REAL_NAMES) expect(hasReal(res, name)).toBe(false);
+    expect(res.variances.find((v) => v.barcode === canonicalize("TABLE1234567891"))).toBeUndefined();
+    expect(res.warnings.some((w) => w.startsWith("OCR merge"))).toBe(true);
+  });
+
+  it("(c) SO last-4 + product agreement: weakest signal still merges", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "OUT", barcode: "CHAIRAAAAA", status: "done", soNumber: "SO-778899", product: "Office Chair" }),
+        r({ source: "DT", direction: "OUT", barcode: "CHAIRAAAAA", status: "done", date: RUN }),
+        r({ source: "ODOO", direction: "OUT", barcode: "CHAIRAAAAA", status: "done", createdOn: RUN }),
+        // different barcode + different SO prefix, but SO last-4 (8899) and
+        // product first-token (office) agree:
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "CHAIRBBBBB", status: "done", soNumber: "PO-990-8899", product: "Office Chair Grey" }),
+      ],
+      "MUMBAI"
+    );
+    for (const name of REAL_NAMES) expect(hasReal(res, name)).toBe(false);
+    expect(res.warnings.some((w) => w.startsWith("OCR merge"))).toBe(true);
+  });
+
+  it("(d) NEGATIVE: genuinely different item does NOT merge — both real variances stand", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        // A real 'Gate Log Missing' item (typed sources, no guard):
+        r({ source: "SHEET", direction: "OUT", barcode: "DESKAAAAAA", status: "done", ticketId: "111111", soNumber: "SO-111111", product: "Desk" }),
+        r({ source: "DT", direction: "OUT", barcode: "DESKAAAAAA", status: "done", date: RUN }),
+        r({ source: "ODOO", direction: "OUT", barcode: "DESKAAAAAA", status: "done", createdOn: RUN }),
+        // A real 'Gate-Only' item — unrelated ticket/SO/product/barcode:
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "SHELFBBBBB", status: "done", ticketId: "999999", soNumber: "SO-999999", product: "Shelf" }),
+      ],
+      "MUMBAI"
+    );
+    expect(hasReal(res, "Gate-Only Dispatch — No Ops/Odoo Trail")).toBe(true);
+    expect(hasReal(res, "Ops-Sheet Confirmed — Gate Log Missing")).toBe(true);
+    expect(res.warnings.some((w) => w.startsWith("OCR merge"))).toBe(false);
+  });
+
+  it("(e) exact-match rows reconcile unchanged — merge pass is a no-op", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "SOFAEXACT1", status: "done" }),
+        r({ source: "SHEET", direction: "OUT", barcode: "SOFAEXACT1", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "SOFAEXACT1", status: "done", date: RUN }),
+        r({ source: "ODOO", direction: "OUT", barcode: "SOFAEXACT1", status: "done", createdOn: RUN }),
+      ],
+      "MUMBAI"
+    );
+    expect(res.variances.find((v) => v.barcode === canonicalize("SOFAEXACT1"))).toBeUndefined();
+    expect(res.warnings.some((w) => w.startsWith("OCR merge"))).toBe(false);
+  });
+});

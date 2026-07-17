@@ -108,6 +108,28 @@ export function buildViews(
   return views;
 }
 
+// Fold a guard-only "orphan" view's PHYSICAL presence into a target view whose
+// barcode the typed sources recorded correctly. Used by the OCR-tolerant merge
+// pass (run.ts) after a fuzzy ticket / SO-PO / barcode match: the mangled guard
+// barcode was really this item, so it must not raise its own variance. The
+// mangled spelling is preserved in the target's rawBarcodes for audit.
+export function mergeGuardPresence(target: BarcodeView, orphan: BarcodeView): void {
+  const from = orphan.P;
+  const into = target.P;
+  into.present = into.present || from.present;
+  into.count += from.count;
+  into.statuses.push(...from.statuses);
+  for (const raw of from.rawBarcodes) {
+    if (!into.rawBarcodes.includes(raw)) into.rawBarcodes.push(raw);
+  }
+  // Backfill identifying fields the typed sources may lack (ticket/SO come from
+  // the register), never overwriting a value the target already carries.
+  if (!target.ticketId && orphan.ticketId) target.ticketId = orphan.ticketId;
+  if (!target.soNumber && orphan.soNumber) target.soNumber = orphan.soNumber;
+  if (!target.customer && orphan.customer) target.customer = orphan.customer;
+  if (!target.product && orphan.product) target.product = orphan.product;
+}
+
 // True if the same canonical had more than one distinct raw spelling across
 // all sources → OCR noise (Section 6 All-Source Field Mismatch).
 export function rawBarcodesDiffer(view: BarcodeView): boolean {

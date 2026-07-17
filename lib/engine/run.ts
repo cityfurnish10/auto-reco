@@ -13,7 +13,8 @@ import { classify, duplicateHit } from "./ladder";
 import { filterOdooWindow } from "./odoo-window";
 import { computeSuppressions } from "./suppressions";
 import { isSpareJobType } from "./util";
-import { buildViews } from "./views";
+import { bestGuardMatch } from "./fuzzy";
+import { buildViews, mergeGuardPresence } from "./views";
 import { ALL_REPORTED } from "./types";
 import type {
   BarcodeView,
@@ -35,6 +36,32 @@ function baseRow(v: BarcodeView) {
     job_type: v.jobType,
     date: v.date,
   };
+}
+
+// Fold guard-only OCR-mangled "orphan" barcodes into the matching typed-source
+// item (same direction). An orphan is present in PHYSICAL only; a target is a
+// view missing PHYSICAL but present in ≥1 typed source. bestGuardMatch links
+// them on ticket / SO-PO / near-identical barcode and skips ambiguous ties. On a
+// match the orphan's PHYSICAL presence is merged into the target and the orphan
+// view is deleted, so the corrected view reconciles through the unchanged ladder.
+function mergeOcrOrphans(views: Map<string, BarcodeView>, warnings: string[]) {
+  const all = Array.from(views.values());
+  const orphans = all.filter(
+    (v) => v.P.present && !v.S.present && !v.D.present && !v.O.present
+  );
+  const targets = all.filter(
+    (v) => !v.P.present && (v.S.present || v.D.present || v.O.present)
+  );
+  if (orphans.length === 0 || targets.length === 0) return;
+  for (const orphan of orphans) {
+    const match = bestGuardMatch(orphan, targets);
+    if (!match) continue;
+    mergeGuardPresence(match, orphan);
+    views.delete(orphan.canonical);
+    warnings.push(
+      `OCR merge (${orphan.direction}): guard ${orphan.canonical} → ${match.canonical} (ticket/SO/barcode match)`
+    );
+  }
 }
 
 export function runReconciliation(
@@ -72,6 +99,15 @@ export function runReconciliation(
   const outViews = buildViews(byDir("OUT"), city, "OUT");
   for (const v of Array.from(inViews.values())) v.date = runDate;
   for (const v of Array.from(outViews.values())) v.date = runDate;
+
+  // OCR-tolerant merge (before Odoo-same-day stamping, suppressions and the
+  // ladder) — fold a guard-only OCR-mangled barcode into the matching
+  // typed-source item so one OCR slip doesn't raise two false REAL variances (a
+  // P-only "Gate-Only Dispatch" AND the real item's "Gate Log Missing"). Matches
+  // on ticket / SO-PO / near-identical barcode; same-direction only (separate
+  // maps); ambiguous ties are skipped (see fuzzy.ts).
+  mergeOcrOrphans(inViews, warnings);
+  mergeOcrOrphans(outViews, warnings);
 
   // Mark views whose Odoo posting is dated the run day itself — the only ones
   // eligible for "Odoo-Only" (adjacent-day postings are match-targets only;
