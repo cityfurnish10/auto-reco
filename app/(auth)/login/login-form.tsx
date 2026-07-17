@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { authenticateDemo, setSessionCookie } from "@/lib/demo-auth";
@@ -17,6 +17,18 @@ export default function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Force the light (white) theme on the login screen regardless of a saved
+  // dark-mode preference; restore it when leaving the page.
+  useEffect(() => {
+    const html = document.documentElement;
+    const prev = html.getAttribute("data-theme");
+    html.setAttribute("data-theme", "light");
+    return () => {
+      if (prev === null) html.removeAttribute("data-theme");
+      else html.setAttribute("data-theme", prev);
+    };
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -58,13 +70,18 @@ export default function LoginForm() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <main className="flex-grow flex items-center justify-center px-container-margin navy-pattern">
+      <main className="flex-grow flex items-center justify-center px-container-margin bg-surface-page">
         <div className="w-full max-w-[400px] card login-card-shadow overflow-hidden p-10 flex flex-col items-center">
-          <header className="mb-10 text-center">
-            <h1 className="font-headline text-xl font-black text-accent tracking-tighter uppercase">
-              Cityfurnish
-            </h1>
-            <p className="text-xs text-text-muted tracking-widest mt-1">
+          <header className="mb-10 text-center flex flex-col items-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/apple-icon.png"
+              alt="Cityfurnish"
+              width={56}
+              height={56}
+              className="rounded-xl mb-3"
+            />
+            <p className="text-xs text-text-muted tracking-widest">
               OPERATIONS PORTAL
             </p>
           </header>
@@ -166,8 +183,8 @@ export default function LoginForm() {
         </div>
       </main>
 
-      <footer className="w-full py-6 text-center navy-pattern border-t border-white/5">
-        <p className="text-xs text-white opacity-40 tracking-[0.2em] uppercase">
+      <footer className="w-full py-6 text-center bg-surface-elevated border-t border-border">
+        <p className="text-xs text-text-muted tracking-[0.2em] uppercase">
           Internal use only.
         </p>
       </footer>
