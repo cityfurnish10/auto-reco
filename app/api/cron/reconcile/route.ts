@@ -13,17 +13,11 @@ import { runAllCities } from "@/lib/engine/run";
 import { pullAll } from "@/lib/connectors";
 import { processPendingGuardUploads } from "@/lib/connectors/ocr/process";
 import {
-  buildDigestFromRun,
-  sendReconciliationDigest,
-  isEmailConfigured,
-} from "@/lib/email";
-import {
   createRun,
   saveSourceRows,
   upsertVariances,
   saveCityStats,
   saveIngestionLogs,
-  saveEmailLog,
   finalizeRun,
   markRunFailed,
   prune,
@@ -44,14 +38,13 @@ function authorized(req: NextRequest): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-// Reconciliation runs one day behind ("D-1") — it's only reliable once a
-// business day has fully closed out across all 4 sources (overnight ops
-// entries, Odoo end-of-day postings, etc.), so the default target date when
-// no `?date=` is given is yesterday, not today.
+// Reconciliation runs at 22:00 IST — the close of the business day — so the
+// default target date (when no `?date=` is given) is TODAY, the day being
+// closed. (22:00 IST is 16:30 UTC, still the same calendar date in UTC.) The
+// digest for this run is emailed the next morning at 09:00 IST by the separate
+// /api/cron/email-digest job, dated by this run's business date.
 function defaultRunDate(): string {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
+  return new Date().toISOString().slice(0, 10);
 }
 
 async function handle(req: NextRequest) {
@@ -76,9 +69,10 @@ async function handle(req: NextRequest) {
 
   try {
     // 0. OCR any guard registers uploaded for this date that haven't been
-    //    processed yet, so the PHYSICAL connector below sees them. Safety net —
-    //    the dedicated /api/cron/ocr job normally does this in the background.
-    //    Best-effort: a stuck OCR must never block the reconcile.
+    //    processed yet, so the PHYSICAL connector below sees them. This is the
+    //    primary OCR pass (no separate OCR cron runs by default; /api/cron/ocr
+    //    still exists for manual/earlier processing). Best-effort — a stuck OCR
+    //    must never block the reconcile.
     const guardOcr = await processPendingGuardUploads(db, {
       businessDate: runDate,
       limit: 10,
@@ -112,43 +106,8 @@ async function handle(req: NextRequest) {
     // 7. Retention backstop.
     await prune(db);
 
-    // 8. Email the management digest. Never let a mail failure fail the run —
-    //    the reconcile is already persisted. Skip with ?email=0 on manual reruns.
-    const sources = results.map((r) => ({
-      source: r.source,
-      ok: r.ok,
-      rows: r.rowsPulled,
-    }));
-    type EmailOutcome = {
-      sent: boolean;
-      skipped?: string;
-      error?: string;
-      recipients?: string[];
-      messageId?: string;
-    };
-    let email: EmailOutcome = { sent: false, skipped: "email disabled (?email=0)" };
-    if (req.nextUrl.searchParams.get("email") !== "0") {
-      if (isEmailConfigured()) {
-        const digest = buildDigestFromRun(run, sources);
-        email = await sendReconciliationDigest(digest).catch((e) => ({
-          sent: false,
-          error: e instanceof Error ? e.message : String(e),
-          recipients: [],
-        }));
-      } else {
-        email = { sent: false, skipped: "email not configured" };
-      }
-      // Audit the send for the System Health timeline (best-effort).
-      await saveEmailLog(db, {
-        runId,
-        kind: "digest",
-        businessDate: runDate,
-        status: email.sent ? "sent" : email.error ? "failed" : "skipped",
-        recipients: email.recipients ?? [],
-        messageId: email.messageId ?? null,
-        error: email.error ?? email.skipped ?? null,
-      }).catch(() => {});
-    }
+    // The management digest is NOT sent here — it goes out the next morning at
+    // 09:00 IST via /api/cron/email-digest, dated by this run's business date.
 
     return NextResponse.json({
       ok: true,
@@ -165,7 +124,6 @@ async function handle(req: NextRequest) {
       variancesUpserted: varianceCount,
       combined: run.combined,
       guardOcr,
-      email,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

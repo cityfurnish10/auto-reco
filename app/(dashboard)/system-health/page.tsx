@@ -189,19 +189,19 @@ export default function SystemHealthPage() {
 
       {/* Ingestion schedule (static reference) */}
       <section className="card p-6">
-        <h4 className="font-headline text-lg text-text-primary mb-4">Ingestion Schedule (IST)</h4>
+        <h4 className="font-headline text-lg text-text-primary mb-4">Schedule (IST)</h4>
         <ul className="space-y-3 text-sm">
           <li className="flex items-center gap-3">
             <Icon name="schedule" size={18} className="text-accent" />
-            <span className="text-text-secondary">Guard OCR job — <b className="text-text-primary">00:00</b></span>
+            <span className="text-text-secondary">Guard register upload deadline (ops) — <b className="text-text-primary">by 21:00</b></span>
           </li>
           <li className="flex items-center gap-3">
             <Icon name="schedule" size={18} className="text-accent" />
-            <span className="text-text-secondary">Nightly ingest + reconciliation + digest email — <b className="text-text-primary">00:30</b></span>
+            <span className="text-text-secondary">Reconciliation run — OCR + 4 sources + engine — <b className="text-text-primary">22:00</b></span>
           </li>
           <li className="flex items-center gap-3">
             <Icon name="schedule" size={18} className="text-accent" />
-            <span className="text-text-secondary">Guard register upload deadline (ops) — <b className="text-text-primary">22:00</b></span>
+            <span className="text-text-secondary">Digest email (previous night&apos;s reconcile) — <b className="text-text-primary">09:00 next morning</b></span>
           </li>
         </ul>
       </section>
