@@ -82,6 +82,17 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
   );
   const { rows, total, totalPages, loading, error, refetch } = useVariances(filters);
 
+  // A manual "Run Reconciliation" (sidebar) dispatches this event — reload this
+  // city's KPIs and variance table in place, keeping the current filters.
+  useEffect(() => {
+    const onDone = () => {
+      refetch();
+      refetchStats();
+    };
+    window.addEventListener("reconcile:complete", onDone);
+    return () => window.removeEventListener("reconcile:complete", onDone);
+  }, [refetch, refetchStats]);
+
   function resetPage<T>(setter: (v: T) => void) {
     return (v: T) => { setter(v); setPage(1); };
   }

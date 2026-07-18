@@ -100,6 +100,17 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
   );
   const { rows, total, totalPages, loading, error, refetch } = useVariances(filters);
 
+  // A manual "Run Reconciliation" (sidebar) dispatches this event — reload the
+  // KPIs and variance table in place, keeping the admin's current filters.
+  useEffect(() => {
+    const onDone = () => {
+      refetch();
+      refetchStats();
+    };
+    window.addEventListener("reconcile:complete", onDone);
+    return () => window.removeEventListener("reconcile:complete", onDone);
+  }, [refetch, refetchStats]);
+
   const agg = useMemo(() => {
     if (!stats) return null;
     return cityTab === "ALL"

@@ -39,11 +39,43 @@ export default function Sidebar({
   const [running, setRunning] = useState(false);
   const [runToast, setRunToast] = useState<string | null>(null);
 
-  function handleRunReconciliation() {
+  async function handleRunReconciliation() {
     if (running) return;
+
+    // Real mode: trigger the actual server-side pipeline (POST /api/reconcile),
+    // same as the nightly cron, then tell the dashboard to refetch.
+    if (supabaseConfigured) {
+      if (
+        !window.confirm(
+          "Run reconciliation for today now? It pulls all four sources (guard, sheet, DT, Odoo) and can take up to a minute."
+        )
+      ) {
+        return;
+      }
+      setRunning(true);
+      try {
+        const res = await fetch("/api/reconcile", { method: "POST", credentials: "same-origin" });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || json.ok === false) {
+          throw new Error(json.error ?? `HTTP ${res.status}`);
+        }
+        const c = json.combined ?? {};
+        setRunToast(
+          `Run ${json.runDate} · ${json.status} — ${c.real_count ?? 0} REAL to chase, ${c.info_count ?? 0} INFO, ${json.variancesUpserted ?? 0} variances stored.`
+        );
+        // Nudge any open dashboard to reload its data in place.
+        window.dispatchEvent(new CustomEvent("reconcile:complete"));
+      } catch (e) {
+        setRunToast(`Reconciliation failed: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setRunning(false);
+        setTimeout(() => setRunToast(null), 8000);
+      }
+      return;
+    }
+
+    // Demo mode: engine runs client-side over sample raw feeds for today.
     setRunning(true);
-    // Demo: engine runs client-side over sample raw feeds for today.
-    // With Supabase this becomes POST /api/reconcile over staged rows.
     setTimeout(() => {
       const today = new Date().toISOString().slice(0, 10);
       const run = runAllCities(buildSampleRowsByCity(today));
