@@ -6,7 +6,8 @@
 
 import { blank, isRepair, normalizeSO } from "./util";
 import { allPendingOrNotDone, hasDone } from "./views";
-import type { BarcodeView } from "./types";
+import { ALL_REPORTED } from "./types";
+import type { BarcodeView, ReportedSources } from "./types";
 
 export interface SuppressionResult {
   suppressed: Set<string>; // `${direction}::${canonical}` — remove all variances
@@ -26,7 +27,8 @@ function productPrefixMatch(a: string | null, b: string | null): boolean {
 
 export function computeSuppressions(
   inViews: Map<string, BarcodeView>,
-  outViews: Map<string, BarcodeView>
+  outViews: Map<string, BarcodeView>,
+  reported: ReportedSources = ALL_REPORTED
 ): SuppressionResult {
   const suppressed = new Set<string>();
   const dtAllPending = new Set<string>();
@@ -81,6 +83,21 @@ export function computeSuppressions(
         const physOrSheetDone = hasDone(v.P) || hasDone(v.S);
         const dtAbsentOrNotDone = !v.D.present || !hasDone(v.D);
         if (physOrSheetDone && dtAbsentOrNotDone && !v.O.present && oppDtPending) {
+          suppressed.add(k);
+          continue;
+        }
+
+        // Inward DT quantity-aggregation Suppression (IN). A PO receipt of N
+        // identical units is sometimes logged in the Delivery Tracker as a single
+        // quantity instead of N barcodes, so the units show in Ops Sheet + Odoo
+        // but are absent from DT. That is a DT data-entry convention, not a stock
+        // gap — suppress the resulting "DT missing" INFO variance (rung 10 "Odoo
+        // Update Pending — Movement Confirmed", or no-guard rung 6b "DT Missing —
+        // Ops & Odoo Agree") when Sheet AND Odoo both confirm and the guard either
+        // has the unit or is unreported. When the guard reported but is missing
+        // this unit, the gap is a genuine REAL "Gate Log Missing" (rung 6) and is
+        // deliberately left to fire.
+        if (v.S.present && v.O.present && !v.D.present && (v.P.present || !reported.P)) {
           suppressed.add(k);
           continue;
         }

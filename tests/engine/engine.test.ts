@@ -545,3 +545,70 @@ describe("OCR-tolerant merge — dampen guard variances from OCR slips", () => {
     expect(res.warnings.some((w) => w.startsWith("OCR merge"))).toBe(false);
   });
 });
+
+describe("Inward DT quantity-aggregation — DT-missing INFO suppressed for inward", () => {
+  const rep = (over: Partial<{ P: boolean; S: boolean; D: boolean; O: boolean }>) => ({
+    P: true, S: true, D: true, O: true, ...over,
+  });
+
+  it("IN, P+S+O no D (guard present): 'Odoo Update Pending' INFO is suppressed", () => {
+    // A PO receipt logged in DT as a quantity → no DT barcode row; Sheet+Odoo
+    // (and the guard) still have it. Inward → suppressed, no variance.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "PHYSICAL", direction: "IN", barcode: "WASH-IN-1", status: "done" }),
+        r({ source: "SHEET", direction: "IN", barcode: "WASH-IN-1", status: "done" }),
+        r({ source: "ODOO", direction: "IN", barcode: "WASH-IN-1", status: "done", createdOn: RUN }),
+      ],
+      "MUMBAI"
+    );
+    expect(res.variances.find((v) => v.barcode === canonicalize("WASH-IN-1"))).toBeUndefined();
+  });
+
+  it("IN, S+O no D (no-guard mode): 'DT Missing — Ops & Odoo Agree' INFO is suppressed", () => {
+    const res = runReconciliation(
+      [
+        r({ source: "SHEET", direction: "IN", barcode: "WASH-IN-2", status: "done" }),
+        r({ source: "ODOO", direction: "IN", barcode: "WASH-IN-2", status: "done", createdOn: RUN }),
+        // run-date anchor (deriveRunDate needs a PHYSICAL/DT row) — no-guard, so
+        // build it from DT/Sheet/Odoo (mirrors the existing no-guard test):
+        r({ source: "DT", direction: "OUT", barcode: "ANCHOR-DT-2", status: "done", date: RUN }),
+        r({ source: "SHEET", direction: "OUT", barcode: "ANCHOR-DT-2", status: "done" }),
+        r({ source: "ODOO", direction: "OUT", barcode: "ANCHOR-DT-2", status: "done", createdOn: RUN }),
+      ],
+      "MUMBAI",
+      rep({ P: false })
+    );
+    expect(res.variances.find((v) => v.barcode === canonicalize("WASH-IN-2"))).toBeUndefined();
+  });
+
+  it("NEGATIVE — IN, S+O no P no D (guard reported, missing it): REAL 'Gate Log Missing' still fires", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "IN", barcode: "WASH-IN-3", status: "done" }),
+        r({ source: "ODOO", direction: "IN", barcode: "WASH-IN-3", status: "done", createdOn: RUN }),
+      ],
+      "MUMBAI"
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("WASH-IN-3"));
+    expect(v?.variance_name).toBe("Ops-Sheet Confirmed — Gate Log Missing");
+    expect(v?.bucket).toBe("REAL");
+  });
+
+  it("NEGATIVE — OUT, P+S+O no D: outward DT-missing INFO still fires (inward-only scope)", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "WASH-OUT-1", status: "done" }),
+        r({ source: "SHEET", direction: "OUT", barcode: "WASH-OUT-1", status: "done" }),
+        r({ source: "ODOO", direction: "OUT", barcode: "WASH-OUT-1", status: "done", createdOn: RUN }),
+      ],
+      "MUMBAI"
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("WASH-OUT-1"));
+    expect(v?.variance_name).toBe("Odoo Update Pending — Movement Confirmed");
+    expect(v?.bucket).toBe("INFO");
+  });
+});

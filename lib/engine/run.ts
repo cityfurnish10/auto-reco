@@ -123,7 +123,8 @@ export function runReconciliation(
   // Section 7 — suppressions (before classification).
   const { suppressed, dtAllPending, silentOcr } = computeSuppressions(
     inViews,
-    outViews
+    outViews,
+    reported
   );
 
   const variances: VarianceRowOut[] = [];
