@@ -6,6 +6,7 @@
 
 import { isNewRental, isRepairEquivalent, normalizeSO } from "./util";
 import { hasDone } from "./views";
+import { VARIANCE } from "./variance-names";
 import type { BarcodeView, VarianceRowOut } from "./types";
 
 export function detectDirectionConflicts(
@@ -57,7 +58,7 @@ export function detectDirectionConflicts(
       barcode: inView.canonical,
       city: inView.city,
       direction: "CROSS",
-      variance_name: "Direction Conflict",
+      variance_name: VARIANCE.REPLACEMENT_CONFIRM,
       priority: "High",
       bucket: "REAL",
       responsible: "warehouse_team",

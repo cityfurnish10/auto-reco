@@ -17,6 +17,7 @@
 
 import { hasDone, rawBarcodesDiffer } from "./views";
 import { ALL_REPORTED } from "./types";
+import { VARIANCE } from "./variance-names";
 import type { BarcodeView, Priority, ReportedSources } from "./types";
 
 export interface LadderHit {
@@ -34,7 +35,7 @@ export function classify(
   const O = v.O.present;
 
   // 1. DT status = non-match (agent scanned wrong barcode). Presence-based.
-  if (v.dtNonMatch) return { variance_name: "Fake Scan Risk", priority: "High" };
+  if (v.dtNonMatch) return { variance_name: VARIANCE.WRONG_SCAN, priority: "High" };
 
   // 2. DT + every reported floor source agree; Odoo reported but missing.
   //    (4-source: P+S+D no O — unchanged. No-guard: S+D no O, escalated from
@@ -43,64 +44,64 @@ export function classify(
   //    reported also has the barcode.
   const floorCorroborates = (!rep.P || P) && (!rep.S || S);
   if (D && !O && rep.O && floorCorroborates)
-    return { variance_name: "Register/DT Logged — Not in Odoo", priority: "High" };
+    return { variance_name: VARIANCE.FLOOR_DT_NOT_ODOO, priority: "High" };
 
   // 3. P + S only (guard + sheet agree; DT and Odoo reported but silent).
   if (P && S && !D && !O && rep.D && rep.O)
-    return { variance_name: "Register-Confirmed, No Odoo Record", priority: "High" };
+    return { variance_name: VARIANCE.GATE_OPS_NO_DT_ODOO, priority: "High" };
 
   // 4. P only.
   if (P && !S && !D && !O && rep.S && rep.D && rep.O)
-    return { variance_name: "Gate-Only Dispatch — No Ops/Odoo Trail", priority: "High" };
+    return { variance_name: VARIANCE.GATE_ONLY, priority: "High" };
 
   // 5. S only.
   if (S && !P && !D && !O && rep.D && rep.O)
-    return { variance_name: "Sheet-Only Dispatch — No Trail", priority: "High" };
+    return { variance_name: VARIANCE.SHEET_ONLY, priority: "High" };
 
   // 6. S + O, no P — only meaningful when the guard register reported.
   if (S && O && !P && rep.P)
-    return { variance_name: "Ops-Sheet Confirmed — Gate Log Missing", priority: "High" };
+    return { variance_name: VARIANCE.OPS_ODOO_NO_GATE, priority: "High" };
 
-  // 6b. (no-guard mode) S + O agree, DT reported but missing → app hygiene.
+  // 6b. (no-guard mode) S + O agree, DT reported but missing → DT hygiene.
   if (S && O && !D && !rep.P && rep.D)
-    return { variance_name: "DT Missing — Ops & Odoo Agree", priority: "Info" };
+    return { variance_name: VARIANCE.OPS_ODOO_NO_DT, priority: "Info" };
 
   // 7. P + D, no S/O (rung 2 already handled the S-unreported case).
   if (P && D && !S && !O && rep.O)
-    return { variance_name: "Pickup Confirmed — Odoo Not Closed", priority: "High" };
+    return { variance_name: VARIANCE.PICKUP_ODOO_OPEN, priority: "High" };
 
   // 8. D only, with at least one reported floor source contradicting it.
   if (D && !P && !S && !O && rep.O && (rep.S || rep.P))
-    return { variance_name: "DT-Only — Fake Scan Risk", priority: "High" };
+    return { variance_name: VARIANCE.DT_ONLY, priority: "High" };
 
   // 9. O only — and the posting is dated the run day itself. Postings pulled
   //    from adjacent days (posting-lag match-targets) are judged in their own
   //    day's run, never here.
   if (O && !P && !S && !D && rep.S && rep.D && v.odooSameDay)
-    return { variance_name: "Odoo-Only Entry — No Floor Record", priority: "High" };
+    return { variance_name: VARIANCE.ODOO_ONLY, priority: "High" };
 
   // 9b. D + O agree, sheet reported but missing → ops-sheet hygiene.
   if (D && O && !S && !P && rep.S)
-    return { variance_name: "Ops Sheet Missing — DT & Odoo Agree", priority: "Info" };
+    return { variance_name: VARIANCE.DT_ODOO_NO_SHEET, priority: "Info" };
 
   // 10. P + S + O, no D.
   if (P && S && O && !D && rep.D)
-    return { variance_name: "Odoo Update Pending — Movement Confirmed", priority: "Info" };
+    return { variance_name: VARIANCE.GATE_OPS_ODOO_NO_DT, priority: "Info" };
 
   // 11. P + O only.
   if (P && O && !S && !D)
-    return { variance_name: "Physical + Odoo Agree — No Register/DT", priority: "Info" };
+    return { variance_name: VARIANCE.GATE_ODOO_NO_OPS_DT, priority: "Info" };
 
   // 12. S + D, no P/O — guard reported but gate entry missing AND Odoo
   //     missing (4-source only; the no-guard case escalated at rung 2).
   if (S && D && !P && !O && rep.P && rep.O)
-    return { variance_name: "Odoo Update Pending — Cross-Check", priority: "Info" };
+    return { variance_name: VARIANCE.OPS_DT_ODOO_PENDING, priority: "Info" };
 
   // 13. Every reported source present but barcodes differ → OCR noise.
   const allReportedPresent =
     (!rep.P || P) && (!rep.S || S) && (!rep.D || D) && (!rep.O || O) && (P || S || D || O);
   if (allReportedPresent && rawBarcodesDiffer(v))
-    return { variance_name: "All-Source Field Mismatch", priority: "Info" };
+    return { variance_name: VARIANCE.FIELD_MISMATCH, priority: "Info" };
 
   // 14. Reconciled, or an uncovered/uninformative pattern.
   return null;
@@ -111,7 +112,7 @@ export function classify(
 export function duplicateHit(v: BarcodeView): LadderHit | null {
   if (v.duplicateSources.length === 0) return null;
   return {
-    variance_name: "Duplicate Scan / Multi-Source Mismatch",
+    variance_name: VARIANCE.DUPLICATE,
     priority: "Info",
   };
 }

@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MultiCityRun } from "../engine/run";
+import { VARIANCE } from "../engine/variance-names";
 
 export interface CityDigestRow {
   city: string;
@@ -30,17 +31,30 @@ const accuracyOf = (movements: number, real: number): number | null =>
   movements > 0 ? clampPct((1 - real / movements) * 100) : null;
 
 // Short category label for the dominant variance type — the "Top Gap" column.
+// Keyed by the canonical variance names so it never drifts on a rename.
+const SHORT_LABEL: Record<string, string> = {
+  [VARIANCE.WRONG_SCAN]: "Wrong scan",
+  [VARIANCE.FLOOR_DT_NOT_ODOO]: "Odoo not posted",
+  [VARIANCE.GATE_OPS_NO_DT_ODOO]: "No DT/Odoo",
+  [VARIANCE.GATE_ONLY]: "Gate only",
+  [VARIANCE.SHEET_ONLY]: "Sheet only",
+  [VARIANCE.OPS_ODOO_NO_GATE]: "Gate missing",
+  [VARIANCE.PICKUP_ODOO_OPEN]: "Odoo not closed",
+  [VARIANCE.DT_ONLY]: "DT only",
+  [VARIANCE.REPLACEMENT_CONFIRM]: "Replacement",
+  [VARIANCE.FAILED_DELIVERY]: "Failed delivery",
+  [VARIANCE.ODOO_ONLY]: "Odoo only",
+  [VARIANCE.OPS_ODOO_NO_DT]: "No DT scan",
+  [VARIANCE.DT_ODOO_NO_SHEET]: "Sheet missing",
+  [VARIANCE.GATE_OPS_ODOO_NO_DT]: "DT pending",
+  [VARIANCE.GATE_ODOO_NO_OPS_DT]: "Ops/DT gap",
+  [VARIANCE.OPS_DT_ODOO_PENDING]: "Odoo pending",
+  [VARIANCE.FIELD_MISMATCH]: "Barcode text",
+  [VARIANCE.DUPLICATE]: "Duplicate",
+};
+
 function shortLabel(name: string): string {
-  const n = name.toLowerCase();
-  if (n.includes("not in odoo")) return "Odoo lag"; // Register/DT Logged — Not in Odoo
-  if (n.includes("sheet-only")) return "Reg only"; // Sheet-Only Dispatch
-  if (n.includes("dt-only")) return "DT only"; // DT-Only — Fake Scan Risk
-  if (n.includes("odoo-only")) return "Odoo only"; // Odoo-Only Entry
-  if (n.includes("dt missing")) return "DT missing"; // DT Missing — Ops & Odoo Agree
-  if (n.includes("duplicate")) return "Duplicate";
-  if (n.includes("direction conflict")) return "Dir conflict";
-  if (n.includes("failed delivery")) return "Failed delivery";
-  return name;
+  return SHORT_LABEL[name] ?? name;
 }
 
 function topIssueOf(names: string[]): string | null {

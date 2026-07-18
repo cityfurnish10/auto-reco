@@ -4,37 +4,35 @@
 // one mapping. Covers every variance_name emitted by the ladder + buckets +
 // direction-conflict layers (see lib/engine/buckets.ts VARIANCE_META).
 
+import { VARIANCE } from "./variance-names";
 import type { OutputDirection } from "./types";
 
 export type SourceLabel = "Odoo" | "DT" | "Sheet" | "Physical" | "Cross";
 
 const SOURCE_OF: Record<string, SourceLabel> = {
   // Odoo is the outlier / missing posting
-  "Odoo-Only Entry — No Floor Record": "Odoo",
-  "Register/DT Logged — Not in Odoo": "Odoo",
-  "Register-Confirmed, No Odoo Record": "Odoo",
-  "Pickup Confirmed — Odoo Not Closed": "Odoo",
-  "Odoo Update Pending — Movement Confirmed": "Odoo",
-  "Odoo Update Pending — Cross-Check": "Odoo",
+  [VARIANCE.ODOO_ONLY]: "Odoo",
+  [VARIANCE.FLOOR_DT_NOT_ODOO]: "Odoo",
+  [VARIANCE.GATE_OPS_NO_DT_ODOO]: "Odoo",
+  [VARIANCE.PICKUP_ODOO_OPEN]: "Odoo",
+  [VARIANCE.GATE_OPS_ODOO_NO_DT]: "Odoo",
+  [VARIANCE.OPS_DT_ODOO_PENDING]: "Odoo",
   // Delivery Tracker scan issue
-  "Fake Scan Risk": "DT",
-  "DT-Only — Fake Scan Risk": "DT",
-  "DT Missing — Ops & Odoo Agree": "DT",
+  [VARIANCE.WRONG_SCAN]: "DT",
+  [VARIANCE.DT_ONLY]: "DT",
+  [VARIANCE.OPS_ODOO_NO_DT]: "DT",
   // Ops sheet is the source
-  "Sheet-Only Dispatch — No Trail": "Sheet",
-  "Ops Sheet Missing — DT & Odoo Agree": "Sheet",
-  "Failed Delivery — Return Not Logged": "Sheet",
-  "PP Box Movement (Count Only)": "Sheet",
+  [VARIANCE.SHEET_ONLY]: "Sheet",
+  [VARIANCE.DT_ODOO_NO_SHEET]: "Sheet",
+  [VARIANCE.FAILED_DELIVERY]: "Sheet",
   // Physical / gate register
-  "Gate-Only Dispatch — No Ops/Odoo Trail": "Physical",
-  "Ops-Sheet Confirmed — Gate Log Missing": "Physical",
-  "Physical + Odoo Agree — No Register/DT": "Physical",
-  "All-Source Field Mismatch": "Physical", // OCR noise — guard scan the usual culprit
-  "Duplicate Scan / Multi-Source Mismatch": "Physical",
-  "Spare/Consumable Movement": "Physical",
+  [VARIANCE.GATE_ONLY]: "Physical",
+  [VARIANCE.OPS_ODOO_NO_GATE]: "Physical",
+  [VARIANCE.GATE_ODOO_NO_OPS_DT]: "Physical",
+  [VARIANCE.FIELD_MISMATCH]: "Physical", // OCR noise — guard scan the usual culprit
+  [VARIANCE.DUPLICATE]: "Physical",
   // Cross-direction (both legs)
-  "Direction Conflict": "Cross",
-  "Replacement Missing a Leg": "Cross",
+  [VARIANCE.REPLACEMENT_CONFIRM]: "Cross",
 };
 
 // The 4 real data sources (excludes the derived "Cross") — for reliability tallies.

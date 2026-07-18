@@ -3,6 +3,7 @@
 // re-tags priority for reporting. INFO rows get priority forced to Info,
 // original_priority preserved, and dampened: true.
 
+import { VARIANCE } from "./variance-names";
 import type { Bucket, Priority, VarianceRowOut } from "./types";
 
 interface VarianceMeta {
@@ -11,119 +12,106 @@ interface VarianceMeta {
   note: string;
 }
 
-// REAL = chase today; INFO = data-hygiene only (Section 10).
+// REAL = chase today; INFO = data-hygiene only (Section 10). Keyed by the
+// canonical variance names (lib/engine/variance-names.ts).
 export const VARIANCE_META: Record<string, VarianceMeta> = {
-  "Fake Scan Risk": {
+  // ── REAL — chase list ──────────────────────────────────────────────────
+  [VARIANCE.WRONG_SCAN]: {
     bucket: "REAL",
     responsible: "delivery_team",
-    note: "Agent's scan does not match the expected barcode — verify the physical unit against the SO before trusting the delivery.",
+    note: "The DT scan does not match the expected barcode — verify the physical unit against the SO before trusting the delivery.",
   },
-  "DT-Only — Fake Scan Risk": {
+  [VARIANCE.DT_ONLY]: {
     bucket: "REAL",
     responsible: "delivery_team",
-    note: "Only the delivery app claims this moved — no floor record. Confirm the unit actually left the warehouse.",
+    note: "Only DT claims this moved — no floor record. Confirm the unit actually left the warehouse.",
   },
-  "Register/DT Logged — Not in Odoo": {
+  [VARIANCE.FLOOR_DT_NOT_ODOO]: {
     bucket: "REAL",
     responsible: "odoo_team",
-    note: "Floor + DT confirm the movement but Odoo has not posted it — post the stock move today.",
+    note: "Gate register + DT confirm the movement but Odoo has not posted it — post the stock move today.",
   },
-  "Register-Confirmed, No Odoo Record": {
+  [VARIANCE.GATE_OPS_NO_DT_ODOO]: {
     bucket: "REAL",
     responsible: "odoo_team",
-    note: "Both registers agree the unit moved but nothing else corroborates — post to Odoo and confirm with DT.",
+    note: "Gate register + ops sheet agree the unit moved, but there is no DT scan and no Odoo posting — post to Odoo and check DT.",
   },
-  "Gate-Only Dispatch — No Ops/Odoo Trail": {
+  [VARIANCE.GATE_ONLY]: {
     bucket: "REAL",
     responsible: "warehouse_team",
-    note: "Guard logged this at the gate but ops, DT and Odoo have no record — trace where the unit went.",
+    note: "Only the gate register logged this — ops sheet, DT and Odoo have no record. Trace where the unit went.",
   },
-  "Sheet-Only Dispatch — No Trail": {
+  [VARIANCE.SHEET_ONLY]: {
     bucket: "REAL",
     responsible: "ops_team",
-    note: "Ops sheet logged this but nothing corroborates — confirm the movement actually happened.",
+    note: "Only the ops sheet logged this — nothing else corroborates. Confirm the movement actually happened.",
   },
-  "Ops-Sheet Confirmed — Gate Log Missing": {
+  [VARIANCE.OPS_ODOO_NO_GATE]: {
     bucket: "REAL",
     responsible: "warehouse_team",
-    note: "Ops and Odoo agree the unit moved but the gate register is the outlier — check the guard log for a missed entry.",
+    note: "Ops sheet + Odoo agree the unit moved, but the gate register is missing it — check the guard log for a missed entry.",
   },
-  "Pickup Confirmed — Odoo Not Closed": {
+  [VARIANCE.PICKUP_ODOO_OPEN]: {
     bucket: "REAL",
     responsible: "odoo_team",
-    note: "Floor and DT agree the pickup happened but the Odoo receipt is not closed — close it today.",
+    note: "Gate register + DT confirm the pickup, but the Odoo receipt is not closed — close it today.",
   },
+  [VARIANCE.REPLACEMENT_CONFIRM]: {
+    bucket: "REAL",
+    responsible: "warehouse_team",
+    note: "The same unit came in and went out on the same SO today — confirm it is a genuine replacement, not a double-count.",
+  },
+  [VARIANCE.FAILED_DELIVERY]: {
+    bucket: "REAL",
+    responsible: "ops_team",
+    note: "Marked Not Delivered on the way out but the return was never logged inward — confirm the unit is back and write it into the inward register.",
+  },
+  // ── INFO — audit / posting-lag ─────────────────────────────────────────
   // INFO, not REAL (measured on live 2026-07-12 data): ~460/day such rows,
   // 98% ordinary ON-RET customer orders — they are Odoo batch-posting earlier
   // days' movements (sml.date is the posting timestamp), whose floor records
   // live on the movement's own day. Ops never chase these; a genuine phantom
   // posting is better caught by the aggregate count layer / periodic audit
   // than by flooding the morning list. original_priority stays High.
-  "Odoo-Only Entry — No Floor Record": {
+  [VARIANCE.ODOO_ONLY]: {
     bucket: "INFO",
     responsible: "odoo_team",
     note: "Odoo posting with no same-day floor record — usually a late posting of an earlier movement. Audit tally, not a stock action.",
   },
-  "Direction Conflict": {
-    bucket: "REAL",
-    responsible: "warehouse_team",
-    note: "Same unit came in and went out on the same SO today — confirm it is a genuine replacement, not a double-count.",
-  },
-  "Replacement Missing a Leg": {
-    bucket: "REAL",
-    responsible: "warehouse_team",
-    note: "A replacement is missing its return or dispatch leg — reconcile both legs of the swap.",
-  },
-  "Failed Delivery — Return Not Logged": {
-    bucket: "REAL",
-    responsible: "ops_team",
-    note: "Marked Not Delivered on the way out but the return was never logged inward — confirm the unit is back and write it into the inward register.",
-  },
-  // ── INFO ──────────────────────────────────────────────────────────────
-  "Odoo Update Pending — Movement Confirmed": {
+  [VARIANCE.GATE_OPS_ODOO_NO_DT]: {
     bucket: "INFO",
     responsible: "odoo_team",
-    note: "Register and Odoo agree; DT just hasn't synced. No stock action needed — DT will catch up.",
+    note: "Gate register + ops sheet + Odoo all confirm the movement; only the DT scan is pending. No stock action — DT will catch up.",
   },
-  "Odoo Update Pending — Cross-Check": {
+  [VARIANCE.OPS_DT_ODOO_PENDING]: {
     bucket: "INFO",
     responsible: "odoo_team",
-    note: "Ops and DT agree the unit moved; Odoo hasn't posted yet. Expected lag, no stock action.",
+    note: "Ops sheet + DT confirm the unit moved; Odoo hasn't posted yet. Expected lag, no stock action.",
   },
-  "Physical + Odoo Agree — No Register/DT": {
+  [VARIANCE.GATE_ODOO_NO_OPS_DT]: {
     bucket: "INFO",
     responsible: "ops_team",
-    note: "Two independent sources already confirm the movement — register/DT gap is cosmetic.",
+    note: "Gate register + Odoo already confirm the movement — the ops-sheet / DT gap is cosmetic.",
   },
-  "All-Source Field Mismatch": {
+  [VARIANCE.FIELD_MISMATCH]: {
     bucket: "INFO",
     responsible: "ops_team",
-    note: "Everyone agrees the unit moved; only the barcode text disagrees (OCR noise). No stock gap.",
+    note: "Every source agrees the unit moved; only the barcode text differs (OCR/typo). No stock gap.",
   },
-  "Duplicate Scan / Multi-Source Mismatch": {
+  [VARIANCE.DUPLICATE]: {
     bucket: "INFO",
     responsible: "ops_team",
-    note: "Same barcode scanned twice within one source — de-duplicate the log entry.",
+    note: "Same barcode logged twice within one source — de-duplicate the entry.",
   },
-  "Spare/Consumable Movement": {
-    bucket: "INFO",
-    responsible: "ops_team",
-    note: "Spare/consumable item movement — recorded for completeness, not a trackable stock unit.",
-  },
-  "DT Missing — Ops & Odoo Agree": {
+  [VARIANCE.OPS_ODOO_NO_DT]: {
     bucket: "INFO",
     responsible: "delivery_team",
-    note: "Ops sheet and Odoo both confirm the movement; only the delivery app has no scan. App hygiene, no stock gap.",
+    note: "Ops sheet + Odoo both confirm the movement; only DT has no scan. DT hygiene, no stock gap.",
   },
-  "Ops Sheet Missing — DT & Odoo Agree": {
+  [VARIANCE.DT_ODOO_NO_SHEET]: {
     bucket: "INFO",
     responsible: "ops_team",
-    note: "Delivery app and Odoo both confirm the movement; the ops sheet entry is missing. Update the sheet, no stock gap.",
-  },
-  "PP Box Movement (Count Only)": {
-    bucket: "INFO",
-    responsible: "ops_team",
-    note: "Packing-box movements are tracked by count only, not barcode.",
+    note: "DT + Odoo both confirm the movement; the ops sheet entry is missing. Update the sheet, no stock gap.",
   },
 };
 
