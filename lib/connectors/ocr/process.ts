@@ -17,6 +17,7 @@ import {
   guardRowsFromLayout,
   azureDocIntelConfigured,
 } from "./document-intelligence";
+import { mirrorGuardPdf } from "../drive";
 import type { GuardUpload, ParsedGuardRow } from "../../db/schema";
 
 const BUCKET = "guard-registers";
@@ -36,6 +37,7 @@ export interface OcrProcessDetail {
   result: "processed" | "failed" | "skipped";
   rows?: number;
   reason?: string;
+  drive?: "uploaded" | "exists" | "skipped" | "failed"; // Drive mirror outcome
 }
 
 export interface OcrProcessSummary {
@@ -73,7 +75,15 @@ export async function processGuardUpload(
       })
       .eq("id", upload.id);
     if (upErr) throw new Error(upErr.message);
-    return { ...base, result: "processed", rows: rows.length };
+
+    // Best-effort mirror to Google Drive (Supabase stays the source of truth).
+    // Reuses the bytes we already downloaded; never fails the OCR — a Drive
+    // misconfig/quota/network error only produces a logged warning.
+    const mirror = await mirrorGuardPdf(bytes, upload.city, upload.file_name, upload.id);
+    if (mirror.status === "failed") {
+      console.warn(`[guard ${upload.id}] Drive mirror failed: ${mirror.reason}`);
+    }
+    return { ...base, result: "processed", rows: rows.length, drive: mirror.status };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     await admin.from("guard_uploads").update({ status: "failed", error: reason }).eq("id", upload.id).then(() => {});

@@ -37,6 +37,7 @@
 import { google, sheets_v4 } from "googleapis";
 import type { Connector, CityTaggedRow } from "./types";
 import { normalizeCity } from "./types";
+import { readServiceAccountKey } from "./google-service-account";
 import { detectDateOrder, resolveSheetDate } from "./sheets-mapping";
 import type { Direction } from "../engine/types";
 
@@ -63,31 +64,6 @@ function readSheetsConfig(): Record<string, SheetConfigEntry> | null {
   try {
     const parsed = JSON.parse(raw) as Record<string, SheetConfigEntry>;
     return Object.keys(parsed).length > 0 ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-interface ServiceAccountKey {
-  client_email: string;
-  private_key: string;
-}
-
-function readServiceAccountKey(): ServiceAccountKey | null {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-  if (!raw) return null;
-  const trimmed = raw.trim();
-  const jsonStr = trimmed.startsWith("{") ? trimmed : Buffer.from(trimmed, "base64").toString("utf-8");
-  try {
-    const parsed = JSON.parse(jsonStr) as Partial<ServiceAccountKey>;
-    if (!parsed.client_email || !parsed.private_key) return null;
-    // Defensive: some env-var paths flatten real newlines in private_key to
-    // literal "\n" pairs a second time (common gotcha with this credential
-    // shape) — restore them if JSON.parse didn't already.
-    return {
-      client_email: parsed.client_email,
-      private_key: parsed.private_key.replace(/\\n/g, "\n"),
-    };
   } catch {
     return null;
   }
