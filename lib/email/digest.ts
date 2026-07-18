@@ -172,14 +172,10 @@ export function digestSubject(data: DigestData): string {
 // Email-client-safe HTML: tables + inline styles only (no fl+grid, no <style>).
 export function renderDigestHtml(data: DigestData, dashboardUrl?: string, notes?: string): string {
   const dateLabel = fmtDate(data.date);
-  // Logo must be a hosted URL — Gmail strips inline/base64 images. Derive it from
-  // the app base (VERCEL_URL / NEXT_PUBLIC_APP_URL); fall back to the wordmark
-  // text when no absolute base is available (e.g. a local send).
-  const base = dashboardUrl ? dashboardUrl.replace(/\/dashboard\/?$/, "") : undefined;
-  const logoUrl = base ? `${base}/apple-icon.png` : undefined;
-  const brand = logoUrl
-    ? `<img src="${logoUrl}" alt="Cityfurnish" width="40" height="40" style="display:block;border-radius:9px;" />`
-    : `<span style="font-size:20px;font-weight:800;color:#111827;">Cityfurnish</span>`;
+  // Brand as a text wordmark, not an image. A hosted logo is unreliable in email:
+  // Gmail strips inline/base64, and an /apple-icon.png on a protected Vercel
+  // deployment URL 403s (shows a broken image). Plain styled text always renders.
+  const brand = `<span style="font-size:22px;font-weight:800;letter-spacing:-0.4px;color:#111827;font-family:Helvetica,Arial,sans-serif;">Cityfurnish</span>`;
   const cityRows = data.cities
     .map((c) => {
       const flag = c.open > 0;
