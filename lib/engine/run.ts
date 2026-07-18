@@ -15,6 +15,7 @@ import { computeSuppressions } from "./suppressions";
 import { isSpareJobType, normalizeJobType } from "./util";
 import { bestGuardMatch } from "./fuzzy";
 import { buildViews, mergeGuardPresence } from "./views";
+import { VARIANCE } from "./variance-names";
 import { ALL_REPORTED } from "./types";
 import type {
   BarcodeView,
@@ -81,8 +82,20 @@ export function runReconciliation(
   const nonOdoo = rows.filter((r) => r.source !== "ODOO");
   const working = [...nonOdoo, ...odooWindowed];
 
-  // Section 5 — validity split. Spares and PP boxes surface as their own INFO
-  // rows (never the per-barcode ladder); invalid placeholders are dropped.
+  // Section 5 — validity split. Spares and PP boxes surface as counts (never the
+  // per-barcode ladder); invalid placeholders are dropped.
+  //
+  // Spare/consumable is a BARCODE-level property: spares live in the register,
+  // ops sheet and DT but NEVER in Odoo, so they must never reach the ladder —
+  // otherwise a spare would falsely flag "not in Odoo". If ANY source row for a
+  // barcode marks it spare (barcode/product text OR ops-type), the whole barcode
+  // is a spare and every one of its rows goes to counts (this closes the gap
+  // where, say, the DT row lacks the spare tag the ops sheet carries).
+  const spareCanon = new Set<string>();
+  for (const r of working) {
+    if (!isPpBox(r.barcode) && (isSpareOrConsumable(r.barcode) || isSpareJobType(r.jobType)))
+      spareCanon.add(canonicalize(r.barcode));
+  }
   const spareRows: SourceRow[] = [];
   const ppBoxRows: SourceRow[] = [];
   const valid: SourceRow[] = [];
@@ -90,7 +103,7 @@ export function runReconciliation(
     // Placeholder checks first — these labels are long enough to pass the
     // length/alnum test but must never run the normal ladder.
     if (isPpBox(r.barcode)) ppBoxRows.push(r);
-    else if (isSpareOrConsumable(r.barcode) || isSpareJobType(r.jobType)) spareRows.push(r);
+    else if (spareCanon.has(canonicalize(r.barcode))) spareRows.push(r);
     else if (isValidBarcode(r.barcode)) valid.push(r);
   }
 
@@ -176,7 +189,7 @@ export function runReconciliation(
           barcode: v.canonical,
           city,
           direction: "OUT",
-          variance_name: "Failed Delivery — Return Not Logged",
+          variance_name: VARIANCE.FAILED_DELIVERY,
           priority: "High",
           ticket_id: v.ticketId,
           so_number: v.soNumber,

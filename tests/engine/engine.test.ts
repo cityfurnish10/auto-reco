@@ -3,6 +3,7 @@ import { parseDate, deriveRunDate, addDays } from "../../lib/engine/dates";
 import { canonicalize, isValidBarcode, isSpareOrConsumable } from "../../lib/engine/barcode";
 import { runReconciliation } from "../../lib/engine/run";
 import { buildSampleRowsByCity } from "../../lib/sample-raw-sources";
+import { VARIANCE } from "../../lib/engine/variance-names";
 import type { SourceRow } from "../../lib/engine/types";
 
 const RUN = "2026-07-12";
@@ -124,7 +125,7 @@ describe("Reported-source gating (outage / no-guard modes)", () => {
       rep({ P: false })
     );
     const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-2"));
-    expect(v?.variance_name).toBe("Register/DT Logged — Not in Odoo");
+    expect(v?.variance_name).toBe(VARIANCE.FLOOR_DT_NOT_ODOO);
     expect(v?.bucket).toBe("REAL");
   });
 
@@ -138,7 +139,7 @@ describe("Reported-source gating (outage / no-guard modes)", () => {
       "MUMBAI"
     );
     const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-2"));
-    expect(v?.variance_name).toBe("Odoo Update Pending — Cross-Check");
+    expect(v?.variance_name).toBe(VARIANCE.OPS_DT_ODOO_PENDING);
     expect(v?.bucket).toBe("INFO");
   });
 
@@ -168,7 +169,7 @@ describe("Reported-source gating (outage / no-guard modes)", () => {
     );
     const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-4"));
     // Floor sources both unreported → corroboration vacuous → Odoo-missing REAL.
-    expect(v?.variance_name).toBe("Register/DT Logged — Not in Odoo");
+    expect(v?.variance_name).toBe(VARIANCE.FLOOR_DT_NOT_ODOO);
   });
 
   it("no-guard mode: Sheet+Odoo agree, DT missing → INFO (not Gate Log Missing)", () => {
@@ -185,7 +186,7 @@ describe("Reported-source gating (outage / no-guard modes)", () => {
       rep({ P: false })
     );
     const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-5"));
-    expect(v?.variance_name).toBe("DT Missing — Ops & Odoo Agree");
+    expect(v?.variance_name).toBe(VARIANCE.OPS_ODOO_NO_DT);
     expect(v?.bucket).toBe("INFO");
   });
 });
@@ -200,7 +201,7 @@ describe("Failed delivery & PP boxes (ops-practice rules)", () => {
       "MUMBAI"
     );
     const v = res.variances.find((x) => x.barcode === canonicalize("FAILED-1"));
-    expect(v?.variance_name).toBe("Failed Delivery — Return Not Logged");
+    expect(v?.variance_name).toBe(VARIANCE.FAILED_DELIVERY);
     expect(v?.bucket).toBe("REAL");
   });
 
@@ -218,7 +219,7 @@ describe("Failed delivery & PP boxes (ops-practice rules)", () => {
     );
     expect(
       res.variances.find(
-        (x) => x.barcode === canonicalize("FAILED-2") && x.variance_name === "Failed Delivery — Return Not Logged"
+        (x) => x.barcode === canonicalize("FAILED-2") && x.variance_name === VARIANCE.FAILED_DELIVERY
       )
     ).toBeUndefined();
     // And the not-delivered OUT row must not fire Sheet-Only either.
@@ -242,7 +243,7 @@ describe("Failed delivery & PP boxes (ops-practice rules)", () => {
     expect(res.variances.some((v) => v.variance_name === "PP Box Movement (Count Only)")).toBe(false);
     expect(res.summary.pp_box_count).toBe(2);
     // They must never run the normal ladder as fake barcodes.
-    expect(res.variances.some((v) => v.variance_name === "Sheet-Only Dispatch — No Trail")).toBe(false);
+    expect(res.variances.some((v) => v.variance_name === VARIANCE.SHEET_ONLY)).toBe(false);
   });
 });
 
@@ -263,7 +264,7 @@ describe("Section 6 — variance ladder", () => {
   it("Odoo-only → Odoo-Only Entry (INFO tally; natural priority preserved)", () => {
     const res = one([{ source: "ODOO", createdOn: RUN }]);
     const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-1"));
-    expect(v?.variance_name).toBe("Odoo-Only Entry — No Floor Record");
+    expect(v?.variance_name).toBe(VARIANCE.ODOO_ONLY);
     // Measured on live data: these are overwhelmingly Odoo batch-posting
     // earlier days' movements — an audit tally, not a morning chase item.
     expect(v?.bucket).toBe("INFO");
@@ -274,7 +275,7 @@ describe("Section 6 — variance ladder", () => {
   it("gate-only → Gate-Only Dispatch (REAL)", () => {
     const res = one([{ source: "PHYSICAL" }]);
     expect(res.variances[0].variance_name).toBe(
-      "Gate-Only Dispatch — No Ops/Odoo Trail"
+      VARIANCE.GATE_ONLY
     );
   });
 
@@ -285,7 +286,7 @@ describe("Section 6 — variance ladder", () => {
       { source: "DT" },
     ]);
     expect(res.variances[0].variance_name).toBe(
-      "Register/DT Logged — Not in Odoo"
+      VARIANCE.FLOOR_DT_NOT_ODOO
     );
   });
 
@@ -296,7 +297,7 @@ describe("Section 6 — variance ladder", () => {
       { source: "ODOO", createdOn: RUN },
     ]);
     const v = res.variances[0];
-    expect(v.variance_name).toBe("Odoo Update Pending — Movement Confirmed");
+    expect(v.variance_name).toBe(VARIANCE.GATE_OPS_ODOO_NO_DT);
     expect(v.bucket).toBe("INFO");
     expect(v.priority).toBe("Info");
     expect(v.dampened).toBe(true);
@@ -321,7 +322,7 @@ describe("Section 6 — variance ladder", () => {
       ],
       "MUMBAI"
     );
-    expect(res.variances[0].variance_name).toBe("Fake Scan Risk");
+    expect(res.variances[0].variance_name).toBe(VARIANCE.WRONG_SCAN);
   });
 });
 
@@ -367,9 +368,25 @@ describe("Section 7 — suppressions", () => {
     // It must NOT have been classified as a gate-only REAL variance.
     expect(
       res.variances.some(
-        (v) => v.variance_name === "Gate-Only Dispatch — No Ops/Odoo Trail"
+        (v) => v.variance_name === VARIANCE.GATE_ONLY
       )
     ).toBe(false);
+  });
+
+  it("spare is a BARCODE-level property — a spare tagged on ONE source excludes ALL its rows", () => {
+    // The ops sheet tags this barcode "Spare Parts"; the DT row for the SAME
+    // barcode carries no spare tag. The whole barcode must be treated as a spare
+    // (never flagged 'not in Odoo' / DT-only), and surfaced as a count.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "OUT", barcode: "CABLEWIRE01", status: "done", jobType: "Spare Parts" }),
+        r({ source: "DT", direction: "OUT", barcode: "CABLEWIRE01", status: "done", date: RUN, jobType: "Delivery" }),
+      ],
+      "MUMBAI"
+    );
+    expect(res.variances.find((v) => v.barcode === canonicalize("CABLEWIRE01"))).toBeUndefined();
+    expect(res.summary.consumable_count).toBeGreaterThanOrEqual(1);
   });
 
   it("Silent OCR/SO-match never appears in output", () => {
@@ -403,7 +420,7 @@ describe("Section 8 — direction conflict", () => {
       ],
       "MUMBAI"
     );
-    const dc = res.variances.find((v) => v.variance_name === "Direction Conflict");
+    const dc = res.variances.find((v) => v.variance_name === VARIANCE.REPLACEMENT_CONFIRM);
     expect(dc).toBeDefined();
     expect(dc?.direction).toBe("CROSS");
     expect(dc?.responsible).toBe("warehouse_team");
@@ -446,8 +463,8 @@ describe("Section 10/11 — buckets & output contract", () => {
 
 describe("OCR-tolerant merge — dampen guard variances from OCR slips", () => {
   const REAL_NAMES = [
-    "Gate-Only Dispatch — No Ops/Odoo Trail",
-    "Ops-Sheet Confirmed — Gate Log Missing",
+    VARIANCE.GATE_ONLY,
+    VARIANCE.OPS_ODOO_NO_GATE,
   ];
   const hasReal = (res: ReturnType<typeof runReconciliation>, name: string) =>
     res.variances.some((v) => v.variance_name === name);
@@ -467,8 +484,8 @@ describe("OCR-tolerant merge — dampen guard variances from OCR slips", () => {
       "MUMBAI"
     );
     // Both false REAL variances are gone …
-    expect(hasReal(res, "Gate-Only Dispatch — No Ops/Odoo Trail")).toBe(false);
-    expect(hasReal(res, "Ops-Sheet Confirmed — Gate Log Missing")).toBe(false);
+    expect(hasReal(res, VARIANCE.GATE_ONLY)).toBe(false);
+    expect(hasReal(res, VARIANCE.OPS_ODOO_NO_GATE)).toBe(false);
     // … the mangled orphan view no longer exists …
     expect(res.variances.find((v) => v.barcode === canonicalize("C0UCHXYZ99"))).toBeUndefined();
     // … and whatever remains on the merged item is at most an INFO audit note.
@@ -525,8 +542,8 @@ describe("OCR-tolerant merge — dampen guard variances from OCR slips", () => {
       ],
       "MUMBAI"
     );
-    expect(hasReal(res, "Gate-Only Dispatch — No Ops/Odoo Trail")).toBe(true);
-    expect(hasReal(res, "Ops-Sheet Confirmed — Gate Log Missing")).toBe(true);
+    expect(hasReal(res, VARIANCE.GATE_ONLY)).toBe(true);
+    expect(hasReal(res, VARIANCE.OPS_ODOO_NO_GATE)).toBe(true);
     expect(res.warnings.some((w) => w.startsWith("OCR merge"))).toBe(false);
   });
 
@@ -593,7 +610,7 @@ describe("Inward DT quantity-aggregation — DT-missing INFO suppressed for inwa
       "MUMBAI"
     );
     const v = res.variances.find((x) => x.barcode === canonicalize("WASH-IN-3"));
-    expect(v?.variance_name).toBe("Ops-Sheet Confirmed — Gate Log Missing");
+    expect(v?.variance_name).toBe(VARIANCE.OPS_ODOO_NO_GATE);
     expect(v?.bucket).toBe("REAL");
   });
 
@@ -608,7 +625,7 @@ describe("Inward DT quantity-aggregation — DT-missing INFO suppressed for inwa
       "MUMBAI"
     );
     const v = res.variances.find((x) => x.barcode === canonicalize("WASH-OUT-1"));
-    expect(v?.variance_name).toBe("Odoo Update Pending — Movement Confirmed");
+    expect(v?.variance_name).toBe(VARIANCE.GATE_OPS_ODOO_NO_DT);
     expect(v?.bucket).toBe("INFO");
   });
 });
@@ -628,7 +645,7 @@ describe("DT enrichment — Odoo-only ticket/ops sourced from Delivery Tracker",
     const v = res.variances.find(
       (x) => x.barcode === canonicalize("WASHER-01") && x.direction === "OUT"
     );
-    expect(v?.variance_name).toBe("Odoo-Only Entry — No Floor Record");
+    expect(v?.variance_name).toBe(VARIANCE.ODOO_ONLY);
     expect(v?.ticket_id).toBe("186371");
     expect(v?.job_type).toBe("REPAIR");
   });
@@ -642,7 +659,7 @@ describe("DT enrichment — Odoo-only ticket/ops sourced from Delivery Tracker",
       "MUMBAI"
     );
     const v = res.variances.find((x) => x.barcode === canonicalize("DRYER-01"));
-    expect(v?.variance_name).toBe("Odoo-Only Entry — No Floor Record");
+    expect(v?.variance_name).toBe(VARIANCE.ODOO_ONLY);
     expect(v?.ticket_id).toBeNull();
     expect(v?.job_type).toBeNull();
   });
@@ -658,7 +675,7 @@ describe("DT enrichment — Odoo-only ticket/ops sourced from Delivery Tracker",
       "MUMBAI"
     );
     const v = res.variances.find((x) => x.barcode === canonicalize("TABLE-01"));
-    expect(v?.variance_name).toBe("Register/DT Logged — Not in Odoo");
+    expect(v?.variance_name).toBe(VARIANCE.FLOOR_DT_NOT_ODOO);
     expect(v?.ticket_id).toBe("PHYS-T1"); // kept, since the view is not Odoo-only
   });
 
