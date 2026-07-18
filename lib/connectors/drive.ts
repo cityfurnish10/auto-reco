@@ -110,3 +110,24 @@ export async function mirrorGuardPdf(
     return { status: "failed", reason: err instanceof Error ? err.message : String(err) };
   }
 }
+
+// Best-effort: move a guard PDF's Drive mirror to the trash (found by upload id).
+// The service account is a Content Manager, which can trash but not permanently
+// delete in a Shared Drive — trashed files are recoverable from Drive's trash.
+// NEVER throws.
+export async function deleteGuardPdfFromDrive(uploadId: string): Promise<{ trashed: boolean; reason?: string }> {
+  try {
+    if (!driveMirrorConfigured()) return { trashed: false, reason: "drive not configured" };
+    const drive = await getDrive();
+    const existing = await findExisting(drive, uploadId);
+    if (!existing?.id) return { trashed: false, reason: "not mirrored" };
+    await drive.files.update({
+      fileId: existing.id,
+      requestBody: { trashed: true },
+      supportsAllDrives: true,
+    });
+    return { trashed: true };
+  } catch (err) {
+    return { trashed: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+}

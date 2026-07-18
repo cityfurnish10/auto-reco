@@ -60,6 +60,7 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [history, setHistory] = useState<GuardUpload[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function refreshHistory() {
     const supabase = getSupabaseClient();
@@ -133,6 +134,35 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
       setUploading(false);
       setProcessing(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  // Admin-only: permanently remove a register — the PDF, its OCR'd rows in the
+  // DB, and the Drive mirror. Requires an explicit confirm.
+  async function handleDelete(u: GuardUpload) {
+    if (
+      !window.confirm(
+        `Remove "${u.file_name}" (${u.city}, ${u.business_date})?\n\nThis permanently deletes the PDF and its OCR'd data from the database. It cannot be undone.`
+      )
+    ) {
+      return;
+    }
+    setDeletingId(u.id);
+    setUploadError(null);
+    try {
+      const res = await fetch(`/api/uploads/guard/${u.id}`, {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      setToast(`Removed "${u.file_name}" and its OCR data.`);
+      setTimeout(() => setToast(null), 6000);
+      refreshHistory();
+    } catch (e) {
+      setUploadError(`Could not delete: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -308,6 +338,7 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
                     {!isManager && <th>City</th>}
                     <th>Status</th>
                     <th>Rows</th>
+                    {!isManager && <th className="text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -327,11 +358,23 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
                         )}
                       </td>
                       <td className="text-text-secondary">{u.rows_parsed || "—"}</td>
+                      {!isManager && (
+                        <td className="text-right">
+                          <button
+                            onClick={() => handleDelete(u)}
+                            disabled={deletingId === u.id}
+                            title="Delete this register (PDF + OCR data)"
+                            className="btn-icon hover:text-danger disabled:opacity-40"
+                          >
+                            <Icon name={deletingId === u.id ? "progress_activity" : "delete"} size={18} className={deletingId === u.id ? "animate-spin" : ""} />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                   {visibleHistory.length === 0 && (
                     <tr>
-                      <td colSpan={isManager ? 4 : 5} className="text-center py-8 text-text-muted">
+                      <td colSpan={isManager ? 4 : 6} className="text-center py-8 text-text-muted">
                         No uploads recorded yet.
                       </td>
                     </tr>
