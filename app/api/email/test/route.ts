@@ -1,7 +1,9 @@
-// Admin-only test send of the reconciliation digest.
-// POST /api/email/test  { date?: "YYYY-MM-DD", to?: string }
-//   - date: which business day to summarise (default = latest reconciled run)
-//   - to  : override recipient (default = the requesting admin's own email)
+// Admin-only "send now" of the reconciliation digest.
+// POST /api/email/test  { date?, to?: string[]|string, cc?: string[], bcc?: string[], notes? }
+//   - date : which business day to summarise (default = latest reconciled run)
+//   - to   : recipients (default = the requesting admin's own email)
+//   - cc/bcc: additional recipients
+//   - notes: an admin note rendered into the email body
 // Builds the digest from PERSISTED variances (no source re-pull) and mails it.
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -29,7 +31,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let body: { date?: string; to?: string } = {};
+  let body: {
+    date?: string;
+    to?: string[] | string;
+    cc?: string[];
+    bcc?: string[];
+    notes?: string;
+  } = {};
   try {
     body = await req.json();
   } catch {
@@ -56,16 +64,30 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const digest = await buildDigestFromDb(db, date);
-  const to = body.to?.trim() ? [body.to.trim()] : me.email ? [me.email] : undefined;
-  const result = await sendReconciliationDigest(digest, to);
+  const clean = (list?: string[] | string): string[] =>
+    (Array.isArray(list) ? list : list ? [list] : [])
+      .map((s) => s.trim())
+      .filter(Boolean);
 
-  // Audit the test send for the System Health timeline (best-effort).
+  const toList = clean(body.to);
+  const to = toList.length ? toList : me.email ? [me.email] : undefined;
+  const cc = clean(body.cc);
+  const bcc = clean(body.bcc);
+  const notes = body.notes?.trim() || undefined;
+
+  const digest = await buildDigestFromDb(db, date);
+  const result = await sendReconciliationDigest(digest, { to, cc, bcc, notes });
+
+  // Audit the send for the System Health timeline (best-effort).
   await saveEmailLog(db, {
     kind: "test",
     businessDate: date,
     status: result.sent ? "sent" : result.error ? "failed" : "skipped",
     recipients: result.recipients ?? [],
+    cc: result.cc ?? [],
+    bcc: result.bcc ?? [],
+    notes: notes ?? null,
+    sentBy: me.id,
     messageId: result.messageId ?? null,
     error: result.error ?? result.skipped ?? null,
   }).catch(() => {});

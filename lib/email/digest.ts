@@ -170,7 +170,7 @@ export function digestSubject(data: DigestData): string {
 }
 
 // Email-client-safe HTML: tables + inline styles only (no fl+grid, no <style>).
-export function renderDigestHtml(data: DigestData, dashboardUrl?: string): string {
+export function renderDigestHtml(data: DigestData, dashboardUrl?: string, notes?: string): string {
   const dateLabel = fmtDate(data.date);
   // Logo must be a hosted URL — Gmail strips inline/base64 images. Derive it from
   // the app base (VERCEL_URL / NEXT_PUBLIC_APP_URL); fall back to the wordmark
@@ -209,6 +209,18 @@ export function renderDigestHtml(data: DigestData, dashboardUrl?: string): strin
        </div>`
     : "";
 
+  // Optional admin note — an amber callout between the header and the stats.
+  const noteBlock = notes && notes.trim()
+    ? `<tr><td style="padding:20px 32px 0;">
+         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;">
+           <tr><td style="padding:14px 16px;color:#92400e;font-size:13px;line-height:1.55;">
+             <strong style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#b45309;margin-bottom:5px;">Note from the admin</strong>
+             ${esc(notes.trim()).replace(/\n/g, "<br/>")}
+           </td></tr>
+         </table>
+       </td></tr>`
+    : "";
+
   return `<!doctype html>
 <html><body style="margin:0;padding:0;background:#f3f4f6;font-family:Helvetica,Arial,sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
@@ -222,6 +234,8 @@ export function renderDigestHtml(data: DigestData, dashboardUrl?: string): strin
           <h2 style="margin:18px 0 6px;font-size:18px;color:#111827;">Warehouse Reconciliation Report</h2>
           <p style="margin:0;color:#6b7280;font-size:13px;">${dateLabel} — business day reconciled (D-1).</p>
         </td></tr>
+
+        ${noteBlock}
 
         <tr><td style="padding:24px 32px;background:#f9fafb;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:22px;"><tr>
@@ -266,10 +280,14 @@ export function renderDigestHtml(data: DigestData, dashboardUrl?: string): strin
 </body></html>`;
 }
 
-export function renderDigestText(data: DigestData): string {
+export function renderDigestText(data: DigestData, notes?: string): string {
   const lines: string[] = [];
   lines.push(`CITYFURNISH — Warehouse Reconciliation — ${fmtDate(data.date)}`);
   lines.push("");
+  if (notes && notes.trim()) {
+    lines.push(`NOTE FROM THE ADMIN: ${notes.trim()}`);
+    lines.push("");
+  }
   lines.push(`Total ${data.totals.total} | Need action (REAL) ${data.totals.real} | Info ${data.totals.info} | High ${data.totals.high}`);
   lines.push("");
   lines.push("CITY          ACC%   OPEN   PP   TOP GAP");

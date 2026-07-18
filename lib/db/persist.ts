@@ -164,24 +164,37 @@ export async function saveEmailLog(
   db: DB,
   entry: {
     runId?: string | null;
-    kind: "digest" | "test";
+    kind: "digest" | "test" | "scheduled";
     businessDate?: string | null;
     status: "sent" | "skipped" | "failed";
     recipients: string[];
+    cc?: string[];
+    bcc?: string[];
+    notes?: string | null;
+    sentBy?: string | null;
     messageId?: string | null;
     error?: string | null;
   }
-): Promise<void> {
-  const { error } = await db.from("email_logs").insert({
-    run_id: entry.runId ?? null,
-    kind: entry.kind,
-    business_date: entry.businessDate ?? null,
-    status: entry.status,
-    recipients: entry.recipients ?? [],
-    message_id: entry.messageId ?? null,
-    error: entry.error ?? null,
-  });
+): Promise<string | null> {
+  const { data, error } = await db
+    .from("email_logs")
+    .insert({
+      run_id: entry.runId ?? null,
+      kind: entry.kind,
+      business_date: entry.businessDate ?? null,
+      status: entry.status,
+      recipients: entry.recipients ?? [],
+      cc: entry.cc ?? [],
+      bcc: entry.bcc ?? [],
+      notes: entry.notes ?? null,
+      sent_by: entry.sentBy ?? null,
+      message_id: entry.messageId ?? null,
+      error: entry.error ?? null,
+    })
+    .select("id")
+    .single();
   if (error) throw new Error(`saveEmailLog failed: ${error.message}`);
+  return data?.id ?? null;
 }
 
 export async function finalizeRun(

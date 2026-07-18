@@ -20,11 +20,20 @@ export {
   type DigestData,
 } from "./digest";
 
+export interface SendOptions {
+  to?: string[]; // override 'to'; empty/undefined = DIGEST_RECIPIENTS
+  cc?: string[];
+  bcc?: string[];
+  notes?: string; // admin note rendered into the email body
+}
+
 export interface SendResult {
   sent: boolean;
   skipped?: string; // reason, when not configured
   error?: string;
-  recipients: string[];
+  recipients: string[]; // the 'to' list
+  cc?: string[];
+  bcc?: string[];
   messageId?: string;
 }
 
@@ -50,39 +59,43 @@ function dashboardUrl(): string | undefined {
 
 export async function sendReconciliationDigest(
   data: DigestData,
-  overrideRecipients?: string[]
+  opts: SendOptions = {}
 ): Promise<SendResult> {
-  const recipients = overrideRecipients?.length
-    ? overrideRecipients
-    : digestRecipients();
+  const recipients = opts.to?.length ? opts.to : digestRecipients();
+  const cc = opts.cc ?? [];
+  const bcc = opts.bcc ?? [];
 
   if (!isEmailConfigured()) {
-    return { sent: false, skipped: "email not configured (GMAIL_USER / GMAIL_APP_PASSWORD)", recipients };
+    return { sent: false, skipped: "email not configured (GMAIL_USER / GMAIL_APP_PASSWORD)", recipients, cc, bcc };
   }
   if (recipients.length === 0) {
-    return { sent: false, skipped: "no recipients (set DIGEST_RECIPIENTS)", recipients };
+    return { sent: false, skipped: "no recipients (set DIGEST_RECIPIENTS)", recipients, cc, bcc };
   }
 
   const transport = getTransport();
   const cfg = getSmtpConfig();
   if (!transport || !cfg) {
-    return { sent: false, skipped: "transport unavailable", recipients };
+    return { sent: false, skipped: "transport unavailable", recipients, cc, bcc };
   }
 
   try {
     const info = await transport.sendMail({
       from: `Cityfurnish Ops <${cfg.user}>`,
       to: recipients.join(", "),
+      cc: cc.length ? cc.join(", ") : undefined,
+      bcc: bcc.length ? bcc.join(", ") : undefined,
       subject: digestSubject(data),
-      text: renderDigestText(data),
-      html: renderDigestHtml(data, dashboardUrl()),
+      text: renderDigestText(data, opts.notes),
+      html: renderDigestHtml(data, dashboardUrl(), opts.notes),
     });
-    return { sent: true, recipients, messageId: info.messageId };
+    return { sent: true, recipients, cc, bcc, messageId: info.messageId };
   } catch (err) {
     return {
       sent: false,
       error: err instanceof Error ? err.message : String(err),
       recipients,
+      cc,
+      bcc,
     };
   }
 }
