@@ -22,6 +22,7 @@ interface CityAgg {
   total: number;
   open: number;
   inProgress: number;
+  pendingApproval: number;
   closed: number;
   high: number;
   medium: number;
@@ -38,6 +39,7 @@ function emptyAgg(city: string): CityAgg {
     total: 0,
     open: 0,
     inProgress: 0,
+    pendingApproval: 0,
     closed: 0,
     high: 0,
     medium: 0,
@@ -110,6 +112,7 @@ export async function GET(req: NextRequest) {
       target.total += 1;
       if (v.status === "open") target.open += 1;
       else if (v.status === "in_progress") target.inProgress += 1;
+      else if (v.status === "pending_approval") target.pendingApproval += 1;
       else if (v.status === "closed") target.closed += 1;
       if (v.priority === "High") target.high += 1;
       else if (v.priority === "Medium") target.medium += 1;

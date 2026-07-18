@@ -9,6 +9,7 @@ import { useState } from "react";
 import type { SessionUser } from "@/lib/demo-auth";
 import Sidebar from "./sidebar";
 import ThemeToggle from "./theme-toggle";
+import ApprovalsBell from "./approvals-bell";
 import { Icon } from "@/components/icon";
 
 export default function DashboardShell({
@@ -61,9 +62,7 @@ export default function DashboardShell({
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <button className="btn-icon hidden sm:inline-flex" title="Notifications">
-              <Icon name="notifications" size={20} />
-            </button>
+            {user.role === "ADMIN" && <ApprovalsBell />}
             <div className="flex items-center gap-3 sm:pl-4 sm:ml-2 sm:border-l border-border">
               <div className="text-right hidden sm:block">
                 <p className="text-sm text-text-primary font-medium">{user.name}</p>

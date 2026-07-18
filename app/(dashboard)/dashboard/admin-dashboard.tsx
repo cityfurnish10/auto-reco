@@ -16,6 +16,7 @@ import type {
 } from "@/lib/db/schema";
 import { SourceBadge } from "@/components/source-badge";
 import { Icon } from "@/components/icon";
+import CloseVarianceModal from "./close-variance-modal";
 import {
   useStats,
   useVariances,
@@ -34,7 +35,15 @@ const PRIORITY_BADGE: Record<Priority, string> = {
 const STATUS_BADGE: Record<VarianceStatus, string> = {
   open: "badge badge-medium",
   in_progress: "badge badge-suppressed",
+  pending_approval: "badge badge-info",
   closed: "badge badge-done",
+};
+
+const STATUS_LABEL: Record<VarianceStatus, string> = {
+  open: "open",
+  in_progress: "in progress",
+  pending_approval: "pending approval",
+  closed: "closed",
 };
 
 const SOURCES: VarianceSource[] = ["Odoo", "DT", "Sheet", "Physical", "Cross"];
@@ -51,6 +60,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
   const [dateF, setDateF] = useState(""); // "" = latest run
   const [page, setPage] = useState(1);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState<{ id: string; product: string; barcode: string } | null>(null);
 
   // Debounce the search box; a search finds across all buckets/statuses.
   useEffect(() => {
@@ -60,6 +70,15 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     }, 350);
     return () => clearTimeout(t);
   }, [searchInput]);
+
+  // The notification bell links here with ?status=pending_approval — seed the
+  // status filter from the URL so a click lands on the approval queue.
+  /* eslint-disable react-hooks/set-state-in-effect -- one-time URL seed on mount */
+  useEffect(() => {
+    const s = new URLSearchParams(window.location.search).get("status");
+    if (s === "pending_approval") setStatus("pending_approval");
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const { stats, loading: statsLoading, refetch: refetchStats } = useStats(dateF || undefined);
 
@@ -86,7 +105,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     return cityTab === "ALL"
       ? stats.overall
       : stats.byCity.find((c) => c.city === cityTab) ?? {
-          city: cityTab, total: 0, open: 0, inProgress: 0, closed: 0,
+          city: cityTab, total: 0, open: 0, inProgress: 0, pendingApproval: 0, closed: 0,
           high: 0, medium: 0, info: 0, real: 0, infoBucket: 0, ppBox: 0, consumable: 0,
         };
   }, [stats, cityTab]);
@@ -108,6 +127,33 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
       alert(`Could not dispute: ${e instanceof Error ? e.message : e}`);
     } finally {
       setBusyId(null);
+    }
+  }
+
+  // Approve a manager's submission → closes the variance (carries their reason).
+  async function approve(id: string) {
+    setBusyId(id);
+    try {
+      await patchVariance(id, "approve");
+      refetch();
+      refetchStats();
+    } catch (e) {
+      alert(`Could not approve: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // Reject a submission → back to open with a note the manager will see.
+  async function handleReject(_reason: string, note: string) {
+    if (!rejecting) return;
+    try {
+      await patchVariance(rejecting.id, "reject", undefined, note);
+      setRejecting(null);
+      refetch();
+      refetchStats();
+    } catch (e) {
+      alert(`Could not reject: ${e instanceof Error ? e.message : e}`);
     }
   }
 
@@ -179,7 +225,16 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
           <span className="kpi-label">Open</span>
           <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.open ?? 0}</span>
           <span className="text-xs text-text-muted mt-1">
-            {agg?.closed ?? 0} closed · {agg?.inProgress ?? 0} in progress
+            {(agg?.pendingApproval ?? 0) > 0 && (
+              <button
+                onClick={() => resetPage(setStatus)("pending_approval")}
+                className="text-accent font-semibold hover:underline"
+              >
+                {agg?.pendingApproval} pending approval
+              </button>
+            )}
+            {(agg?.pendingApproval ?? 0) > 0 && " · "}
+            {agg?.closed ?? 0} closed
           </span>
         </div>
       </div>
@@ -296,6 +351,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               <option value="ALL">All Status</option>
               <option value="open">Open</option>
               <option value="in_progress">In Progress</option>
+              <option value="pending_approval">Pending Approval</option>
               <option value="closed">Closed</option>
             </select>
             <button onClick={exportCsv} disabled={rows.length === 0} className="btn btn-primary disabled:opacity-40">
@@ -320,13 +376,35 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 <span>{v.city}</span>
                 <SourceBadge source={v.variance_source} />
                 {v.job_type && <span>{v.job_type}</span>}
-                <span className={`${STATUS_BADGE[v.status]} uppercase`}>{v.status.replace("_", " ")}</span>
+                <span className={`${STATUS_BADGE[v.status]} uppercase`}>{STATUS_LABEL[v.status]}</span>
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-text-muted">
                 {v.so_number && <span>SO: {v.so_number}</span>}
                 {v.ticket_id && <span>Ticket: {v.ticket_id}</span>}
               </div>
-              {v.status === "open" && (
+              {v.status === "pending_approval" && (v.submit_reason || v.submit_note) && (
+                <p className="text-xs text-text-muted mt-1">
+                  <b>Submitted:</b> {[v.submit_reason, v.submit_note].filter(Boolean).join(" — ")}
+                </p>
+              )}
+              {v.status === "pending_approval" ? (
+                <div className="flex gap-2 mt-1">
+                  <button
+                    onClick={() => approve(v.id)}
+                    disabled={busyId === v.id}
+                    className="btn btn-compact btn-primary flex-1 disabled:opacity-40"
+                  >
+                    <Icon name="check_circle" size={16} /> Approve
+                  </button>
+                  <button
+                    onClick={() => setRejecting({ id: v.id, product: v.product ?? "", barcode: v.barcode })}
+                    disabled={busyId === v.id}
+                    className="btn btn-compact btn-secondary flex-1 disabled:opacity-40"
+                  >
+                    <Icon name="close" size={16} /> Reject
+                  </button>
+                </div>
+              ) : v.status === "open" ? (
                 <button
                   onClick={() => dispute(v.id)}
                   disabled={busyId === v.id}
@@ -335,7 +413,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                   <Icon name="flag" size={16} />
                   Dispute
                 </button>
-              )}
+              ) : null}
             </div>
           ))}
           {!loading && rows.length === 0 && (
@@ -381,12 +459,38 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                   </td>
                   <td><span className={PRIORITY_BADGE[v.priority]}>{v.priority}</span></td>
                   <td>
-                    <span className={`${STATUS_BADGE[v.status]} uppercase`} title={v.closure_reason ?? undefined}>
-                      {v.status.replace("_", " ")}
+                    <span
+                      className={`${STATUS_BADGE[v.status]} uppercase`}
+                      title={
+                        v.status === "pending_approval"
+                          ? [v.submit_reason, v.submit_note].filter(Boolean).join(" — ") || undefined
+                          : v.closure_reason ?? undefined
+                      }
+                    >
+                      {STATUS_LABEL[v.status]}
                     </span>
                   </td>
                   <td className="text-center">
-                    {v.status === "open" ? (
+                    {v.status === "pending_approval" ? (
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          onClick={() => approve(v.id)}
+                          disabled={busyId === v.id}
+                          title="Approve — closes this variance"
+                          className="btn-icon hover:text-success disabled:opacity-40"
+                        >
+                          <Icon name="check_circle" size={18} />
+                        </button>
+                        <button
+                          onClick={() => setRejecting({ id: v.id, product: v.product ?? "", barcode: v.barcode })}
+                          disabled={busyId === v.id}
+                          title="Reject — send back to the manager"
+                          className="btn-icon hover:text-danger disabled:opacity-40"
+                        >
+                          <Icon name="close" size={18} />
+                        </button>
+                      </div>
+                    ) : v.status === "open" ? (
                       <button
                         onClick={() => dispute(v.id)}
                         disabled={busyId === v.id}
@@ -432,6 +536,19 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
           </div>
         </div>
       </div>
+      {rejecting && (
+        <CloseVarianceModal
+          itemName={rejecting.product}
+          itemCode={rejecting.barcode}
+          title="Reject Submission"
+          confirmLabel="Reject & send back"
+          showReason={false}
+          notePlaceholder="Explain why this is being sent back to the manager…"
+          onConfirm={handleReject}
+          onCancel={() => setRejecting(null)}
+        />
+      )}
+
       {/* user prop reserved for future per-admin audit; referenced to satisfy lint */}
       <span className="hidden">{user.email}</span>
     </section>

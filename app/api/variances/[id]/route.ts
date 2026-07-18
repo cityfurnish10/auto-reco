@@ -1,24 +1,50 @@
-// PATCH /api/variances/[id] — close / dispute / reopen a variance.
-// Writes through the cookie-bound server client, so the variances_update RLS
-// policy is the real authorization boundary (admin, or manager of that city);
-// this route can't do anything RLS wouldn't already allow.
+// PATCH /api/variances/[id] — variance resolution lifecycle.
 //
-// Note on the schema: `status` only has 3 values (open|in_progress|closed) —
-// "dispute" maps to in_progress (a contested-but-not-yet-resolved state),
-// matching the same 3-state model the plan's Section B describes.
+// Workflow: a city manager SUBMITS a variance for approval (→ pending_approval)
+// with a reason; an admin then APPROVES it (→ closed) or REJECTS it (→ open,
+// with a note). Admins may also close/dispute/reopen directly.
 //
-// Body: { action: "close" | "dispute" | "reopen", reason?: string, note?: string }
-// `reason` is required for "close" (closure_reason).
+// Two authorization layers:
+//  • RLS (variances_update) — row scope: admin any city, manager their own city.
+//  • This route — ROLE gate: approve/reject/close/dispute/reopen are admin-only
+//    (RLS cannot distinguish manager-vs-admin writes; a manager may only submit).
+//
+// Body: { action, reason?, note? }. `reason` is required for submit + close.
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 
-type Action = "close" | "dispute" | "reopen";
+type Action = "submit" | "approve" | "reject" | "close" | "dispute" | "reopen";
 
-function buildUpdate(action: Action, appUserId: string, reason?: string, note?: string) {
-  const now = new Date().toISOString();
+const ALL_ACTIONS: Action[] = ["submit", "approve", "reject", "close", "dispute", "reopen"];
+// Everything except "submit" changes an approval/closure decision → admin only.
+const ADMIN_ONLY: Action[] = ["approve", "reject", "close", "dispute", "reopen"];
+
+function buildUpdate(action: Exclude<Action, "approve">, appUserId: string, now: string, reason?: string, note?: string) {
   switch (action) {
+    case "submit":
+      return {
+        status: "pending_approval" as const,
+        submitted_by: appUserId,
+        submitted_at: now,
+        submit_reason: reason ?? null,
+        submit_note: note ?? null,
+        rejection_note: null,
+        closed_by: null,
+        closed_at: null,
+        closure_reason: null,
+        closure_note: null,
+      };
+    case "reject":
+      return {
+        status: "open" as const,
+        rejection_note: note ?? reason ?? null,
+        closed_by: null,
+        closed_at: null,
+        closure_reason: null,
+        closure_note: null,
+      };
     case "close":
       return {
         status: "closed" as const,
@@ -26,6 +52,7 @@ function buildUpdate(action: Action, appUserId: string, reason?: string, note?: 
         closure_note: note ?? null,
         closed_by: appUserId,
         closed_at: now,
+        rejection_note: null,
       };
     case "dispute":
       return {
@@ -42,6 +69,7 @@ function buildUpdate(action: Action, appUserId: string, reason?: string, note?: 
         closure_note: null,
         closed_by: null,
         closed_at: null,
+        rejection_note: null,
       };
   }
 }
@@ -65,22 +93,54 @@ export async function PATCH(
   }
 
   const action = body.action as Action;
-  if (!["close", "dispute", "reopen"].includes(action)) {
+  if (!ALL_ACTIONS.includes(action)) {
     return NextResponse.json(
-      { error: "action must be one of: close, dispute, reopen" },
+      { error: `action must be one of: ${ALL_ACTIONS.join(", ")}` },
       { status: 400 }
     );
   }
-  if (action === "close" && !body.reason) {
+  if (ADMIN_ONLY.includes(action) && appUser.role !== "admin") {
     return NextResponse.json(
-      { error: "reason is required to close a variance" },
+      { error: `only an admin can ${action} a variance` },
+      { status: 403 }
+    );
+  }
+  if ((action === "submit" || action === "close") && !body.reason) {
+    return NextResponse.json(
+      { error: `reason is required to ${action} a variance` },
       { status: 400 }
     );
   }
-
-  const update = buildUpdate(action, appUser.id, body.reason, body.note);
 
   const supabase = await createClient();
+  const now = new Date().toISOString();
+
+  let update: Record<string, unknown>;
+  if (action === "approve") {
+    // Approving = closing on the manager's behalf. Carry the manager's submit
+    // reason/note into the closure fields (so the closure analytics + audit
+    // trail stay meaningful), unless the admin overrode them.
+    const { data: cur, error: curErr } = await supabase
+      .from("variances")
+      .select("submit_reason, submit_note")
+      .eq("id", id)
+      .single();
+    if (curErr) {
+      const status = curErr.code === "PGRST116" ? 403 : 500;
+      return NextResponse.json({ error: curErr.message }, { status });
+    }
+    update = {
+      status: "closed",
+      closed_by: appUser.id,
+      closed_at: now,
+      closure_reason: body.reason ?? cur?.submit_reason ?? "Approved",
+      closure_note: body.note ?? cur?.submit_note ?? null,
+      rejection_note: null,
+    };
+  } else {
+    update = buildUpdate(action, appUser.id, now, body.reason, body.note);
+  }
+
   const { data, error } = await supabase
     .from("variances")
     .update(update)

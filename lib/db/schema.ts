@@ -67,7 +67,7 @@ export interface SourceRowDB {
 // ─── variances ──────────────────────────────────────────────────────────────
 export type Priority = "High" | "Medium" | "Info";
 export type Bucket = "REAL" | "INFO";
-export type VarianceStatus = "open" | "in_progress" | "closed";
+export type VarianceStatus = "open" | "in_progress" | "pending_approval" | "closed";
 export type VarianceSource = "Odoo" | "DT" | "Sheet" | "Physical" | "Cross";
 export type OutputDirection = Direction | "CROSS";
 
@@ -108,6 +108,41 @@ export interface VarianceDB {
   closure_reason: string | null;
   closure_note: string | null;
 
+  // Approval workflow (0009): manager submits → admin approves/rejects.
+  submitted_by: string | null;
+  submitted_at: string | null;
+  submit_reason: string | null;
+  submit_note: string | null;
+  rejection_note: string | null;
+
+  created_at: string;
+  updated_at: string;
+}
+
+// ─── scheduled_emails (0009) ─────────────────────────────────────────────────
+export type ScheduledEmailStatus =
+  | "pending"
+  | "sending"
+  | "sent"
+  | "skipped"
+  | "canceled"
+  | "failed";
+
+export interface ScheduledEmailDB {
+  id: string;
+  kind: "digest";
+  business_date: string;
+  send_at: string;
+  status: ScheduledEmailStatus;
+  require_resolved: boolean;
+  recipients: string[];
+  cc: string[];
+  bcc: string[];
+  notes: string | null;
+  attempts: number;
+  last_error: string | null;
+  scheduled_by: string | null;
+  email_log_id: string | null;
   created_at: string;
   updated_at: string;
 }

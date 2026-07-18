@@ -99,6 +99,7 @@ export interface CityAgg {
   total: number;
   open: number;
   inProgress: number;
+  pendingApproval: number;
   closed: number;
   high: number;
   medium: number;
@@ -158,10 +159,19 @@ export function useStats(date?: string) {
   return { stats, loading, error, refetch };
 }
 
-// Close / dispute / reopen a variance through the RLS-scoped PATCH route.
+// Variance resolution lifecycle through the RLS-scoped PATCH route. Managers
+// "submit"; admins "approve"/"reject" (and may close/dispute/reopen directly).
+export type VarianceAction =
+  | "submit"
+  | "approve"
+  | "reject"
+  | "close"
+  | "dispute"
+  | "reopen";
+
 export async function patchVariance(
   id: string,
-  action: "close" | "dispute" | "reopen",
+  action: VarianceAction,
   reason?: string,
   note?: string
 ): Promise<void> {

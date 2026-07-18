@@ -26,7 +26,15 @@ const PRIORITY_BADGE: Record<Priority, string> = {
 const STATUS_BADGE: Record<VarianceStatus, string> = {
   open: "badge badge-medium",
   in_progress: "badge badge-suppressed",
+  pending_approval: "badge badge-info",
   closed: "badge badge-done",
+};
+
+const STATUS_LABEL: Record<VarianceStatus, string> = {
+  open: "open",
+  in_progress: "in progress",
+  pending_approval: "pending approval",
+  closed: "closed",
 };
 
 const PAGE_SIZE = 25;
@@ -40,7 +48,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
   const [q, setQ] = useState("");
   const [dateF, setDateF] = useState(""); // "" = latest run
   const [page, setPage] = useState(1);
-  const [closing, setClosing] = useState<{ id: string; product: string; barcode: string } | null>(null);
+  const [submitting, setSubmitting] = useState<{ id: string; product: string; barcode: string } | null>(null);
 
   // Debounce the search box; a search finds across all buckets/statuses.
   useEffect(() => {
@@ -78,16 +86,38 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
     return (v: T) => { setter(v); setPage(1); };
   }
 
-  async function handleConfirmClose(reason: ClosureReason, note: string) {
-    if (!closing) return;
+  async function handleSubmitForApproval(reason: ClosureReason | "", note: string) {
+    if (!submitting) return;
     try {
-      await patchVariance(closing.id, "close", reason, note);
-      setClosing(null);
+      await patchVariance(submitting.id, "submit", reason || undefined, note);
+      setSubmitting(null);
       refetch();
       refetchStats();
     } catch (e) {
-      alert(`Could not close: ${e instanceof Error ? e.message : e}`);
+      alert(`Could not submit for approval: ${e instanceof Error ? e.message : e}`);
     }
+  }
+
+  // Export the current (filtered) page of this city's variances as CSV.
+  function exportCsv() {
+    const header =
+      "Date,City,Direction,Item Name,Barcode,Ticket ID,Source,Ops Type,SO Number,Variance,Priority,Bucket,Status\n";
+    const body = rows
+      .map((v) =>
+        [
+          v.business_date, v.city, v.direction, `"${(v.product ?? "").replace(/"/g, "'")}"`,
+          v.barcode, v.ticket_id ?? "", v.variance_source ?? "", v.job_type ?? "",
+          v.so_number ?? "", `"${v.variance_name}"`, v.priority, v.bucket, v.status,
+        ].join(",")
+      )
+      .join("\n");
+    const blob = new Blob([header + body], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `variances_${city.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -116,6 +146,9 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
           <div className="p-2 bg-accent-soft text-accent rounded-control w-fit mb-4"><Icon name="pending_actions" size={22} /></div>
           <p className="kpi-label">Open</p>
           <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.open ?? 0}</h3>
+          {(cityAgg?.pendingApproval ?? 0) > 0 && (
+            <p className="text-xs text-accent mt-1">{cityAgg?.pendingApproval} awaiting approval</p>
+          )}
         </div>
         <div className="kpi-tile kpi-tile--success card-hover">
           <div className="p-2 bg-success-soft text-success rounded-control w-fit mb-4"><Icon name="task_alt" size={22} /></div>
@@ -193,8 +226,13 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
               <option value="ALL">All Status</option>
               <option value="open">Open</option>
               <option value="in_progress">In Progress</option>
+              <option value="pending_approval">Pending Approval</option>
               <option value="closed">Closed</option>
             </select>
+            <button onClick={exportCsv} disabled={rows.length === 0} className="btn btn-primary disabled:opacity-40">
+              <Icon name="download" size={18} />
+              Export
+            </button>
           </div>
         </div>
 
@@ -212,21 +250,28 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                 <span>{v.business_date}</span>
                 <SourceBadge source={v.variance_source} />
                 {v.job_type && <span>{v.job_type}</span>}
-                <span className={`${STATUS_BADGE[v.status]} uppercase`}>{v.status.replace("_", " ")}</span>
+                <span className={`${STATUS_BADGE[v.status]} uppercase`}>{STATUS_LABEL[v.status]}</span>
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-text-muted">
                 {v.so_number && <span>SO: {v.so_number}</span>}
                 {v.ticket_id && <span>Ticket: {v.ticket_id}</span>}
               </div>
-              {v.status !== "closed" ? (
-                <button
-                  onClick={() => setClosing({ id: v.id, product: v.product ?? "", barcode: v.barcode })}
-                  className="btn btn-compact btn-primary w-full mt-1"
-                >
-                  Close variance
-                </button>
-              ) : (
+              {v.status === "closed" ? (
                 <p className="text-xs text-success font-semibold mt-1">✓ Closed</p>
+              ) : v.status === "pending_approval" ? (
+                <p className="text-xs text-accent font-semibold mt-1">⏳ Awaiting admin approval</p>
+              ) : (
+                <>
+                  {v.rejection_note && (
+                    <p className="text-xs text-danger mt-1">Sent back: {v.rejection_note}</p>
+                  )}
+                  <button
+                    onClick={() => setSubmitting({ id: v.id, product: v.product ?? "", barcode: v.barcode })}
+                    className="btn btn-compact btn-primary w-full mt-1"
+                  >
+                    Submit for Approval
+                  </button>
+                </>
               )}
             </div>
           ))}
@@ -269,19 +314,21 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                   <td className="max-w-[220px]" title={v.note ?? ""}>{v.variance_name}</td>
                   <td><span className={PRIORITY_BADGE[v.priority]}>{v.priority}</span></td>
                   <td>
-                    <span className={`${STATUS_BADGE[v.status]} uppercase`} title={v.closure_reason ?? undefined}>
-                      {v.status.replace("_", " ")}
+                    <span className={`${STATUS_BADGE[v.status]} uppercase`} title={v.closure_reason ?? v.rejection_note ?? undefined}>
+                      {STATUS_LABEL[v.status]}
                     </span>
                   </td>
                   <td className="text-right">
                     {v.status === "closed" ? (
                       <button disabled className="btn btn-compact btn-ghost opacity-50 cursor-not-allowed">Closed</button>
+                    ) : v.status === "pending_approval" ? (
+                      <span className="badge badge-info" title={v.submit_note ?? undefined}>Pending approval</span>
                     ) : (
                       <button
-                        onClick={() => setClosing({ id: v.id, product: v.product ?? "", barcode: v.barcode })}
+                        onClick={() => setSubmitting({ id: v.id, product: v.product ?? "", barcode: v.barcode })}
                         className="btn btn-compact btn-primary"
                       >
-                        Close
+                        Submit
                       </button>
                     )}
                   </td>
@@ -315,12 +362,16 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
         </div>
       </section>
 
-      {closing && (
+      {submitting && (
         <CloseVarianceModal
-          itemName={closing.product}
-          itemCode={closing.barcode}
-          onConfirm={handleConfirmClose}
-          onCancel={() => setClosing(null)}
+          itemName={submitting.product}
+          itemCode={submitting.barcode}
+          title="Submit for Approval"
+          confirmLabel="Submit for Approval"
+          reasonLabel="Reason for resolution"
+          notePlaceholder="Add context for the admin reviewing this…"
+          onConfirm={handleSubmitForApproval}
+          onCancel={() => setSubmitting(null)}
         />
       )}
     </div>
