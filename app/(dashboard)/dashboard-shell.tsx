@@ -10,6 +10,7 @@ import type { SessionUser } from "@/lib/demo-auth";
 import Sidebar from "./sidebar";
 import ThemeToggle from "./theme-toggle";
 import ApprovalsBell from "./approvals-bell";
+import HelpButton from "./help-button";
 import { Icon } from "@/components/icon";
 
 export default function DashboardShell({
@@ -61,6 +62,7 @@ export default function DashboardShell({
             )}
           </div>
           <div className="flex items-center gap-2">
+            <HelpButton role={user.role} />
             <ThemeToggle />
             {user.role === "ADMIN" && <ApprovalsBell />}
             <div className="flex items-center gap-3 sm:pl-4 sm:ml-2 sm:border-l border-border">
