@@ -612,3 +612,67 @@ describe("Inward DT quantity-aggregation — DT-missing INFO suppressed for inwa
     expect(v?.bucket).toBe("INFO");
   });
 });
+
+describe("DT enrichment — Odoo-only ticket/ops sourced from Delivery Tracker", () => {
+  it("Odoo-only variance takes the DT ticket + ops for the same barcode (cross-direction)", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        // Odoo-only OUT movement — carries Odoo's picking-ref + procurement status.
+        r({ source: "ODOO", direction: "OUT", barcode: "WASHER-01", status: "done", createdOn: RUN, ticketId: "BAN/OUT/9", jobType: "ok" }),
+        // DT has the same barcode on the IN leg with the real ticket + ops.
+        r({ source: "DT", direction: "IN", barcode: "WASHER-01", status: "done", date: RUN, ticketId: "186371", jobType: "Repair" }),
+      ],
+      "MUMBAI"
+    );
+    const v = res.variances.find(
+      (x) => x.barcode === canonicalize("WASHER-01") && x.direction === "OUT"
+    );
+    expect(v?.variance_name).toBe("Odoo-Only Entry — No Floor Record");
+    expect(v?.ticket_id).toBe("186371");
+    expect(v?.job_type).toBe("REPAIR");
+  });
+
+  it("Odoo-only with no DT row → ticket/ops are blanked (not Odoo's picking-ref)", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "ODOO", direction: "OUT", barcode: "DRYER-01", status: "done", createdOn: RUN, ticketId: "BAN/OUT/9", jobType: "ok" }),
+      ],
+      "MUMBAI"
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("DRYER-01"));
+    expect(v?.variance_name).toBe("Odoo-Only Entry — No Floor Record");
+    expect(v?.ticket_id).toBeNull();
+    expect(v?.job_type).toBeNull();
+  });
+
+  it("NEGATIVE: a mixed (P+S+D) variance keeps its real ticket — not blanked by a DT-lookup miss", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "TABLE-01", status: "done", ticketId: "PHYS-T1" }),
+        r({ source: "SHEET", direction: "OUT", barcode: "TABLE-01", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "TABLE-01", status: "done", date: RUN }), // no DT ticket
+      ],
+      "MUMBAI"
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("TABLE-01"));
+    expect(v?.variance_name).toBe("Register/DT Logged — Not in Odoo");
+    expect(v?.ticket_id).toBe("PHYS-T1"); // kept, since the view is not Odoo-only
+  });
+
+  it("NEGATIVE: a DT+Odoo view is not 'Odoo-only' — keeps DT's ticket + ops", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "DT", direction: "OUT", barcode: "SOFA-01", status: "done", date: RUN, ticketId: "DT-777", jobType: "Delivery" }),
+        r({ source: "ODOO", direction: "OUT", barcode: "SOFA-01", status: "done", createdOn: RUN, ticketId: "BAN/OUT/5", jobType: "ok" }),
+      ],
+      "MUMBAI"
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("SOFA-01"));
+    expect(v?.ticket_id).toBe("DT-777");
+    expect(v?.job_type).toBe("DELIVERY");
+  });
+});

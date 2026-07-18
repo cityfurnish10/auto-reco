@@ -12,7 +12,7 @@ import { detectDirectionConflicts } from "./direction-conflict";
 import { classify, duplicateHit } from "./ladder";
 import { filterOdooWindow } from "./odoo-window";
 import { computeSuppressions } from "./suppressions";
-import { isSpareJobType } from "./util";
+import { isSpareJobType, normalizeJobType } from "./util";
 import { bestGuardMatch } from "./fuzzy";
 import { buildViews, mergeGuardPresence } from "./views";
 import { ALL_REPORTED } from "./types";
@@ -126,6 +126,33 @@ export function runReconciliation(
     outViews,
     reported
   );
+
+  // DT enrichment (display only) — an Odoo-only variance carries Odoo's picking
+  // reference / procurement status in ticket_id/job_type, not the real ticket +
+  // ops type. Replace them with the Delivery Tracker's ticket + ops for the same
+  // barcode (any direction); blank (→ "—" / empty) when DT has no row for it.
+  // Runs AFTER suppressions (so it never changes which variances fire) and the
+  // ladder ignores these two fields, so only the display columns change.
+  const dtByBarcode = new Map<string, { ticketId: string | null; jobType: string | null }>();
+  for (const r of valid) {
+    if (r.source !== "DT") continue;
+    const key = canonicalize(r.barcode);
+    const cur = dtByBarcode.get(key);
+    dtByBarcode.set(key, {
+      ticketId: cur?.ticketId ?? (r.ticketId?.trim() || null),
+      jobType: cur?.jobType ?? normalizeJobType(r.jobType),
+    });
+  }
+  const enrichOdooOnly = (views: Map<string, BarcodeView>) => {
+    for (const v of Array.from(views.values())) {
+      if (!(v.O.present && !v.P.present && !v.S.present && !v.D.present)) continue; // Odoo-only
+      const dt = dtByBarcode.get(v.canonical);
+      v.ticketId = dt?.ticketId ?? null;
+      v.jobType = dt?.jobType ?? null;
+    }
+  };
+  enrichOdooOnly(inViews);
+  enrichOdooOnly(outViews);
 
   const variances: VarianceRowOut[] = [];
 
