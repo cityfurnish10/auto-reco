@@ -14,6 +14,7 @@ import {
   sendReconciliationDigest,
   isEmailConfigured,
 } from "@/lib/email";
+import { drainScheduledEmails } from "@/lib/email/scheduled";
 import { saveEmailLog } from "@/lib/db/persist";
 
 export const runtime = "nodejs";
@@ -43,6 +44,15 @@ async function handle(req: NextRequest) {
 
   const db = createAdminClient();
 
+  // Drain any DUE deferred/scheduled digests first (best-effort — a scheduling
+  // failure must not block the daily digest). See lib/email/scheduled.ts.
+  let scheduled: Awaited<ReturnType<typeof drainScheduledEmails>> = [];
+  try {
+    scheduled = await drainScheduledEmails(db, new Date().toISOString());
+  } catch (err) {
+    console.warn("scheduled email drain failed:", err instanceof Error ? err.message : err);
+  }
+
   // Resolve the run to report: explicit ?date=, else the latest reconciled one.
   const dateParam = req.nextUrl.searchParams.get("date");
   let query = db
@@ -57,7 +67,7 @@ async function handle(req: NextRequest) {
 
   const run = runs?.[0];
   if (!run) {
-    return NextResponse.json({ ok: false, skipped: "no reconciled run to report yet" });
+    return NextResponse.json({ ok: false, skipped: "no reconciled run to report yet", scheduled });
   }
   const date = run.business_date as string;
 
@@ -75,7 +85,7 @@ async function handle(req: NextRequest) {
     error: result.error ?? result.skipped ?? null,
   }).catch(() => {});
 
-  return NextResponse.json({ ok: true, date, ...result });
+  return NextResponse.json({ ok: true, date, ...result, scheduled });
 }
 
 export async function GET(req: NextRequest) {

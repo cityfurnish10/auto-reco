@@ -39,6 +39,7 @@ import {
   Minus,
   Moon,
   Package,
+  Plus,
   RefreshCw,
   Search,
   SearchX,
@@ -64,6 +65,7 @@ import {
 // Maps the old Material Symbol ligature names (still used as string keys in
 // data — sidebar nav items, connector rows, trend indicators) to Lucide icons.
 const ICONS: Record<string, LucideIcon> = {
+  add: Plus,
   analytics: ChartColumn,
   arrow_outward: ArrowUpRight,
   check: Check,
