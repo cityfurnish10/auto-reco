@@ -38,6 +38,8 @@ export default function Sidebar({
   const { applyReconciliationRun } = useDemoStore();
   const [running, setRunning] = useState(false);
   const [runToast, setRunToast] = useState<string | null>(null);
+  const today = new Date().toISOString().slice(0, 10);
+  const [runDate, setRunDate] = useState(today); // which date the run reconciles
 
   async function handleRunReconciliation() {
     if (running) return;
@@ -47,14 +49,19 @@ export default function Sidebar({
     if (supabaseConfigured) {
       if (
         !window.confirm(
-          "Run reconciliation for today now? It pulls all four sources (guard, sheet, DT, Odoo) and can take up to a minute."
+          `Run reconciliation for ${runDate} now? It pulls all four sources (guard, sheet, DT, Odoo) and can take up to a minute.`
         )
       ) {
         return;
       }
       setRunning(true);
       try {
-        const res = await fetch("/api/reconcile", { method: "POST", credentials: "same-origin" });
+        const res = await fetch("/api/reconcile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ date: runDate }),
+        });
         const json = await res.json().catch(() => ({}));
         if (!res.ok || json.ok === false) {
           throw new Error(json.error ?? `HTTP ${res.status}`);
@@ -74,11 +81,10 @@ export default function Sidebar({
       return;
     }
 
-    // Demo mode: engine runs client-side over sample raw feeds for today.
+    // Demo mode: engine runs client-side over sample raw feeds for the date.
     setRunning(true);
     setTimeout(() => {
-      const today = new Date().toISOString().slice(0, 10);
-      const run = runAllCities(buildSampleRowsByCity(today));
+      const run = runAllCities(buildSampleRowsByCity(runDate));
       applyReconciliationRun(run);
       setRunning(false);
       setRunToast(
@@ -148,7 +154,23 @@ export default function Sidebar({
       </nav>
 
       {user.role === "ADMIN" && (
-        <div className="px-3">
+        <div className="px-3 space-y-2">
+          <label
+            htmlFor="reconcile-date"
+            className="block px-1 text-[11px] uppercase tracking-wider text-on-primary-container opacity-60"
+          >
+            Reconcile date
+          </label>
+          <input
+            id="reconcile-date"
+            type="date"
+            value={runDate}
+            max={today}
+            onChange={(e) => setRunDate(e.target.value)}
+            disabled={running}
+            title="Pick the date to reconcile (defaults to today)"
+            className="w-full bg-white/10 border border-white/10 rounded-control text-white text-sm px-3 py-2 cursor-pointer [color-scheme:dark] disabled:opacity-50"
+          />
           <button
             onClick={handleRunReconciliation}
             disabled={running}
@@ -159,7 +181,7 @@ export default function Sidebar({
               size={18}
               className={running ? "animate-spin" : ""}
             />
-            <span>{running ? "Running…" : "Run Reconciliation"}</span>
+            <span>{running ? "Running…" : `Run for ${runDate}`}</span>
           </button>
         </div>
       )}
