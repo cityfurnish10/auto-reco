@@ -68,7 +68,7 @@ export default function Sidebar({
         }
         const c = json.combined ?? {};
         setRunToast(
-          `Run ${json.runDate} · ${json.status} — ${c.real_count ?? 0} REAL to chase, ${c.info_count ?? 0} INFO, ${json.variancesUpserted ?? 0} variances stored.`
+          `Run ${json.runDate} · ${json.status} — ${c.real_count ?? 0} losses to chase, ${json.variancesUpserted ?? 0} variances stored (${c.info_count ?? 0} posting-lag hidden).`
         );
         // Nudge any open dashboard to reload its data in place.
         window.dispatchEvent(new CustomEvent("reconcile:complete"));
@@ -88,7 +88,7 @@ export default function Sidebar({
       applyReconciliationRun(run);
       setRunning(false);
       setRunToast(
-        `Run complete — ${run.combined.real_count} REAL to chase, ${run.combined.info_count} INFO (dampened) across ${run.perCity.length} cities.`
+        `Run complete — ${run.combined.real_count} losses to chase across ${run.perCity.length} cities (${run.combined.info_count} posting-lag hidden).`
       );
       setTimeout(() => setRunToast(null), 6000);
     }, 800);

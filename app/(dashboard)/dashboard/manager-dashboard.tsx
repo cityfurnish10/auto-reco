@@ -141,25 +141,23 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
         </p>
       </div>
 
-      {/* KPI grid */}
+      {/* KPI grid — loss-only. Posting-lag / hygiene (INFO) rows stay in the DB
+          for audit but are excluded from these counts (see hidden-count note). */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="kpi-tile card-hover">
-          <div className="p-2 bg-surface-elevated rounded-control text-accent w-fit mb-4"><Icon name="inventory_2" size={22} /></div>
-          <p className="kpi-label">Total Variances</p>
-          <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.total ?? 0}</h3>
-        </div>
         <div className="kpi-tile kpi-tile--danger card-hover">
           <div className="p-2 bg-danger-soft text-danger rounded-control w-fit mb-4"><Icon name="warning" size={22} /></div>
-          <p className="kpi-label">REAL — chase today</p>
+          <p className="kpi-label">Variances — losses</p>
           <h3 className="kpi-value text-danger mt-1">{statsLoading ? "…" : cityAgg?.real ?? 0}</h3>
         </div>
         <div className="kpi-tile card-hover">
           <div className="p-2 bg-accent-soft text-accent rounded-control w-fit mb-4"><Icon name="pending_actions" size={22} /></div>
           <p className="kpi-label">Open</p>
-          <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.open ?? 0}</h3>
-          {(cityAgg?.pendingApproval ?? 0) > 0 && (
-            <p className="text-xs text-accent mt-1">{cityAgg?.pendingApproval} awaiting approval</p>
-          )}
+          <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.openReal ?? 0}</h3>
+        </div>
+        <div className="kpi-tile card-hover">
+          <div className="p-2 bg-surface-elevated rounded-control text-accent w-fit mb-4"><Icon name="approval" size={22} /></div>
+          <p className="kpi-label">Awaiting approval</p>
+          <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.pendingApproval ?? 0}</h3>
         </div>
         <div className="kpi-tile kpi-tile--success card-hover">
           <div className="p-2 bg-success-soft text-success rounded-control w-fit mb-4"><Icon name="task_alt" size={22} /></div>
@@ -167,6 +165,12 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
           <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.closed ?? 0}</h3>
         </div>
       </div>
+      {!statsLoading && (cityAgg?.infoBucket ?? 0) > 0 && (
+        <p className="text-xs text-text-disabled -mt-2">
+          + {cityAgg?.infoBucket} posting-lag / hygiene entries hidden (audit only — switch the table
+          filter to INFO to view)
+        </p>
+      )}
 
       {/* Count-only movements (PP boxes & consumables) — not variances */}
       <div className="card px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-1">

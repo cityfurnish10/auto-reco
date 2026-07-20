@@ -79,7 +79,7 @@ const DASHBOARD_ADMIN: Help = {
   blurb:
     "Every barcode from the latest run, compared across all four sources — the guard register, ops sheet, Delivery Tracker, and Odoo.",
   points: [
-    "REAL = genuine cross-source gaps to chase today. INFO = posting-lag or data-hygiene noise, no action needed.",
+    "The counts show only losses (REAL) — genuine cross-source gaps to chase. Posting-lag / hygiene entries (INFO) are kept in the DB for audit but hidden from the counts; switch the bucket filter to INFO to view them.",
     "Filter by city tab, bucket, source, priority, status, or date; search any barcode / ticket / SO number.",
     "Approve or Reject the variances city managers submit — the bell shows how many are awaiting you.",
     "Export the current view to CSV.",
@@ -91,7 +91,7 @@ const DASHBOARD_MANAGER: Help = {
   blurb:
     "Reconciliation variances for your city from the latest run — where the guard register, ops sheet, Delivery Tracker, and Odoo disagree about a barcode.",
   points: [
-    "Focus on REAL variances — genuine gaps to investigate. INFO rows are posting-lag / hygiene, no action.",
+    "The counts show only losses to investigate. Posting-lag / hygiene entries are kept for audit but hidden from the counts; switch the bucket filter to INFO to view them.",
     "Resolved one? Submit it for Approval with a reason; an admin reviews and closes it.",
     "A rejected item returns as Open with the admin's note — fix it and resubmit.",
     "Filter, search, and export your city's variances to CSV.",

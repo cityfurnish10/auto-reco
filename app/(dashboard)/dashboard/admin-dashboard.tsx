@@ -116,7 +116,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     return cityTab === "ALL"
       ? stats.overall
       : stats.byCity.find((c) => c.city === cityTab) ?? {
-          city: cityTab, total: 0, open: 0, inProgress: 0, pendingApproval: 0, closed: 0,
+          city: cityTab, total: 0, open: 0, openReal: 0, inProgress: 0, pendingApproval: 0, closed: 0,
           high: 0, medium: 0, info: 0, real: 0, infoBucket: 0, ppBox: 0, consumable: 0,
         };
   }, [stats, cityTab]);
@@ -212,43 +212,45 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         ))}
       </div>
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* KPI cards — loss-only. Posting-lag / hygiene (INFO) rows are kept in the
+          DB for audit but excluded from these counts (see the hidden-count note). */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="kpi-tile kpi-tile--accent flex flex-col justify-between">
-          <span className="kpi-label">Total Variances</span>
-          <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.total ?? 0}</span>
-          <span className="text-xs text-text-muted mt-1">{runLabel}</span>
-        </div>
-        <div className="kpi-tile kpi-tile--danger flex flex-col justify-between">
-          <span className="kpi-label">REAL — chase today</span>
+          <span className="kpi-label">Variances — losses</span>
           <div className="flex items-end justify-between mt-2">
             <span className="kpi-value">{statsLoading ? "…" : agg?.real ?? 0}</span>
             {(agg?.high ?? 0) > 0 && <span className="badge badge-high">{agg?.high} High</span>}
           </div>
-          <span className="text-xs text-text-muted mt-1">Genuine cross-source gaps</span>
+          <span className="text-xs text-text-muted mt-1">Genuine cross-source gaps · {runLabel}</span>
         </div>
-        <div className="kpi-tile flex flex-col justify-between">
-          <span className="kpi-label">INFO — audit</span>
-          <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.infoBucket ?? 0}</span>
-          <span className="text-xs text-text-muted mt-1">Posting lag / hygiene, no action</span>
-        </div>
-        <div className="kpi-tile flex flex-col justify-between">
+        <div className="kpi-tile kpi-tile--danger flex flex-col justify-between">
           <span className="kpi-label">Open</span>
-          <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.open ?? 0}</span>
+          <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.openReal ?? 0}</span>
           <span className="text-xs text-text-muted mt-1">
-            {(agg?.pendingApproval ?? 0) > 0 && (
+            {(agg?.pendingApproval ?? 0) > 0 ? (
               <button
                 onClick={() => resetPage(setStatus)("pending_approval")}
                 className="text-accent font-semibold hover:underline"
               >
                 {agg?.pendingApproval} pending approval
               </button>
+            ) : (
+              "Losses awaiting action"
             )}
-            {(agg?.pendingApproval ?? 0) > 0 && " · "}
-            {agg?.closed ?? 0} closed
           </span>
         </div>
+        <div className="kpi-tile flex flex-col justify-between">
+          <span className="kpi-label">Resolved</span>
+          <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.closed ?? 0}</span>
+          <span className="text-xs text-text-muted mt-1">Closed on this business date</span>
+        </div>
       </div>
+      {!statsLoading && (agg?.infoBucket ?? 0) > 0 && (
+        <p className="text-xs text-text-disabled -mt-2">
+          + {agg?.infoBucket} posting-lag / hygiene entries hidden (audit only — switch the table filter
+          to INFO to view)
+        </p>
+      )}
 
       {/* Count-only movements (PP boxes & consumables) — not variances */}
       <div className="card px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-1">
@@ -285,8 +287,8 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                   </span>
                 </div>
                 <div className="text-xs text-text-muted">
-                  <span className="text-danger font-semibold">{c.real} REAL</span> ·{" "}
-                  {c.infoBucket} INFO · {c.open} open
+                  <span className="text-danger font-semibold">{c.real} to chase</span> ·{" "}
+                  {c.openReal} open
                 </div>
                 <div className="text-xs text-text-disabled">
                   PP-Box {c.ppBox} · Consumable {c.consumable}
