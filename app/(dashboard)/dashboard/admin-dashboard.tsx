@@ -61,6 +61,8 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
   const [page, setPage] = useState(1);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<{ id: string; product: string; barcode: string } | null>(null);
+  const [runningDate, setRunningDate] = useState(false);
+  const [runToast, setRunToast] = useState<string | null>(null);
 
   // Debounce the search box; a search finds across all buckets/statuses.
   useEffect(() => {
@@ -110,6 +112,46 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     window.addEventListener("reconcile:complete", onDone);
     return () => window.removeEventListener("reconcile:complete", onDone);
   }, [refetch, refetchStats]);
+
+  // A specific date is picked but there's no stored run for it (stats fell back
+  // to the latest run, or none exists) → offer to reconcile that day now.
+  const missingRunForDate =
+    !!dateF &&
+    !statsLoading &&
+    (!stats?.run || stats.usedFallbackRun || stats.run.business_date !== dateF);
+
+  async function runForDate() {
+    if (!dateF || runningDate) return;
+    if (
+      !window.confirm(
+        `Run reconciliation for ${dateF} now? It pulls all four sources (guard, sheet, DT, Odoo) and can take up to a minute.`
+      )
+    ) {
+      return;
+    }
+    setRunningDate(true);
+    setRunToast(null);
+    try {
+      const res = await fetch("/api/reconcile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ date: dateF }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.ok === false) throw new Error(json.error ?? `HTTP ${res.status}`);
+      const c = json.combined ?? {};
+      setRunToast(
+        `Run ${json.runDate} · ${json.status} — ${c.real_count ?? 0} REAL, ${c.info_count ?? 0} INFO, ${json.variancesUpserted ?? 0} variances.`
+      );
+      window.dispatchEvent(new CustomEvent("reconcile:complete"));
+    } catch (e) {
+      setRunToast(`Reconciliation failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setRunningDate(false);
+      setTimeout(() => setRunToast(null), 8000);
+    }
+  }
 
   const agg = useMemo(() => {
     if (!stats) return null;
@@ -343,6 +385,17 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               className="input-clean cursor-pointer"
               title="View a past reconciliation date (blank = latest)"
             />
+            {missingRunForDate && (
+              <button
+                onClick={runForDate}
+                disabled={runningDate}
+                title={`No reconciliation stored for ${dateF} — run it now`}
+                className="btn btn-secondary disabled:opacity-50 whitespace-nowrap"
+              >
+                <Icon name={runningDate ? "progress_activity" : "sync_alt"} size={18} className={runningDate ? "animate-spin" : ""} />
+                {runningDate ? "Running…" : `Run for ${dateF}`}
+              </button>
+            )}
             <select value={bucket} onChange={(e) => resetPage(setBucket)(e.target.value as Bucket | "ALL")} className="input-clean font-semibold cursor-pointer">
               <option value="ALL">All Buckets</option>
               <option value="REAL">REAL only</option>
@@ -558,6 +611,18 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
           onConfirm={handleReject}
           onCancel={() => setRejecting(null)}
         />
+      )}
+
+      {runToast && (
+        <div className="fixed inset-x-4 bottom-4 md:inset-x-auto md:right-8 md:bottom-8 card bg-accent text-white px-6 py-4 flex items-center gap-4 z-[70] shadow-card-hover">
+          <div className="w-8 h-8 bg-success-soft text-success rounded-full flex items-center justify-center shrink-0">
+            <Icon name="sync_alt" size={18} />
+          </div>
+          <p className="text-sm">{runToast}</p>
+          <button onClick={() => setRunToast(null)} className="btn-icon text-white/60! hover:text-white! ml-2">
+            <Icon name="close" size={18} />
+          </button>
+        </div>
       )}
 
       {/* user prop reserved for future per-admin audit; referenced to satisfy lint */}
