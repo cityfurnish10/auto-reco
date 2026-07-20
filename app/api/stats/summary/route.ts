@@ -21,6 +21,7 @@ interface CityAgg {
   city: string;
   total: number;
   open: number;
+  openReal: number; // open AND bucket REAL — the loss-only "Open" count
   inProgress: number;
   pendingApproval: number;
   closed: number;
@@ -38,6 +39,7 @@ function emptyAgg(city: string): CityAgg {
     city,
     total: 0,
     open: 0,
+    openReal: 0,
     inProgress: 0,
     pendingApproval: 0,
     closed: 0,
@@ -119,6 +121,7 @@ export async function GET(req: NextRequest) {
       else if (v.priority === "Info") target.info += 1;
       if (v.bucket === "REAL") target.real += 1;
       else if (v.bucket === "INFO") target.infoBucket += 1;
+      if (v.status === "open" && v.bucket === "REAL") target.openReal += 1;
     }
     byCityMap.set(v.city, agg);
   }

@@ -98,6 +98,7 @@ export interface CityAgg {
   city: string;
   total: number;
   open: number;
+  openReal: number; // open AND bucket REAL — the loss-only "Open" count
   inProgress: number;
   pendingApproval: number;
   closed: number;
