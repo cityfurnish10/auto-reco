@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseDate, deriveRunDate, addDays } from "../../lib/engine/dates";
 import { canonicalize, isValidBarcode, isSpareOrConsumable } from "../../lib/engine/barcode";
+import { normalizeStatus } from "../../lib/engine/util";
 import { runReconciliation } from "../../lib/engine/run";
 import { buildSampleRowsByCity } from "../../lib/sample-raw-sources";
 import { VARIANCE } from "../../lib/engine/variance-names";
@@ -691,5 +692,54 @@ describe("DT enrichment — Odoo-only ticket/ops sourced from Delivery Tracker",
     const v = res.variances.find((x) => x.barcode === canonicalize("SOFA-01"));
     expect(v?.ticket_id).toBe("DT-777");
     expect(v?.job_type).toBe("DELIVERY");
+  });
+});
+
+describe("Cross-platform status terminology", () => {
+  it("normalizeStatus folds the delivery-ops vocabulary into done / pending / not_done", () => {
+    // done — the movement physically completed
+    for (const t of ["done", "Delivered", "Received", "Picked Up", "Handover", "Dispatched", "Collected"])
+      expect(normalizeStatus(t)).toBe("done");
+    // not_done — a failed delivery/pickup (unit comes back)
+    for (const t of ["Not Delivered", "Undelivered", "RTO", "Return to Origin", "Returned", "Refused", "Cancelled", "Customer Not Available"])
+      expect(normalizeStatus(t)).toBe("not_done");
+    // pending — in progress
+    for (const t of ["pending", "In Transit", "Out for Delivery", "Rescheduled", "Re-attempt", "On Hold"])
+      expect(normalizeStatus(t)).toBe("pending");
+    // still unrecognized → unknown (unchanged fallback)
+    expect(normalizeStatus("frobnicated")).toBe("unknown");
+    expect(normalizeStatus("")).toBe("unknown");
+  });
+
+  it("an OUT sheet row marked 'RTO' with no IN return leg fires Failed Delivery (was missed as 'unknown')", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "OUT", barcode: "RTO-1", status: "RTO" }),
+      ],
+      "MUMBAI"
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("RTO-1"));
+    expect(v?.variance_name).toBe(VARIANCE.FAILED_DELIVERY);
+    expect(v?.bucket).toBe("REAL");
+  });
+
+  it("an OUT 'Returned' row WITH its IN return leg logged is silent (return already recorded)", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "OUT", barcode: "RET-2", status: "Returned" }),
+        r({ source: "SHEET", direction: "IN", barcode: "RET-2", status: "Received" }),
+        r({ source: "DT", direction: "IN", barcode: "RET-2", status: "done", date: RUN }),
+        r({ source: "ODOO", direction: "IN", barcode: "RET-2", status: "done", createdOn: RUN }),
+      ],
+      "MUMBAI",
+      { P: false, S: true, D: true, O: true }
+    );
+    expect(
+      res.variances.find(
+        (x) => x.barcode === canonicalize("RET-2") && x.variance_name === VARIANCE.FAILED_DELIVERY
+      )
+    ).toBeUndefined();
   });
 });
