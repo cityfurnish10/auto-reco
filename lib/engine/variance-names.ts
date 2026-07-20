@@ -23,6 +23,7 @@ export const VARIANCE = {
 
   // ── INFO — audit / posting-lag, no chase ───────────────────────────────
   ODOO_ONLY: "Odoo Posting Only — No Gate / Ops / DT Record",
+  ODOO_POSTED_NEXT_DAY: "Odoo Entry Made Late — Posted Next Day",
   OPS_ODOO_NO_DT: "Ops + Odoo Confirm — No DT Scan",
   DT_ODOO_NO_SHEET: "DT + Odoo Confirm — Missing from Ops Sheet",
   GATE_OPS_ODOO_NO_DT: "Gate + Ops + Odoo Confirm — DT Scan Pending",

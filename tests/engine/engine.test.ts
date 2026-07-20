@@ -743,3 +743,35 @@ describe("Cross-platform status terminology", () => {
     ).toBeUndefined();
   });
 });
+
+describe("Odoo next-day late entry (1-day buffer)", () => {
+  it("floor + DT confirm the day, Odoo posted NEXT day → INFO 'entry made late', not a missing-Odoo REAL", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "LATE-1", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "LATE-1", status: "done", date: RUN }),
+        // Odoo posting dated the NEXT day (within the ±1-day pull window).
+        r({ source: "ODOO", direction: "OUT", barcode: "LATE-1", status: "done", createdOn: NEXT }),
+      ],
+      "MUMBAI"
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("LATE-1"));
+    expect(v?.variance_name).toBe(VARIANCE.ODOO_POSTED_NEXT_DAY);
+    expect(v?.bucket).toBe("INFO");
+    expect(v?.priority).toBe("Info");
+  });
+
+  it("same-day Odoo posting → no late-entry variance (reconciled, unchanged)", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "OK-1", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "OK-1", status: "done", date: RUN }),
+        r({ source: "ODOO", direction: "OUT", barcode: "OK-1", status: "done", createdOn: RUN }),
+      ],
+      "MUMBAI"
+    );
+    expect(res.variances.find((x) => x.barcode === canonicalize("OK-1"))).toBeUndefined();
+  });
+});

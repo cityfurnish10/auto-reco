@@ -3,7 +3,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { City } from "../sample-data";
-import type { CityRunResult, SourceRow } from "../engine/types";
+import type { CityRunResult, ReportedSources, SourceRow } from "../engine/types";
 import type { MultiCityRun } from "../engine/run";
 import { varianceSource } from "../engine/variance-source";
 import type { ConnectorResult } from "../connectors/types";
@@ -108,6 +108,86 @@ export async function upsertVariances(
     });
   if (error) throw new Error(`upsertVariances failed: ${error.message}`);
   return payload.length;
+}
+
+// Stale-open resolution — the "next-day re-check" pass. On a RE-RUN of a date,
+// upsertVariances refreshes rows that re-fire under the SAME name, but a gap
+// that CLEARED (a late entry folded in) leaves its old open row behind, because
+// the upsert conflict key includes variance_name. This pass reconciles that.
+// For each city where all four sources reported (so a connector outage can't
+// masquerade as a resolution):
+//   • an old open row whose (direction, barcode) is now emitted under a
+//     DIFFERENT name is SUPERSEDED → delete it (the new row already exists,
+//     e.g. a REAL "Not Posted in Odoo" replaced by INFO "Posted Next Day");
+//   • an old open row whose barcode is now fully clean (no variance at all)
+//     resolved LATE → downgrade in place to INFO with an "entry made late"
+//     note, re-stamping run_id so it still shows in this run's dashboard/KPIs.
+// Human-resolved rows (in_progress / pending_approval / closed) are untouched.
+export async function resolveStaleOpenVariances(
+  db: DB,
+  runId: string,
+  runDate: string,
+  perCity: CityRunResult[],
+  reportedByCity: Partial<Record<City, ReportedSources>>
+): Promise<{ superseded: number; resolvedLate: number }> {
+  let superseded = 0;
+  let resolvedLate = 0;
+  const now = new Date().toISOString();
+
+  for (const cr of perCity) {
+    const rep = reportedByCity[cr.city];
+    if (!rep || !(rep.P && rep.S && rep.D && rep.O)) continue; // need full coverage
+
+    const emittedKeys = new Set<string>();
+    const emittedBarcodes = new Set<string>();
+    for (const v of cr.variances) {
+      emittedKeys.add(`${v.direction}::${v.barcode}::${v.variance_name}`);
+      emittedBarcodes.add(`${v.direction}::${v.barcode}`);
+    }
+
+    const { data, error } = await db
+      .from("variances")
+      .select("id, direction, barcode, variance_name")
+      .eq("business_date", runDate)
+      .eq("city", cr.city)
+      .eq("status", "open");
+    if (error) throw new Error(`resolveStaleOpenVariances select failed: ${error.message}`);
+
+    const supersededIds: string[] = [];
+    const resolvedIds: string[] = [];
+    for (const row of data ?? []) {
+      const key = `${row.direction}::${row.barcode}::${row.variance_name}`;
+      if (emittedKeys.has(key)) continue; // still current — upsert refreshed it
+      if (emittedBarcodes.has(`${row.direction}::${row.barcode}`)) {
+        supersededIds.push(row.id as string);
+      } else {
+        resolvedIds.push(row.id as string);
+      }
+    }
+
+    if (supersededIds.length > 0) {
+      const { error: delErr } = await db.from("variances").delete().in("id", supersededIds);
+      if (delErr) throw new Error(`resolveStaleOpenVariances delete failed: ${delErr.message}`);
+      superseded += supersededIds.length;
+    }
+    if (resolvedIds.length > 0) {
+      const { error: updErr } = await db
+        .from("variances")
+        .update({
+          bucket: "INFO",
+          priority: "Info",
+          dampened: true,
+          run_id: runId,
+          last_seen_at: now,
+          note: "Entry was made late — this gap had cleared on the next-day re-check. No action needed.",
+        })
+        .in("id", resolvedIds);
+      if (updErr) throw new Error(`resolveStaleOpenVariances update failed: ${updErr.message}`);
+      resolvedLate += resolvedIds.length;
+    }
+  }
+
+  return { superseded, resolvedLate };
 }
 
 // Per-city rollup for the leaderboard (movements = accuracy denominator,

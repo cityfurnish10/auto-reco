@@ -18,6 +18,7 @@ import {
   createRun,
   saveSourceRows,
   upsertVariances,
+  resolveStaleOpenVariances,
   saveCityStats,
   saveIngestionLogs,
   finalizeRun,
@@ -33,6 +34,7 @@ export interface ReconcileResult {
   sources?: { source: string; ok: boolean; rows: number; message?: string }[];
   sourceRowsStored?: number;
   variancesUpserted?: number;
+  stale?: { superseded: number; resolvedLate: number };
   combined?: MultiCityRun["combined"];
   guardOcr?: unknown;
   error?: string;
@@ -72,6 +74,16 @@ export async function runReconcilePipeline(
     // 4. Upsert variances (dedup key; human closures/approvals preserved).
     const variancesUpserted = await upsertVariances(db, runId, run.perCity);
 
+    // 4a. Next-day re-check: on a re-run, resolve/downgrade open rows whose gap
+    //     has since cleared (a late entry folded in). Best-effort — a failure
+    //     here must not fail an otherwise-good run.
+    const stale = await resolveStaleOpenVariances(db, runId, runDate, run.perCity, reportedByCity).catch(
+      (e) => {
+        console.warn("resolveStaleOpenVariances failed:", e instanceof Error ? e.message : e);
+        return { superseded: 0, resolvedLate: 0 };
+      }
+    );
+
     // 4b. Per-city rollup for the leaderboard (movements + REAL count per city).
     await saveCityStats(db, runId, runDate, run.perCity);
 
@@ -98,6 +110,7 @@ export async function runReconcilePipeline(
       })),
       sourceRowsStored,
       variancesUpserted,
+      stale,
       combined: run.combined,
       guardOcr,
     };

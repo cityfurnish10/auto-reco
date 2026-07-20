@@ -44,6 +44,7 @@ const SHORT_LABEL: Record<string, string> = {
   [VARIANCE.REPLACEMENT_CONFIRM]: "Replacement",
   [VARIANCE.FAILED_DELIVERY]: "Failed delivery",
   [VARIANCE.ODOO_ONLY]: "Odoo only",
+  [VARIANCE.ODOO_POSTED_NEXT_DAY]: "Odoo late entry",
   [VARIANCE.OPS_ODOO_NO_DT]: "No DT scan",
   [VARIANCE.DT_ODOO_NO_SHEET]: "Sheet missing",
   [VARIANCE.GATE_OPS_ODOO_NO_DT]: "DT pending",

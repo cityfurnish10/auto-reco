@@ -7,7 +7,7 @@ import { CITIES, type City } from "../sample-data";
 import { canonicalize, isPpBox, isSpareOrConsumable, isValidBarcode } from "./barcode";
 import { applyBucket } from "./buckets";
 import { computeCountLayer } from "./counts";
-import { deriveRunDate, parseDate } from "./dates";
+import { addDays, deriveRunDate, parseDate } from "./dates";
 import { detectDirectionConflicts } from "./direction-conflict";
 import { classify, duplicateHit } from "./ladder";
 import { filterOdooWindow } from "./odoo-window";
@@ -126,12 +126,24 @@ export function runReconciliation(
   // eligible for "Odoo-Only" (adjacent-day postings are match-targets only;
   // each posting is judged in its own day's run).
   const odooSameDayCanon = new Set<string>();
+  // 1-day late-entry buffer: postings dated runDate+1 (already in odooWindowed,
+  // which spans ±1 day). A floor-confirmed movement whose only Odoo evidence is
+  // a next-day posting is an "entry made late" INFO, not a REAL missing posting.
+  const nextDay = addDays(runDate, 1);
+  const odooNextDayCanon = new Set<string>();
   for (const r of odooWindowed) {
     const posted = parseDate(r.createdOn) ?? parseDate(r.date);
     if (posted === runDate) odooSameDayCanon.add(canonicalize(r.barcode));
+    else if (posted === nextDay) odooNextDayCanon.add(canonicalize(r.barcode));
   }
-  for (const v of Array.from(inViews.values())) v.odooSameDay = odooSameDayCanon.has(v.canonical);
-  for (const v of Array.from(outViews.values())) v.odooSameDay = odooSameDayCanon.has(v.canonical);
+  for (const v of Array.from(inViews.values())) {
+    v.odooSameDay = odooSameDayCanon.has(v.canonical);
+    v.odooNextDay = odooNextDayCanon.has(v.canonical);
+  }
+  for (const v of Array.from(outViews.values())) {
+    v.odooSameDay = odooSameDayCanon.has(v.canonical);
+    v.odooNextDay = odooNextDayCanon.has(v.canonical);
+  }
 
   // Section 7 — suppressions (before classification).
   const { suppressed, dtAllPending, silentOcr } = computeSuppressions(

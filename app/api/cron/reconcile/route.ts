@@ -10,6 +10,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runReconcilePipeline } from "@/lib/reconcile/pipeline";
+import { addDays } from "@/lib/engine/dates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,7 +58,22 @@ async function handle(req: NextRequest) {
   // admin-triggered /api/reconcile route). The management digest is NOT sent
   // here — it goes out next morning at 09:00 IST via /api/cron/email-digest.
   const result = await runReconcilePipeline(db, { runDate, trigger });
-  return NextResponse.json(result, { status: result.ok ? 200 : 500 });
+
+  // Next-day re-check: on the scheduled nightly run (GET, no explicit ?date=),
+  // also re-reconcile YESTERDAY so late entries posted today — chiefly Odoo
+  // postings that land next-day — fold into D-1 and its stale REAL rows resolve
+  // (see resolveStaleOpenVariances). Best-effort: a D-1 failure never fails the
+  // primary response, and the next night (or the manual "Run for date" button)
+  // retries. Skipped for explicit ?date= / POST so a targeted run stays single.
+  let yesterday: unknown;
+  if (req.method === "GET" && !req.nextUrl.searchParams.get("date")) {
+    yesterday = await runReconcilePipeline(db, {
+      runDate: addDays(runDate, -1),
+      trigger: "cron",
+    }).catch((e) => ({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+  }
+
+  return NextResponse.json({ ...result, yesterday }, { status: result.ok ? 200 : 500 });
 }
 
 export async function GET(req: NextRequest) {

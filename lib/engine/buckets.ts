@@ -78,6 +78,11 @@ export const VARIANCE_META: Record<string, VarianceMeta> = {
     responsible: "odoo_team",
     note: "Odoo posting with no same-day floor record — usually a late posting of an earlier movement. Audit tally, not a stock action.",
   },
+  [VARIANCE.ODOO_POSTED_NEXT_DAY]: {
+    bucket: "INFO",
+    responsible: "odoo_team",
+    note: "The floor confirmed this movement for the day, and the Odoo entry does exist — it was just posted a day late (the 1-day buffer picked it up). No action; the entry is made.",
+  },
   [VARIANCE.GATE_OPS_ODOO_NO_DT]: {
     bucket: "INFO",
     responsible: "odoo_team",

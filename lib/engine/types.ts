@@ -70,6 +70,11 @@ export interface BarcodeView {
   // postings, so neighbours' movements pulled as match-targets never surface
   // as false Odoo-only rows (each posting is judged once, in its own day's run).
   odooSameDay: boolean;
+  // True when at least one Odoo posting for this barcode is dated runDate + 1 —
+  // the 1-day late-entry buffer. A floor-confirmed movement whose only Odoo
+  // evidence is a next-day posting is an "entry made late" INFO, never a REAL
+  // "not posted in Odoo".
+  odooNextDay: boolean;
   soNumber: string | null;
   ticketId: string | null;
   customer: string | null;

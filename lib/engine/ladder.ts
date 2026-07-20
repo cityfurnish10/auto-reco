@@ -97,6 +97,14 @@ export function classify(
   if (S && D && !P && !O && rep.P && rep.O)
     return { variance_name: VARIANCE.OPS_DT_ODOO_PENDING, priority: "Info" };
 
+  // 12b. Odoo IS present but only via a NEXT-DAY posting (1-day buffer), and a
+  //      floor source confirms this day's movement → an entry made late, not a
+  //      missing one. INFO, never REAL. (O is present, so the High Odoo-missing
+  //      rungs above never fired; rung 9's ODOO_ONLY needs O-only, so the
+  //      (P || S || D) clause keeps them mutually exclusive.)
+  if (O && !v.odooSameDay && v.odooNextDay && (P || S || D))
+    return { variance_name: VARIANCE.ODOO_POSTED_NEXT_DAY, priority: "Info" };
+
   // 13. Every reported source present but barcodes differ → OCR noise.
   const allReportedPresent =
     (!rep.P || P) && (!rep.S || S) && (!rep.D || D) && (!rep.O || O) && (P || S || D || O);
