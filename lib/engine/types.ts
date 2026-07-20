@@ -25,7 +25,8 @@ export interface SourceRow {
   customer?: string;
   product?: string;
   jobType?: string; // Odoo job_type: REPAIR|REPLACE|NEW_RENTAL|...
-  createdOn?: string | number; // Odoo (Section 4)
+  createdOn?: string | number; // Odoo posting date (Section 4 window key)
+  recordCreatedOn?: string | number; // Odoo create_date (record birth; Odoo-only flag)
   movementDate?: string | number; // Odoo fallback
 }
 
@@ -75,6 +76,12 @@ export interface BarcodeView {
   // evidence is a next-day posting is an "entry made late" INFO, never a REAL
   // "not posted in Odoo".
   odooNextDay: boolean;
+  // True when at least one Odoo record for this barcode was CREATED (create_date)
+  // on the run date itself — a movement Odoo booked today. Combined with the
+  // Odoo-only pattern it separates a genuine same-day movement the floor never
+  // logged (odooCreatedToday → REAL chase item) from a benign late batch-post of
+  // an earlier movement whose floor record lives on its own day (→ INFO).
+  odooCreatedToday: boolean;
   soNumber: string | null;
   ticketId: string | null;
   customer: string | null;

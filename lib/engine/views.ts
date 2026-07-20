@@ -64,6 +64,7 @@ export function buildViews(
         O: emptyPresence(),
         odooSameDay: false, // set by run.ts once the run date is known
         odooNextDay: false, // set by run.ts once the run date is known
+        odooCreatedToday: false, // set by run.ts once the run date is known
         soNumber: null,
         ticketId: null,
         customer: null,

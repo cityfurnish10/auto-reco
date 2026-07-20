@@ -12,6 +12,7 @@ export type SourceLabel = "Odoo" | "DT" | "Sheet" | "Physical" | "Cross";
 const SOURCE_OF: Record<string, SourceLabel> = {
   // Odoo is the outlier / missing posting
   [VARIANCE.ODOO_ONLY]: "Odoo",
+  [VARIANCE.ODOO_ONLY_TODAY]: "Odoo",
   [VARIANCE.ODOO_POSTED_NEXT_DAY]: "Odoo",
   [VARIANCE.FLOOR_DT_NOT_ODOO]: "Odoo",
   [VARIANCE.GATE_OPS_NO_DT_ODOO]: "Odoo",

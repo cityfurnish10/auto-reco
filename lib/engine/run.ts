@@ -131,18 +131,27 @@ export function runReconciliation(
   // a next-day posting is an "entry made late" INFO, not a REAL missing posting.
   const nextDay = addDays(runDate, 1);
   const odooNextDayCanon = new Set<string>();
+  // Barcodes whose Odoo record was CREATED (create_date) on the run day itself.
+  // An Odoo-only movement with a record born today that no floor source logged
+  // is a genuine same-day gap (REAL); one whose record predates the run day is a
+  // benign late batch-post of an earlier movement (INFO).
+  const odooCreatedTodayCanon = new Set<string>();
   for (const r of odooWindowed) {
     const posted = parseDate(r.createdOn) ?? parseDate(r.date);
     if (posted === runDate) odooSameDayCanon.add(canonicalize(r.barcode));
     else if (posted === nextDay) odooNextDayCanon.add(canonicalize(r.barcode));
+    if (parseDate(r.recordCreatedOn) === runDate)
+      odooCreatedTodayCanon.add(canonicalize(r.barcode));
   }
   for (const v of Array.from(inViews.values())) {
     v.odooSameDay = odooSameDayCanon.has(v.canonical);
     v.odooNextDay = odooNextDayCanon.has(v.canonical);
+    v.odooCreatedToday = odooCreatedTodayCanon.has(v.canonical);
   }
   for (const v of Array.from(outViews.values())) {
     v.odooSameDay = odooSameDayCanon.has(v.canonical);
     v.odooNextDay = odooNextDayCanon.has(v.canonical);
+    v.odooCreatedToday = odooCreatedTodayCanon.has(v.canonical);
   }
 
   // Section 7 — suppressions (before classification).

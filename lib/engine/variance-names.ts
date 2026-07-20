@@ -20,6 +20,7 @@ export const VARIANCE = {
   DT_ONLY: "DT Only — No Floor or Odoo Record",
   REPLACEMENT_CONFIRM: "Same Unit In + Out Today — Confirm Replacement",
   FAILED_DELIVERY: "Failed Delivery — Return Not Logged Inward",
+  ODOO_ONLY_TODAY: "Odoo Entry Created Today — No Gate / Ops / DT Record",
 
   // ── INFO — audit / posting-lag, no chase ───────────────────────────────
   ODOO_ONLY: "Odoo Posting Only — No Gate / Ops / DT Record",

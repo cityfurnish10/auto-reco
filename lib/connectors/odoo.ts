@@ -46,6 +46,7 @@ function buildQuery(startUtc: string, endUtcExclusive: string): string {
   return `
 SELECT
     sml.date                                        AS date,
+    sml.create_date                                 AS record_created,
     sml.reference                                   AS ticket_id,
     so.name                                         AS so_number,
     sl.name                                         AS barcode,
@@ -126,6 +127,14 @@ export const odooConnector: Connector = {
         // be the posting date, NOT create_date (which is order creation, often
         // weeks before the movement; feeding that in decimated Odoo coverage).
         createdOn: utcToIstDate(r.date as string | null),
+        // `recordCreatedOn` = the IST calendar date this stock_move_line RECORD
+        // was created in Odoo (create_date, NOT sml.date). Used ONLY by the
+        // engine's "Odoo-only" flag to tell a genuine same-day movement the
+        // floor missed (record born today, no floor record → REAL) from a benign
+        // late batch-post of an earlier movement (record older → INFO). It is
+        // NEVER the odoo-window key — that stays the posting date above, so pull
+        // coverage is unchanged (create_date runs 0–2 days ahead of posting).
+        recordCreatedOn: utcToIstDate(r.record_created as string | null),
         movementDate: str(r.date),
         soNumber: str(r.so_number),
         ticketId: str(r.ticket_id),

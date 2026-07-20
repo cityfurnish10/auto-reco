@@ -66,17 +66,22 @@ export const VARIANCE_META: Record<string, VarianceMeta> = {
     responsible: "ops_team",
     note: "Marked Not Delivered on the way out but the return was never logged inward — confirm the unit is back and write it into the inward register.",
   },
+  [VARIANCE.ODOO_ONLY_TODAY]: {
+    bucket: "REAL",
+    responsible: "warehouse_team",
+    note: "Odoo booked this movement today (the record was created today) and no gate / ops / DT / sheet source logged it — a same-day movement the floor missed, or a phantom posting. Chase: confirm the unit physically moved and log it, or void the Odoo entry.",
+  },
   // ── INFO — audit / posting-lag ─────────────────────────────────────────
-  // INFO, not REAL (measured on live 2026-07-12 data): ~460/day such rows,
-  // 98% ordinary ON-RET customer orders — they are Odoo batch-posting earlier
-  // days' movements (sml.date is the posting timestamp), whose floor records
-  // live on the movement's own day. Ops never chase these; a genuine phantom
-  // posting is better caught by the aggregate count layer / periodic audit
-  // than by flooding the morning list. original_priority stays High.
+  // INFO, not REAL (measured on live data): the great majority of Odoo-only
+  // rows are Odoo batch-posting EARLIER days' movements (sml.date is the posting
+  // timestamp, but the record's create_date predates the run day), whose floor
+  // records live on the movement's own day — ops never chase these. The subset
+  // whose record was CREATED today with no floor record is split off to the REAL
+  // ODOO_ONLY_TODAY chase item above (see ladder rung 9). original_priority High.
   [VARIANCE.ODOO_ONLY]: {
     bucket: "INFO",
     responsible: "odoo_team",
-    note: "Odoo posting with no same-day floor record — usually a late posting of an earlier movement. Audit tally, not a stock action.",
+    note: "Odoo posting today of a record created on an earlier day — a late posting of an earlier movement whose floor record lives on its own day. Audit tally, not a stock action.",
   },
   [VARIANCE.ODOO_POSTED_NEXT_DAY]: {
     bucket: "INFO",

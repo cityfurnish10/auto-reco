@@ -9,6 +9,7 @@ import type { SourceRow } from "../../lib/engine/types";
 
 const RUN = "2026-07-12";
 const NEXT = "2026-07-13";
+const PRIOR = "2026-07-10"; // an Odoo record created before the run day
 
 // Small row builder for focused tests.
 function r(p: Partial<SourceRow> & Pick<SourceRow, "source" | "direction" | "barcode">): SourceRow {
@@ -262,15 +263,26 @@ describe("Section 6 — variance ladder", () => {
       "MUMBAI"
     );
 
-  it("Odoo-only → Odoo-Only Entry (INFO tally; natural priority preserved)", () => {
-    const res = one([{ source: "ODOO", createdOn: RUN }]);
+  it("Odoo-only, record created on an EARLIER day → Odoo-Only Entry (INFO tally)", () => {
+    // Posting dated the run day but the record was created earlier — a late
+    // batch-post of an earlier movement whose floor record lives on its own
+    // day. Audit tally, not a morning chase item.
+    const res = one([{ source: "ODOO", createdOn: RUN, recordCreatedOn: PRIOR }]);
     const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-1"));
     expect(v?.variance_name).toBe(VARIANCE.ODOO_ONLY);
-    // Measured on live data: these are overwhelmingly Odoo batch-posting
-    // earlier days' movements — an audit tally, not a morning chase item.
     expect(v?.bucket).toBe("INFO");
     expect(v?.priority).toBe("Info");
     expect(v?.original_priority).toBe("High");
+  });
+
+  it("Odoo-only, record CREATED TODAY → Odoo Entry Created Today (REAL chase)", () => {
+    // Odoo booked this movement today (record born today) yet no floor source
+    // logged it — a genuine same-day gap the floor missed, not benign lag.
+    const res = one([{ source: "ODOO", createdOn: RUN, recordCreatedOn: RUN }]);
+    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-1"));
+    expect(v?.variance_name).toBe(VARIANCE.ODOO_ONLY_TODAY);
+    expect(v?.bucket).toBe("REAL");
+    expect(v?.priority).toBe("High");
   });
 
   it("gate-only → Gate-Only Dispatch (REAL)", () => {

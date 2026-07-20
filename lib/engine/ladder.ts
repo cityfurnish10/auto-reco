@@ -76,9 +76,14 @@ export function classify(
 
   // 9. O only — and the posting is dated the run day itself. Postings pulled
   //    from adjacent days (posting-lag match-targets) are judged in their own
-  //    day's run, never here.
+  //    day's run, never here. Split by the Odoo record's create_date: a record
+  //    BORN today with no floor record is a genuine same-day movement the floor
+  //    missed (REAL chase); an older record posted today is a benign late
+  //    batch-post whose floor record lives on its own earlier day (INFO).
   if (O && !P && !S && !D && rep.S && rep.D && v.odooSameDay)
-    return { variance_name: VARIANCE.ODOO_ONLY, priority: "High" };
+    return v.odooCreatedToday
+      ? { variance_name: VARIANCE.ODOO_ONLY_TODAY, priority: "High" }
+      : { variance_name: VARIANCE.ODOO_ONLY, priority: "High" };
 
   // 9b. D + O agree, sheet reported but missing → ops-sheet hygiene.
   if (D && O && !S && !P && rep.S)
