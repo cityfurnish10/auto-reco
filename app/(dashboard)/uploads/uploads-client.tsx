@@ -61,6 +61,11 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [history, setHistory] = useState<GuardUpload[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const today = new Date().toISOString().slice(0, 10);
+  // The date the register's gate movements happened (NOT the upload day) — this
+  // is the business_date the register reconciles against, so it must match the
+  // day Odoo/DT/Sheet are pulled for. Defaults to today for same-day uploads.
+  const [registerDate, setRegisterDate] = useState(today);
 
   async function refreshHistory() {
     const supabase = getSupabaseClient();
@@ -91,14 +96,19 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
       setUploadError(`File exceeds the ${MAX_SIZE_MB}MB limit.`);
       return;
     }
+    if (!registerDate) {
+      setUploadError("Select the register date before uploading.");
+      return;
+    }
 
     setUploading(true);
     try {
-      const businessDate = new Date().toISOString().slice(0, 10);
+      // business_date = the register's movement date (the date picker), so it
+      // reconciles against the same day's Odoo / DT / ops-sheet data.
       const createRes = await fetch("/api/uploads/guard", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ city: selectedCity, businessDate, fileName: file.name }),
+        body: JSON.stringify({ city: selectedCity, businessDate: registerDate, fileName: file.name }),
       });
       const created = await createRes.json();
       if (!createRes.ok) throw new Error(created.error ?? "failed to create upload");
@@ -123,7 +133,7 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
         throw new Error(proc.error ?? proc.reason ?? `OCR failed (HTTP ${procRes.status})`);
       }
       setToast(
-        `"${file.name}" processed — ${proc.rows ?? 0} rows extracted and stored for ${selectedCity}.`
+        `"${file.name}" processed — ${proc.rows ?? 0} rows extracted and stored for ${selectedCity} (register dated ${registerDate}).`
       );
       setTimeout(() => setToast(null), 6000);
       refreshHistory();
@@ -173,7 +183,7 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
 
   return (
     <div className="p-container-margin">
-      <div className="flex justify-between items-end mb-8">
+      <div className="flex justify-between items-end mb-6">
         <div>
           <h2 className="font-headline text-xl text-text-primary">Upload Guard Register</h2>
           <div className="flex items-center gap-2 mt-1 text-text-muted">
@@ -181,7 +191,7 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
             <span className="text-sm font-medium">{selectedCity} Warehouse</span>
             <span className="mx-2 text-text-disabled">•</span>
             <span className="text-sm">
-              {new Date().toLocaleDateString("en-IN", {
+              Register for {new Date(`${registerDate}T00:00:00`).toLocaleDateString("en-IN", {
                 year: "numeric",
                 month: "long",
                 day: "numeric",
@@ -189,6 +199,32 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Register date — the day the movements happened, NOT the upload day. It
+          becomes the guard_uploads.business_date the register reconciles on. */}
+      <div className="card p-4 mb-8 flex flex-col sm:flex-row sm:items-center gap-3 border-l-[3px] border-l-accent">
+        <div className="flex items-start gap-3 flex-1">
+          <div className="p-2 bg-accent-soft text-accent rounded-control shrink-0">
+            <Icon name="schedule" size={22} />
+          </div>
+          <div>
+            <label htmlFor="register-date" className="block text-sm font-semibold text-text-primary">
+              Register date <span className="text-danger">*</span>
+            </label>
+            <p className="text-xs text-text-muted mt-0.5">
+              Select the date this register is <b>for</b> — the day these gate movements happened, as written at the top of the register. Use a past date if you&apos;re uploading an earlier day&apos;s register: it reconciles against that day&apos;s Odoo, DT and ops-sheet data, <b>not</b> today&apos;s.
+            </p>
+          </div>
+        </div>
+        <input
+          id="register-date"
+          type="date"
+          value={registerDate}
+          max={today}
+          onChange={(e) => setRegisterDate(e.target.value)}
+          className="input-clean cursor-pointer sm:w-52 shrink-0"
+        />
       </div>
 
       {!isManager && (
