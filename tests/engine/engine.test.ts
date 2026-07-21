@@ -574,6 +574,41 @@ describe("OCR-tolerant merge — dampen guard variances from OCR slips", () => {
     expect(res.variances.find((v) => v.barcode === canonicalize("SOFAEXACT1"))).toBeUndefined();
     expect(res.warnings.some((w) => w.startsWith("OCR merge"))).toBe(false);
   });
+
+  it("(f) multi-item delivery: shared ticket, SO last-4 disambiguates each mangled guard row", () => {
+    // A real failure mode (BAN ticket 1188659): one delivery, several line items,
+    // ALL sharing the ticket. Each guard barcode is a 1-char OCR drop of the
+    // typed barcode (13 vs 14 chars → barcode fuzzy CAN'T fire), and the guard
+    // SO is bare ("84808") vs the typed "ON-RET-BAN-84808". Only the SO last-4
+    // tells the items apart — exact-ticket alone ties all of them. Both guard
+    // rows must fold in; neither may raise a 'Missing from Gate Register' pair.
+    const item = (bcTyped: string, bcGuard: string, so: string, product: string) => [
+      r({ source: "SHEET", direction: "OUT", barcode: bcTyped, status: "done", ticketId: "1188659", soNumber: `ON-RET-BAN-${so}`, product }),
+      r({ source: "DT", direction: "OUT", barcode: bcTyped, status: "done", date: RUN, ticketId: "1188659", soNumber: `ON-RET-BAN-${so}` }),
+      r({ source: "ODOO", direction: "OUT", barcode: bcTyped, status: "done", createdOn: RUN }),
+      r({ source: "PHYSICAL", direction: "OUT", barcode: bcGuard, status: "done", ticketId: "1188659", soNumber: so, product }),
+    ];
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        ...item("APC7VY25040053", "APC7Y25040053", "84807", "Refrigerator"),
+        ...item("AP8IS722024068", "AP8IS72202068", "84808", "Washing Machine"),
+      ],
+      "BANGALORE"
+    );
+    // Both mangled guard orphans folded in — no false Gate pair for either item.
+    expect(hasReal(res, VARIANCE.OPS_ODOO_NO_GATE)).toBe(false);
+    expect(hasReal(res, VARIANCE.GATE_ONLY)).toBe(false);
+    expect(res.variances.find((v) => v.barcode === canonicalize("APC7Y25040053"))).toBeUndefined();
+    expect(res.variances.find((v) => v.barcode === canonicalize("AP8IS72202068"))).toBeUndefined();
+    // The merged items are reconciled or at most INFO (barcode text still differs).
+    for (const bc of ["APC7VY25040053", "AP8IS722024068"]) {
+      expect(
+        res.variances.filter((v) => v.barcode === canonicalize(bc)).every((v) => v.bucket === "INFO")
+      ).toBe(true);
+    }
+    expect(res.warnings.filter((w) => w.startsWith("OCR merge")).length).toBe(2);
+  });
 });
 
 describe("Inward DT quantity-aggregation — DT-missing INFO suppressed for inward", () => {

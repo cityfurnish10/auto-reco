@@ -58,24 +58,68 @@ function productAgrees(a: string | null, b: string | null): boolean {
   const pa = (a ?? "").trim().toLowerCase();
   const pb = (b ?? "").trim().toLowerCase();
   if (!pa || !pb) return false;
-  const ta = pa.split(/\s+/)[0];
-  const tb = pb.split(/\s+/)[0];
-  return ta.length >= 3 && (ta === tb || pa.startsWith(tb) || pb.startsWith(ta));
+  // First *alphanumeric* token — typed products carry a "# " prefix
+  // ("# Washing Machine") the guard rows lack, so a plain whitespace split would
+  // compare "#" against "washing" and never agree.
+  const firstToken = (s: string) => (s.match(/[a-z0-9]+/) ?? [""])[0];
+  const ta = firstToken(pa);
+  const tb = firstToken(pb);
+  return ta.length >= 3 && (ta === tb || ta.startsWith(tb) || tb.startsWith(ta));
 }
 
-// Strength of the guard-orphan → target match (0 = no match). Strongest first.
+// Strength of the guard-orphan → target match (0 = no match). ADDITIVE across
+// signals, so a target agreeing on MORE identifiers outranks one agreeing on
+// fewer. This is essential for multi-item deliveries: every line item of one
+// delivery shares the same ticket (a delivery-level id), so an exact-ticket
+// match alone ties across all of them — only the SO number or barcode (item-
+// level ids) tells the items apart. Scoring ticket-alone as the top signal
+// (the old first-match-wins order) made every such orphan an ambiguous tie and
+// left it unmerged, surfacing a false "Missing from Gate Register" pair.
 function matchScore(orphan: BarcodeView, target: BarcodeView): number {
-  const ot = digits(orphan.ticketId);
-  if (ot.length >= 4 && ot === digits(target.ticketId)) return 3; // exact ticket
   const os = alnum(orphan.soNumber);
-  if (os.length >= 4 && os === alnum(target.soNumber)) return 3; // exact SO/PO
-  if (barcodeFuzzy(orphan.canonical, target.canonical)) return 2; // near-identical barcode
-  if (ticketFuzzy(orphan.ticketId, target.ticketId)) return 2; // fuzzy ticket
-  // Weakest signal — SO/PO last-4 only — gated on product agreement to avoid
-  // coincidental merges across different items that share the last 4 digits.
-  if (soFuzzy(orphan.soNumber, target.soNumber) && productAgrees(orphan.product, target.product))
-    return 1;
-  return 0;
+  const ts = alnum(target.soNumber);
+  const od = digits(orphan.soNumber);
+  const td = digits(target.soNumber);
+
+  // ── SO-CONFLICT VETO ── Both rows carry an order number and they DISAGREE
+  // (full digits AND last-4 both differ) → different orders. Never merge, no
+  // matter how well the barcode or a shared delivery ticket coincidentally line
+  // up (a 70%-similar barcode or a multi-order delivery would otherwise fold two
+  // different items together and silently hide a real gate-missing variance).
+  if (od.length >= 4 && td.length >= 4 && od !== td && od.slice(-4) !== td.slice(-4)) return 0;
+
+  let score = 0;
+
+  // ── Item-level identifiers — unique per line item, so they DISAMBIGUATE. ──
+  // Near-identical barcode (same length, ≥70% positions — OCR fold set applied).
+  if (barcodeFuzzy(orphan.canonical, target.canonical)) score += 4;
+
+  // Strong SO agreement — the SAME order number. Guard rows carry the bare
+  // number ("84808") while typed sources wrap it ("ON-RET-BAN-84808"), so
+  // compare on DIGITS (equal across that prefix gap) as well as full alnum text
+  // (equal for pure-alpha refs). This is the reliable item-level key when the
+  // barcode is un-OCR-able (e.g. "33") and the ticket got truncated.
+  const soStrong = (od.length >= 4 && od === td) || (os.length >= 4 && os === ts);
+  // SO last-4 alone is weak (unrelated items can share 4 trailing digits), so it
+  // only counts when corroborated by the same delivery (ticket) or a matching
+  // product — it can't, alone, name the right item.
+  const soLast4 = !soStrong && od.length >= 4 && td.length >= 4 && od.slice(-4) === td.slice(-4);
+
+  // ── Delivery-level identifier — SHARED across a delivery's items, so it ──
+  // supports a match but can never, alone, pick between its line items.
+  const ot = digits(orphan.ticketId);
+  const tt = digits(target.ticketId);
+  const ticketExact = ot.length >= 4 && ot === tt;
+  const ticketNear = !ticketExact && ticketFuzzy(orphan.ticketId, target.ticketId);
+
+  if (soStrong) score += 4;
+  else if (soLast4 && (ticketExact || ticketNear || productAgrees(orphan.product, target.product)))
+    score += 3;
+
+  if (ticketExact) score += 2;
+  else if (ticketNear) score += 1;
+
+  return score;
 }
 
 // Best matching target for a guard orphan, or null if none / an ambiguous tie
