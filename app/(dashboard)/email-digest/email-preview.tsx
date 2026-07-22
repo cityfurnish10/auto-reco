@@ -8,6 +8,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/icon";
 import { useUsers } from "@/lib/hooks/use-users";
+import {
+  EMPTY_RECIPIENTS,
+  addRecipient,
+  candidatesOf,
+  listsOf,
+  removeRecipient,
+  seedDefaults,
+  toggleSlot,
+  type RecipientState,
+  type Slot,
+} from "@/lib/email/recipient-list";
 import type { ScheduledEmailDB } from "@/lib/db/schema";
 
 interface PreviewData {
@@ -16,8 +27,6 @@ interface PreviewData {
   html?: string;
   recipients?: string[];
 }
-
-type Slot = "to" | "cc" | "bcc";
 
 const SLOT_STATUS: Record<string, string> = {
   pending: "badge badge-medium",
@@ -37,8 +46,7 @@ export default function EmailPreview() {
 
   const { users } = useUsers();
 
-  const [slots, setSlots] = useState<Record<string, Slot | null>>({});
-  const [extra, setExtra] = useState<string[]>([]);
+  const [recip, setRecip] = useState<RecipientState>(EMPTY_RECIPIENTS);
   const [extraInput, setExtraInput] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -82,42 +90,39 @@ export default function EmailPreview() {
   /* eslint-disable react-hooks/set-state-in-effect -- one-time seed from fetched defaults */
   useEffect(() => {
     if (!data?.recipients?.length) return;
-    setSlots((prev) => {
-      const next = { ...prev };
-      for (const e of data.recipients!) if (!(e in next)) next[e] = "to";
-      return next;
-    });
+    setRecip((prev) => seedDefaults(prev, data.recipients!));
   }, [data]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const candidates = useMemo(() => {
-    const set = new Set<string>();
-    (data?.recipients ?? []).forEach((e) => set.add(e));
-    users.filter((u) => u.status === "active" && u.email).forEach((u) => set.add(u.email));
-    extra.forEach((e) => set.add(e));
-    return [...set];
-  }, [data, users, extra]);
+  const candidates = useMemo(
+    () =>
+      candidatesOf(
+        recip,
+        data?.recipients ?? [],
+        users.filter((u) => u.status === "active" && u.email).map((u) => u.email)
+      ),
+    [data, users, recip]
+  );
 
   const nameFor = (email: string) => users.find((u) => u.email === email)?.name ?? "";
 
-  const toList = Object.entries(slots).filter(([, s]) => s === "to").map(([e]) => e);
-  const ccList = Object.entries(slots).filter(([, s]) => s === "cc").map(([e]) => e);
-  const bccList = Object.entries(slots).filter(([, s]) => s === "bcc").map(([e]) => e);
+  const { to: toList, cc: ccList, bcc: bccList } = listsOf(recip);
 
   const setSlot = (email: string, slot: Slot) =>
-    setSlots((prev) => ({ ...prev, [email]: prev[email] === slot ? null : slot }));
+    setRecip((prev) => toggleSlot(prev, email, slot));
 
   function addExtra() {
-    const e = extraInput.trim();
-    if (!e || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) {
-      setToast("Enter a valid email address.");
+    const res = addRecipient(recip, extraInput);
+    if (res.error) {
+      setToast(res.error);
       setTimeout(() => setToast(null), 4000);
       return;
     }
-    if (!extra.includes(e)) setExtra((prev) => [...prev, e]);
-    setSlots((prev) => ({ ...prev, [e]: prev[e] ?? "to" }));
+    setRecip(res.state);
     setExtraInput("");
   }
+
+  const dropRecipient = (email: string) => setRecip((prev) => removeRecipient(prev, email));
 
   const flash = (msg: string) => {
     setToast(msg);
@@ -222,7 +227,7 @@ export default function EmailPreview() {
                         key={s}
                         onClick={() => setSlot(email, s)}
                         className={
-                          slots[email] === s
+                          recip.slots[email] === s
                             ? "px-2 py-1 text-xs font-semibold rounded bg-accent text-white uppercase"
                             : "px-2 py-1 text-xs rounded border border-border text-text-muted hover:text-text-primary uppercase"
                         }
@@ -230,6 +235,14 @@ export default function EmailPreview() {
                         {s}
                       </button>
                     ))}
+                    <button
+                      onClick={() => dropRecipient(email)}
+                      className="btn-icon text-text-muted hover:text-danger ml-1"
+                      title="Remove from recipient list"
+                      aria-label={`Remove ${email} from recipient list`}
+                    >
+                      <Icon name="close" size={15} />
+                    </button>
                   </div>
                 </div>
               ))}
