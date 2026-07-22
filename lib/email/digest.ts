@@ -53,6 +53,7 @@ const SHORT_LABEL: Record<string, string> = {
   [VARIANCE.OPS_DT_ODOO_PENDING]: "Odoo pending",
   [VARIANCE.FIELD_MISMATCH]: "Barcode text",
   [VARIANCE.DUPLICATE]: "Duplicate",
+  [VARIANCE.ADJACENT_DAY]: "Wrong-day entry",
 };
 
 function shortLabel(name: string): string {

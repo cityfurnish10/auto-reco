@@ -33,6 +33,7 @@ const SOURCE_OF: Record<string, SourceLabel> = {
   [VARIANCE.GATE_ODOO_NO_OPS_DT]: "Physical",
   [VARIANCE.FIELD_MISMATCH]: "Physical", // OCR noise — guard scan the usual culprit
   [VARIANCE.DUPLICATE]: "Physical",
+  [VARIANCE.ADJACENT_DAY]: "Physical", // date-misaligned register page / late write-up
   // Cross-direction (both legs)
   [VARIANCE.REPLACEMENT_CONFIRM]: "Cross",
 };

@@ -47,9 +47,14 @@ export const VARIANCE_META: Record<string, VarianceMeta> = {
     note: "Only the ops sheet logged this — nothing else corroborates. Confirm the movement actually happened.",
   },
   [VARIANCE.OPS_ODOO_NO_GATE]: {
-    bucket: "REAL",
+    // INFO, not REAL (measured 2026-07-20: 220 of 230 such rows ALSO carried a
+    // DT scan — Sheet+DT+Odoo all confirmed; only the handwritten register /
+    // its OCR missed the line). The movement is fully documented in the typed
+    // systems; a gate-log gap is hygiene, the same family as the other
+    // one-source-missing INFO rows below. Never a stock loss.
+    bucket: "INFO",
     responsible: "warehouse_team",
-    note: "Ops sheet + Odoo agree the unit moved, but the gate register is missing it — check the guard log for a missed entry.",
+    note: "Ops sheet + Odoo (and usually DT) confirm the movement; only the gate register is missing the entry. Gate-log hygiene — remind the guard post, no stock action.",
   },
   [VARIANCE.PICKUP_ODOO_OPEN]: {
     bucket: "REAL",
@@ -67,9 +72,14 @@ export const VARIANCE_META: Record<string, VarianceMeta> = {
     note: "Marked Not Delivered on the way out but the return was never logged inward — confirm the unit is back and write it into the inward register.",
   },
   [VARIANCE.ODOO_ONLY_TODAY]: {
+    // Fires ONLY for customer flows (SO present, not an /INT/ internal
+    // transfer) with no floor trace on this or nearby days — vendor PO receipts
+    // (serialized at receipt, floor logs the truck not each serial), internal
+    // transfers, and Odoo backlog entries all stay INFO (see ladder rung 9 and
+    // the recent-floor gate in run.ts).
     bucket: "REAL",
     responsible: "warehouse_team",
-    note: "Odoo booked this movement today (the record was created today) and no gate / ops / DT / sheet source logged it — a same-day movement the floor missed, or a phantom posting. Chase: confirm the unit physically moved and log it, or void the Odoo entry.",
+    note: "Odoo booked this customer movement today (record created today) and no gate / ops / DT / sheet source logged it — a same-day movement the floor missed, or a phantom posting. Chase: confirm the unit physically moved and log it, or void the Odoo entry.",
   },
   // ── INFO — audit / posting-lag ─────────────────────────────────────────
   // INFO, not REAL (measured on live data): the great majority of Odoo-only
@@ -117,6 +127,11 @@ export const VARIANCE_META: Record<string, VarianceMeta> = {
     bucket: "INFO",
     responsible: "delivery_team",
     note: "Ops sheet + Odoo both confirm the movement; only DT has no scan. DT hygiene, no stock gap.",
+  },
+  [VARIANCE.ADJACENT_DAY]: {
+    bucket: "INFO",
+    responsible: "ops_team",
+    note: "This unit's movement is recorded across the floor systems on a NEARBY day — this row is a date misalignment (register page spanning days, or a late write-up), not a missing entry. No action.",
   },
   [VARIANCE.DT_ODOO_NO_SHEET]: {
     bucket: "INFO",

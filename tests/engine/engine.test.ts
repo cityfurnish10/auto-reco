@@ -275,14 +275,54 @@ describe("Section 6 — variance ladder", () => {
     expect(v?.original_priority).toBe("High");
   });
 
-  it("Odoo-only, record CREATED TODAY → Odoo Entry Created Today (REAL chase)", () => {
-    // Odoo booked this movement today (record born today) yet no floor source
-    // logged it — a genuine same-day gap the floor missed, not benign lag.
-    const res = one([{ source: "ODOO", createdOn: RUN, recordCreatedOn: RUN }]);
+  it("Odoo-only, record CREATED TODAY, customer flow → Odoo Entry Created Today (REAL chase)", () => {
+    // Odoo booked this CUSTOMER movement today (record born today, sale order
+    // present) yet no floor source logged it — a genuine same-day gap the floor
+    // missed, not benign lag.
+    const res = one([
+      { source: "ODOO", createdOn: RUN, recordCreatedOn: RUN, soNumber: "ON-RET-MUM-42424", ticketId: "MUM/OUT/12345" },
+    ]);
     const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-1"));
     expect(v?.variance_name).toBe(VARIANCE.ODOO_ONLY_TODAY);
     expect(v?.bucket).toBe("REAL");
     expect(v?.priority).toBe("High");
+  });
+
+  it("Odoo-only created today, NO sale order (vendor PO receipt) → INFO, not REAL", () => {
+    // Vendor receipts serialize stock IN Odoo at receipt — the floor logs the
+    // truck, never each new serial. Not a per-barcode floor flow → never a loss.
+    const res = one([
+      { source: "ODOO", createdOn: RUN, recordCreatedOn: RUN, ticketId: "BAN/IN/24136" },
+    ]);
+    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-1"));
+    expect(v?.variance_name).toBe(VARIANCE.ODOO_ONLY);
+    expect(v?.bucket).toBe("INFO");
+  });
+
+  it("Odoo-only created today, /INT/ internal transfer → INFO, not REAL", () => {
+    const res = one([
+      { source: "ODOO", createdOn: RUN, recordCreatedOn: RUN, soNumber: "ON-RET-PUN-11111", ticketId: "PUN/INT/00123" },
+    ]);
+    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-1"));
+    expect(v?.variance_name).toBe(VARIANCE.ODOO_ONLY);
+    expect(v?.bucket).toBe("INFO");
+  });
+
+  it("Odoo-only created today but floor logged the unit on an ADJACENT day → INFO (backlog entry)", () => {
+    // The clerk typed up an earlier day's movement today — the floor documented
+    // it on its own day (recentFloor), so this is a late entry, not a loss.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "ODOO", direction: "OUT", barcode: "ITEM-1", status: "done", createdOn: RUN, recordCreatedOn: RUN, soNumber: "ON-RET-MUM-42424", ticketId: "MUM/OUT/12345" }),
+      ],
+      "MUMBAI",
+      undefined,
+      new Set([canonicalize("ITEM-1")])
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-1"));
+    expect(v?.variance_name).toBe(VARIANCE.ODOO_ONLY);
+    expect(v?.bucket).toBe("INFO");
   });
 
   it("gate-only → Gate-Only Dispatch (REAL)", () => {
@@ -609,6 +649,69 @@ describe("OCR-tolerant merge — dampen guard variances from OCR slips", () => {
     }
     expect(res.warnings.filter((w) => w.startsWith("OCR merge")).length).toBe(2);
   });
+
+  it("(g) pure-digit guard fragment that matches nothing is DROPPED, not a Gate-Only REAL", () => {
+    // "3040373"-style partial register reads: typed sources never produce
+    // pure-digit barcodes, so an unmerged digits-only guard orphan is OCR
+    // debris — dropped with an audit warning instead of raising a false REAL.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "PHYSICAL", direction: "IN", barcode: "3040373", status: "done" }),
+      ],
+      "MUMBAI"
+    );
+    expect(res.variances.find((v) => v.barcode === "3040373")).toBeUndefined();
+    expect(res.warnings.some((w) => w.startsWith("OCR fragment dropped"))).toBe(true);
+  });
+
+  it("(h) pure-digit guard row that CAN merge via SO still merges (drop only hits unmatched orphans)", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "OUT", barcode: "APMYUX22050333", status: "done", soNumber: "ON-RET-BAN-66892", product: "Microwave" }),
+        r({ source: "DT", direction: "OUT", barcode: "APMYUX22050333", status: "done", date: RUN, soNumber: "ON-RET-BAN-66892" }),
+        r({ source: "ODOO", direction: "OUT", barcode: "APMYUX22050333", status: "done", createdOn: RUN }),
+        // guard OCR caught only a numeric tail, but the SO digits match uniquely:
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "2205033", status: "done", soNumber: "66892", product: "Microwave" }),
+      ],
+      "BANGALORE"
+    );
+    expect(res.warnings.some((w) => w.startsWith("OCR merge"))).toBe(true);
+    expect(res.variances.find((v) => v.barcode === "2205033")).toBeUndefined();
+    // merged item: at most INFO (barcode text differs)
+    expect(
+      res.variances.filter((v) => v.barcode === canonicalize("APMYUX22050333")).every((v) => v.bucket === "INFO")
+    ).toBe(true);
+  });
+
+  it("(i) single-source-only row floor-logged on an ADJACENT day → INFO wrong-day echo, not REAL", () => {
+    // The register page for this date carried a line whose movement the floor
+    // systems documented on the day before (page spanning days / late write-up).
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "SOFAECHO12", status: "done" }),
+      ],
+      "MUMBAI",
+      undefined,
+      new Set([canonicalize("SOFAECHO12")])
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("SOFAECHO12"));
+    expect(v?.variance_name).toBe(VARIANCE.ADJACENT_DAY);
+    expect(v?.bucket).toBe("INFO");
+    // …and WITHOUT the adjacent-day evidence the same shape stays a REAL Gate-Only.
+    const res2 = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "SOFAECHO12", status: "done" }),
+      ],
+      "MUMBAI"
+    );
+    const v2 = res2.variances.find((x) => x.barcode === canonicalize("SOFAECHO12"));
+    expect(v2?.variance_name).toBe(VARIANCE.GATE_ONLY);
+    expect(v2?.bucket).toBe("REAL");
+  });
 });
 
 describe("Inward DT quantity-aggregation — DT-missing INFO suppressed for inward", () => {
@@ -648,7 +751,10 @@ describe("Inward DT quantity-aggregation — DT-missing INFO suppressed for inwa
     expect(res.variances.find((v) => v.barcode === canonicalize("WASH-IN-2"))).toBeUndefined();
   });
 
-  it("NEGATIVE — IN, S+O no P no D (guard reported, missing it): REAL 'Gate Log Missing' still fires", () => {
+  it("IN, S+O no P no D (guard reported, missing it): 'Missing from Gate Register' fires as INFO hygiene", () => {
+    // Ops sheet + Odoo both document the movement — only the handwritten
+    // register (or its OCR) missed the line. Gate-log hygiene, not a loss
+    // (measured 2026-07-20: 220/230 such rows even had a DT scan).
     const res = runReconciliation(
       [
         ...anchor(),
@@ -659,7 +765,8 @@ describe("Inward DT quantity-aggregation — DT-missing INFO suppressed for inwa
     );
     const v = res.variances.find((x) => x.barcode === canonicalize("WASH-IN-3"));
     expect(v?.variance_name).toBe(VARIANCE.OPS_ODOO_NO_GATE);
-    expect(v?.bucket).toBe("REAL");
+    expect(v?.bucket).toBe("INFO");
+    expect(v?.priority).toBe("Info");
   });
 
   it("NEGATIVE — OUT, P+S+O no D: outward DT-missing INFO still fires (inward-only scope)", () => {

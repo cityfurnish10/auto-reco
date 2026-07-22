@@ -76,11 +76,13 @@ export interface BarcodeView {
   // evidence is a next-day posting is an "entry made late" INFO, never a REAL
   // "not posted in Odoo".
   odooNextDay: boolean;
-  // True when at least one Odoo record for this barcode was CREATED (create_date)
-  // on the run date itself — a movement Odoo booked today. Combined with the
-  // Odoo-only pattern it separates a genuine same-day movement the floor never
-  // logged (odooCreatedToday → REAL chase item) from a benign late batch-post of
-  // an earlier movement whose floor record lives on its own day (→ INFO).
+  // REAL-eligibility gate for the Odoo-only rung (stamped in run.ts as a
+  // composite): the Odoo record was CREATED (create_date) on the run date
+  // itself, it is a CUSTOMER flow (sale order present, not an /INT/ internal
+  // transfer), and the floor has no trace of the unit on nearby days. Only then
+  // is an Odoo-only row a genuine same-day movement the floor missed (REAL);
+  // otherwise it is a late batch-post / vendor receipt / internal transfer /
+  // backlog entry (INFO).
   odooCreatedToday: boolean;
   soNumber: string | null;
   ticketId: string | null;

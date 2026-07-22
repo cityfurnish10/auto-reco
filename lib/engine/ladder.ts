@@ -80,6 +80,13 @@ export function classify(
   //    BORN today with no floor record is a genuine same-day movement the floor
   //    missed (REAL chase); an older record posted today is a benign late
   //    batch-post whose floor record lives on its own earlier day (INFO).
+  //    odooCreatedToday is the composite REAL-eligibility gate stamped in
+  //    run.ts: record born today AND a customer flow (sale order present, not
+  //    an /INT/ internal transfer — vendor receipts serialize stock in Odoo,
+  //    the floor logs the truck, never each serial) AND no floor trace on
+  //    nearby days (else it's a backlog entry of an earlier movement). It is
+  //    computed from the raw Odoo rows because the display-only DT enrichment
+  //    rewrites the view's ticket/job fields before classification.
   if (O && !P && !S && !D && rep.S && rep.D && v.odooSameDay)
     return v.odooCreatedToday
       ? { variance_name: VARIANCE.ODOO_ONLY_TODAY, priority: "High" }

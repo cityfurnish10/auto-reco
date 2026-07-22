@@ -15,7 +15,6 @@ export const VARIANCE = {
   GATE_OPS_NO_DT_ODOO: "Gate + Ops Confirm — No DT Scan or Odoo Post",
   GATE_ONLY: "Gate Register Only — No Ops / DT / Odoo Record",
   SHEET_ONLY: "Ops Sheet Only — No Gate / DT / Odoo Record",
-  OPS_ODOO_NO_GATE: "Ops + Odoo Confirm — Missing from Gate Register",
   PICKUP_ODOO_OPEN: "Pickup Logged (Gate + DT) — Odoo Receipt Open",
   DT_ONLY: "DT Only — No Floor or Odoo Record",
   REPLACEMENT_CONFIRM: "Same Unit In + Out Today — Confirm Replacement",
@@ -23,6 +22,11 @@ export const VARIANCE = {
   ODOO_ONLY_TODAY: "Odoo Entry Created Today — No Gate / Ops / DT Record",
 
   // ── INFO — audit / posting-lag, no chase ───────────────────────────────
+  // Measured 2026-07-20: 220/230 of these ALSO had a DT scan — Sheet+DT+Odoo,
+  // three independent systems, all confirming; only the handwritten register
+  // (via OCR) missed it. A gate-log hygiene gap, never a stock loss.
+  OPS_ODOO_NO_GATE: "Ops + Odoo Confirm — Missing from Gate Register",
+  ADJACENT_DAY: "Entry Dated Wrong Day — Unit Logged on Adjacent Day",
   ODOO_ONLY: "Odoo Posting Only — No Gate / Ops / DT Record",
   ODOO_POSTED_NEXT_DAY: "Odoo Entry Made Late — Posted Next Day",
   OPS_ODOO_NO_DT: "Ops + Odoo Confirm — No DT Scan",

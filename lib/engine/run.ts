@@ -68,7 +68,15 @@ function mergeOcrOrphans(views: Map<string, BarcodeView>, warnings: string[]) {
 export function runReconciliation(
   allRows: SourceRow[],
   city: City,
-  reported: ReportedSources = ALL_REPORTED
+  reported: ReportedSources = ALL_REPORTED,
+  // Canonical barcodes any FLOOR source (guard/sheet/DT) logged on NEARBY days
+  // (runDate−3 … runDate+1, excluding the run day) — supplied by the pipeline
+  // from source_rows history, empty in demo/tests. Drives the date-misalignment
+  // demotions: a single-source-only row whose unit is floor-documented on an
+  // adjacent day is an echo (register page spanning days / late write-up), and
+  // an Odoo record created today for a floor-documented earlier movement is a
+  // backlog entry — neither is a loss.
+  recentFloor: ReadonlySet<string> = new Set()
 ): CityRunResult {
   const warnings: string[] = [];
   const rows = allRows;
@@ -122,6 +130,26 @@ export function runReconciliation(
   mergeOcrOrphans(inViews, warnings);
   mergeOcrOrphans(outViews, warnings);
 
+  // Guard OCR fragments — a still-orphan P-only view whose canonical has no
+  // letters left is a partial register read ("3040373", "060006"): typed
+  // sources never produce pure-digit barcodes (measured on live data: 0/2811
+  // DT, 0/12538 Odoo, 0/1170 Sheet vs 124 in PHYSICAL). The merge pass above
+  // already had its chance to rescue it via ticket/SO; unmerged it can only
+  // ever raise a false "Gate Register Only" — drop it (with an audit warning).
+  const dropOcrFragments = (views: Map<string, BarcodeView>) => {
+    for (const v of Array.from(views.values())) {
+      const pOnly = v.P.present && !v.S.present && !v.D.present && !v.O.present;
+      if (pOnly && !/[A-Z]/.test(v.canonical)) {
+        views.delete(v.canonical);
+        warnings.push(
+          `OCR fragment dropped (${v.direction}): guard ${v.canonical} (digits-only partial read, no match)`
+        );
+      }
+    }
+  };
+  dropOcrFragments(inViews);
+  dropOcrFragments(outViews);
+
   // Mark views whose Odoo posting is dated the run day itself — the only ones
   // eligible for "Odoo-Only" (adjacent-day postings are match-targets only;
   // each posting is judged in its own day's run).
@@ -136,22 +164,44 @@ export function runReconciliation(
   // is a genuine same-day gap (REAL); one whose record predates the run day is a
   // benign late batch-post of an earlier movement (INFO).
   const odooCreatedTodayCanon = new Set<string>();
+  // Direction-keyed CUSTOMER-flow Odoo rows (sale order present and not an
+  // /INT/ internal-transfer reference). Vendor PO receipts carry no SO —
+  // serials are born in Odoo at receipt and the floor logs the truck, never
+  // each serial — and internal transfers aren't per-barcode floor flows;
+  // neither can be a same-day loss. Keyed per DIRECTION because views are
+  // per-direction: a serial received from the vendor (IN, no SO) and delivered
+  // to a customer (OUT, has SO) the same day must not let the vendor-receipt
+  // leg masquerade as a customer flow. Computed from the RAW rows because the
+  // display-only DT enrichment below overwrites ticket/job fields on the views.
+  const odooCustomerDirCanon = new Set<string>();
   for (const r of odooWindowed) {
     const posted = parseDate(r.createdOn) ?? parseDate(r.date);
     if (posted === runDate) odooSameDayCanon.add(canonicalize(r.barcode));
     else if (posted === nextDay) odooNextDayCanon.add(canonicalize(r.barcode));
     if (parseDate(r.recordCreatedOn) === runDate)
       odooCreatedTodayCanon.add(canonicalize(r.barcode));
+    if (r.soNumber && !/\/INT\//i.test(String(r.ticketId ?? "")))
+      odooCustomerDirCanon.add(`${r.direction}::${canonicalize(r.barcode)}`);
   }
+  // odooCreatedToday (the REAL-eligibility flag for Odoo-only rows) is the
+  // COMPOSITE gate: record born today AND a customer flow AND no floor trace
+  // on nearby days. A record born today for a movement the floor documented on
+  // its own earlier/later day is a backlog data entry (clerk typing up an old
+  // day); a no-SO / internal-transfer row isn't a per-barcode floor flow —
+  // neither is a same-day movement the floor missed.
+  const createdTodayFlag = (canonical: string, dir: Direction) =>
+    odooCreatedTodayCanon.has(canonical) &&
+    odooCustomerDirCanon.has(`${dir}::${canonical}`) &&
+    !recentFloor.has(canonical);
   for (const v of Array.from(inViews.values())) {
     v.odooSameDay = odooSameDayCanon.has(v.canonical);
     v.odooNextDay = odooNextDayCanon.has(v.canonical);
-    v.odooCreatedToday = odooCreatedTodayCanon.has(v.canonical);
+    v.odooCreatedToday = createdTodayFlag(v.canonical, "IN");
   }
   for (const v of Array.from(outViews.values())) {
     v.odooSameDay = odooSameDayCanon.has(v.canonical);
     v.odooNextDay = odooNextDayCanon.has(v.canonical);
-    v.odooCreatedToday = odooCreatedTodayCanon.has(v.canonical);
+    v.odooCreatedToday = createdTodayFlag(v.canonical, "OUT");
   }
 
   // Section 7 — suppressions (before classification).
@@ -231,12 +281,22 @@ export function runReconciliation(
 
       const hit = classify(v, reported);
       if (hit) {
+        // Date-misalignment echo: a SINGLE-source-only row whose unit the floor
+        // documented on an adjacent day (register page spanning two days, a
+        // late write-up) is not a missing entry — demote to the INFO
+        // wrong-day class. Applies only to the X-only patterns; multi-source
+        // REALs (e.g. floor+DT agree, Odoo missing) keep their day's meaning.
+        const soloOnly =
+          hit.variance_name === VARIANCE.GATE_ONLY ||
+          hit.variance_name === VARIANCE.SHEET_ONLY ||
+          hit.variance_name === VARIANCE.DT_ONLY;
+        const echo = soloOnly && recentFloor.has(v.canonical);
         variances.push(
           applyBucket({
             ...baseRow(v),
             direction,
-            variance_name: hit.variance_name,
-            priority: hit.priority,
+            variance_name: echo ? VARIANCE.ADJACENT_DAY : hit.variance_name,
+            priority: echo ? "Info" : hit.priority,
           })
         );
       }
@@ -282,9 +342,16 @@ export function runReconciliation(
   // Summary.
   const real_variances = variances.filter((v) => v.bucket === "REAL");
   const info_variances = variances.filter((v) => v.bucket === "INFO");
-  // Reconciliation universe size = distinct valid barcodes examined per
-  // direction (the leaderboard accuracy denominator).
-  const movements = inViews.size + outViews.size;
+  // Reconciliation universe size = distinct barcodes THIS day actually moved
+  // per direction (the leaderboard accuracy denominator). Views whose only
+  // evidence is an adjacent-day Odoo posting are match-targets, not today's
+  // movements — counting them let one Odoo batch-post inflate a city's
+  // denominator ~10x (BAN 2026-07-20: 1231 "movements" for a ~130-row floor).
+  const isMovement = (v: BarcodeView) =>
+    v.P.present || v.S.present || v.D.present || v.odooSameDay;
+  const movements =
+    Array.from(inViews.values()).filter(isMovement).length +
+    Array.from(outViews.values()).filter(isMovement).length;
   const by_variance: Record<string, number> = {};
   for (const v of variances) {
     by_variance[v.variance_name] = (by_variance[v.variance_name] ?? 0) + 1;
@@ -332,13 +399,21 @@ export interface MultiCityRun {
 export function runAllCities(
   rowsByCity: Record<City, SourceRow[]>,
   now: Date = new Date(),
-  reportedByCity?: Partial<Record<City, ReportedSources>>
+  reportedByCity?: Partial<Record<City, ReportedSources>>,
+  recentFloorByCity?: Partial<Record<City, ReadonlySet<string>>>
 ): MultiCityRun {
   const perCity: CityRunResult[] = [];
   for (const city of CITIES) {
     const rows = rowsByCity[city];
     if (!rows || rows.length === 0) continue;
-    perCity.push(runReconciliation(rows, city, reportedByCity?.[city] ?? ALL_REPORTED));
+    perCity.push(
+      runReconciliation(
+        rows,
+        city,
+        reportedByCity?.[city] ?? ALL_REPORTED,
+        recentFloorByCity?.[city] ?? new Set()
+      )
+    );
   }
 
   const by_variance: Record<string, number> = {};
