@@ -17,6 +17,7 @@ import { processPendingGuardUploads } from "../connectors/ocr/process";
 import {
   createRun,
   saveSourceRows,
+  loadRecentFloorBarcodes,
   upsertVariances,
   resolveStaleOpenVariances,
   saveCityStats,
@@ -69,7 +70,14 @@ export async function runReconcilePipeline(
     // 3. Run the reconciliation engine. reportedByCity tells the ladder which
     //    sources actually answered per city — an outage or a not-yet-filled
     //    sheet must read as "source down", never as a flood of false HIGHs.
-    const run = runAllCities(rowsByCity, new Date(), reportedByCity);
+    //    recentFloorByCity feeds the date-misalignment demotions (register
+    //    pages spanning days, Odoo backlog entries) — best-effort: without it
+    //    the engine simply skips those demotions.
+    const recentFloorByCity = await loadRecentFloorBarcodes(db, runDate).catch((e) => {
+      console.warn("loadRecentFloorBarcodes failed:", e instanceof Error ? e.message : e);
+      return {};
+    });
+    const run = runAllCities(rowsByCity, new Date(), reportedByCity, recentFloorByCity);
 
     // 4. Upsert variances (dedup key; human closures/approvals preserved).
     const variancesUpserted = await upsertVariances(db, runId, run.perCity);

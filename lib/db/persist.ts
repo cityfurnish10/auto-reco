@@ -6,9 +6,43 @@ import type { City } from "../sample-data";
 import type { CityRunResult, ReportedSources, SourceRow } from "../engine/types";
 import type { MultiCityRun } from "../engine/run";
 import { varianceSource } from "../engine/variance-source";
+import { canonicalize } from "../engine/barcode";
+import { addDays } from "../engine/dates";
 import type { ConnectorResult } from "../connectors/types";
 
 type DB = SupabaseClient;
+
+// Floor history for the engine's date-misalignment demotions: every canonical
+// barcode a FLOOR source (guard / sheet / DT) logged on the days AROUND the run
+// date (−3 … +1, excluding the run day itself), per city, drawn from the stored
+// source_rows (7-day retention comfortably covers the window). A unit that is
+// floor-documented on an adjacent day makes today's single-source-only row a
+// date echo, and an Odoo record created today for it a backlog entry — the
+// engine downgrades both to INFO instead of raising a REAL loss.
+export async function loadRecentFloorBarcodes(
+  db: DB,
+  runDate: string
+): Promise<Partial<Record<City, Set<string>>>> {
+  const dates = [-3, -2, -1, 1].map((d) => addDays(runDate, d));
+  const out: Partial<Record<City, Set<string>>> = {};
+  let from = 0;
+  for (;;) {
+    const { data, error } = await db
+      .from("source_rows")
+      .select("city, barcode")
+      .in("source", ["PHYSICAL", "SHEET", "DT"])
+      .in("business_date", dates)
+      .range(from, from + 999);
+    if (error) throw new Error(`loadRecentFloorBarcodes failed: ${error.message}`);
+    for (const r of data ?? []) {
+      const city = r.city as City;
+      (out[city] ??= new Set()).add(canonicalize(String(r.barcode ?? "")));
+    }
+    if (!data || data.length < 1000) break;
+    from += 1000;
+  }
+  return out;
+}
 
 export async function createRun(
   db: DB,
@@ -136,7 +170,14 @@ export async function resolveStaleOpenVariances(
 
   for (const cr of perCity) {
     const rep = reportedByCity[cr.city];
-    if (!rep || !(rep.P && rep.S && rep.D && rep.O)) continue; // need full coverage
+    if (!rep) continue; // city absent from this run — nothing to compare against
+    // Full coverage is required only for the ABSENCE-based resolved-late branch
+    // (a missing source must read as "source down", not "gap cleared"). The
+    // superseded branch is POSITIVE evidence — the barcode WAS re-emitted this
+    // run under a new name — so it is safe under partial coverage too (e.g. a
+    // REAL row reclassified to an INFO name must not linger as a stale REAL
+    // just because the ops sheet didn't report that day).
+    const fullCoverage = rep.P && rep.S && rep.D && rep.O;
 
     const emittedKeys = new Set<string>();
     const emittedBarcodes = new Set<string>();
@@ -160,7 +201,7 @@ export async function resolveStaleOpenVariances(
       if (emittedKeys.has(key)) continue; // still current — upsert refreshed it
       if (emittedBarcodes.has(`${row.direction}::${row.barcode}`)) {
         supersededIds.push(row.id as string);
-      } else {
+      } else if (fullCoverage) {
         resolvedIds.push(row.id as string);
       }
     }
