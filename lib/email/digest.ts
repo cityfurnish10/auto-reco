@@ -266,19 +266,14 @@ export function renderDigestHtml(data: DigestData, dashboardUrl?: string, notes?
 
         <tr><td style="padding:24px 32px;background:#f9fafb;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:22px;"><tr>
-            <td width="33%" style="padding:14px;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;text-align:center;">
+            <td width="50%" style="padding:14px;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;text-align:center;">
               <div style="font-size:11px;color:#6b7280;margin-bottom:4px;">Losses to Action</div>
               <div style="font-size:20px;font-weight:800;color:#b91c1c;">${data.totals.real}</div>
             </td>
             <td width="8"></td>
-            <td width="33%" style="padding:14px;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;text-align:center;">
+            <td width="50%" style="padding:14px;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;text-align:center;">
               <div style="font-size:11px;color:#6b7280;margin-bottom:4px;">High Priority</div>
               <div style="font-size:20px;font-weight:800;color:#111827;">${data.totals.high}</div>
-            </td>
-            <td width="8"></td>
-            <td width="33%" style="padding:14px;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;text-align:center;">
-              <div style="font-size:11px;color:#9ca3af;margin-bottom:4px;">Posting-lag (hidden)</div>
-              <div style="font-size:20px;font-weight:800;color:#9ca3af;">${data.totals.info}</div>
             </td>
           </tr></table>
 
@@ -315,7 +310,7 @@ export function renderDigestText(data: DigestData, notes?: string): string {
     lines.push(`NOTE FROM THE ADMIN: ${notes.trim()}`);
     lines.push("");
   }
-  lines.push(`Losses to action (REAL) ${data.totals.real} | High ${data.totals.high} | Posting-lag hidden ${data.totals.info}`);
+  lines.push(`Losses to action (REAL) ${data.totals.real} | High ${data.totals.high}`);
   lines.push("");
   lines.push("CITY          ACC%   OPEN   PP   TOP GAP");
   for (const c of data.cities) {
