@@ -308,6 +308,31 @@ describe("Section 6 — variance ladder", () => {
     expect(v?.bucket).toBe("INFO");
   });
 
+  it("BULK collapse: one SO posted as many created-today units → ONE chase item, rest INFO", () => {
+    // A vendor truck / B2B bulk dispatch books many serials on one sale order
+    // (2026-07-21: a 157-unit SO produced 157 HIGH rows). One business event =
+    // one representative REAL row; the other units fold into the INFO tally.
+    const bulk = Array.from({ length: 6 }, (_, i) =>
+      r({ source: "ODOO", direction: "OUT", barcode: `BULKTV260700${i}${i}`, status: "done", createdOn: RUN, recordCreatedOn: RUN, soNumber: "ON-RET-BAN-77777", ticketId: "BAN/OUT/58096" })
+    );
+    const res = runReconciliation([...anchor(), ...bulk], "BANGALORE");
+    const real = res.variances.filter((v) => v.variance_name === VARIANCE.ODOO_ONLY_TODAY);
+    const folded = res.variances.filter(
+      (v) => v.variance_name === VARIANCE.ODOO_ONLY && v.so_number === "ON-RET-BAN-77777"
+    );
+    expect(real).toHaveLength(1);
+    expect(real[0].bucket).toBe("REAL");
+    expect(real[0].note).toContain("6 units");
+    expect(folded).toHaveLength(5);
+    expect(folded.every((v) => v.bucket === "INFO")).toBe(true);
+    // …while a small group (below the bulk threshold) stays per-unit REAL.
+    const small = Array.from({ length: 2 }, (_, i) =>
+      r({ source: "ODOO", direction: "OUT", barcode: `SMALLWM2607${i}${i}`, status: "done", createdOn: RUN, recordCreatedOn: RUN, soNumber: "ON-RET-BAN-88888", ticketId: "BAN/OUT/58097" })
+    );
+    const res2 = runReconciliation([...anchor(), ...small], "BANGALORE");
+    expect(res2.variances.filter((v) => v.variance_name === VARIANCE.ODOO_ONLY_TODAY)).toHaveLength(2);
+  });
+
   it("Odoo-only created today but floor logged the unit on an ADJACENT day → INFO (backlog entry)", () => {
     // The clerk typed up an earlier day's movement today — the floor documented
     // it on its own day (recentFloor), so this is a late entry, not a loss.

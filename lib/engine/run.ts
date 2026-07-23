@@ -321,6 +321,52 @@ export function runReconciliation(
   classifyViews(inViews, "IN");
   classifyViews(outViews, "OUT");
 
+  // Bulk-flow collapse: ONE sale order posted as MANY Odoo-only-created-today
+  // units is a single business event (a vendor truck received / a B2B bulk
+  // dispatch — measured 2026-07-21: one 157-unit ALTSTAR SO plus ZIOR receipt
+  // batches produced 377 separate HIGH rows). Keep ONE representative REAL
+  // chase item per (direction, SO) group and fold the rest into the INFO
+  // Odoo-only tally — a genuinely unverified bulk movement still surfaces,
+  // exactly once, with the unit count on the representative row.
+  const BULK_SO_MIN = 5;
+  {
+    const groups = new Map<string, number[]>();
+    variances.forEach((v, i) => {
+      if (v.variance_name !== VARIANCE.ODOO_ONLY_TODAY) return;
+      const so = v.so_number?.trim();
+      if (!so) return;
+      const k = `${v.direction}::${so.toUpperCase()}`;
+      const list = groups.get(k) ?? [];
+      list.push(i);
+      groups.set(k, list);
+    });
+    for (const idxs of Array.from(groups.values())) {
+      if (idxs.length < BULK_SO_MIN) continue;
+      const rep = variances[idxs[0]];
+      variances[idxs[0]] = {
+        ...rep,
+        note: `${rep.note} This SO covers ${idxs.length} units posted together — verify the bulk movement once; the other units are tallied under INFO.`,
+      };
+      for (const i of idxs.slice(1)) {
+        const row = variances[i];
+        variances[i] = applyBucket({
+          barcode: row.barcode,
+          city: row.city,
+          direction: row.direction,
+          variance_name: VARIANCE.ODOO_ONLY,
+          priority: "High",
+          ticket_id: row.ticket_id,
+          so_number: row.so_number,
+          customer: row.customer,
+          product: row.product,
+          job_type: row.job_type,
+          date: row.date,
+          note: `Part of a ${idxs.length}-unit bulk posting on SO ${row.so_number} — represented by a single chase item.`,
+        });
+      }
+    }
+  }
+
   // PP boxes and spares/consumables are count-only movements (packing boxes are
   // free-text counts, spares aren't barcode-reconciled) — they are NOT variances.
   // Surface them as per-city counts (summary) instead of flooding the INFO list.
