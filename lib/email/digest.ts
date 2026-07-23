@@ -105,6 +105,19 @@ export async function buildDigestFromDb(
   db: SupabaseClient,
   businessDate: string
 ): Promise<DigestData> {
+  // Scope to the LATEST successful run of the date — the same run the
+  // dashboard KPIs count. Without this the digest tallied rows from EVERY run
+  // of the date, stale strays included (2026-07-21: emailed "563 to action"
+  // while the run held 555 and the dashboard showed its own truncated count).
+  const { data: runs } = await db
+    .from("reconciliation_runs")
+    .select("id")
+    .eq("business_date", businessDate)
+    .in("status", ["success", "partial"])
+    .order("created_at", { ascending: false })
+    .limit(1);
+  const runId = runs?.[0]?.id as string | undefined;
+
   let rows: {
     city: string;
     bucket: string;
@@ -114,11 +127,12 @@ export async function buildDigestFromDb(
   }[] = [];
   let from = 0;
   for (;;) {
-    const { data, error } = await db
+    let q = db
       .from("variances")
       .select("city,bucket,priority,status,variance_name")
-      .eq("business_date", businessDate)
-      .range(from, from + 999);
+      .eq("business_date", businessDate);
+    if (runId) q = q.eq("run_id", runId);
+    const { data, error } = await q.range(from, from + 999);
     if (error) throw new Error(`buildDigestFromDb: ${error.message}`);
     rows = rows.concat(data ?? []);
     if (!data || data.length < 1000) break;

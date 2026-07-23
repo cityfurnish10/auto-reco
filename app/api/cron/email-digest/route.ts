@@ -53,12 +53,17 @@ async function handle(req: NextRequest) {
     console.warn("scheduled email drain failed:", err instanceof Error ? err.message : err);
   }
 
-  // Resolve the run to report: explicit ?date=, else the latest reconciled one.
+  // Resolve the run to report: explicit ?date=, else the latest reconciled
+  // BUSINESS date. Ordered by business_date (then created_at) — NOT created_at
+  // alone: the nightly D-1 re-run is created a minute after the day's own run,
+  // so latest-created would always pick yesterday's re-run and the morning
+  // digest would report the day before yesterday.
   const dateParam = req.nextUrl.searchParams.get("date");
   let query = db
     .from("reconciliation_runs")
     .select("id, business_date")
     .in("status", ["success", "partial"])
+    .order("business_date", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(1);
   if (dateParam) query = query.eq("business_date", dateParam);
