@@ -99,11 +99,20 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const { data: variances, error: varErr } = await supabase
-    .from("variances")
-    .select("city, status, priority, bucket")
-    .eq("run_id", run.id);
-  if (varErr) return NextResponse.json({ error: varErr.message }, { status: 500 });
+  // Paginate — PostgREST silently caps un-ranged selects at 1000 rows, which
+  // made the KPI cards truncate large runs (2026-07-21: 1578 rows → the cards
+  // showed the first 1000, "169 REAL", while the run actually held 555).
+  let variances: { city: string; status: string; priority: string; bucket: string }[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data: page, error: varErr } = await supabase
+      .from("variances")
+      .select("city, status, priority, bucket")
+      .eq("run_id", run.id)
+      .range(from, from + 999);
+    if (varErr) return NextResponse.json({ error: varErr.message }, { status: 500 });
+    variances = variances.concat(page ?? []);
+    if (!page || page.length < 1000) break;
+  }
 
   const byCityMap = new Map<string, CityAgg>();
   const overall = emptyAgg("ALL");
