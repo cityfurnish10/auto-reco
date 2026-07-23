@@ -55,7 +55,9 @@ export function digestRecipients(): string[] {
 // for a future custom domain.
 const PROD_APP_URL = "https://auto-reco.vercel.app";
 
-function dashboardUrl(): string {
+// Exported so the preview route renders with the SAME link the real send uses
+// (it previously kept its own stale copy of this logic and drifted).
+export function dashboardUrl(): string {
   const base = process.env.NEXT_PUBLIC_APP_URL?.trim() || PROD_APP_URL;
   return `${base.replace(/\/$/, "")}/dashboard`;
 }

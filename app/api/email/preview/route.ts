@@ -7,18 +7,10 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { buildDigestFromDb, renderDigestHtml } from "@/lib/email/digest";
-import { digestRecipients } from "@/lib/email";
+import { dashboardUrl, digestRecipients } from "@/lib/email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function dashboardUrl(): string | undefined {
-  const explicit = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (explicit) return `${explicit.replace(/\/$/, "")}/dashboard`;
-  const vercel = process.env.VERCEL_URL?.trim();
-  if (vercel) return `https://${vercel}/dashboard`;
-  return undefined;
-}
 
 export async function GET() {
   const me = await getCurrentAppUser();
