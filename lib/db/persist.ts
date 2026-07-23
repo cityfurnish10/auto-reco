@@ -186,13 +186,21 @@ export async function resolveStaleOpenVariances(
       emittedBarcodes.add(`${v.direction}::${v.barcode}`);
     }
 
-    const { data, error } = await db
-      .from("variances")
-      .select("id, direction, barcode, variance_name")
-      .eq("business_date", runDate)
-      .eq("city", cr.city)
-      .eq("status", "open");
-    if (error) throw new Error(`resolveStaleOpenVariances select failed: ${error.message}`);
+    // Paginate — PostgREST caps un-ranged selects at 1000 rows and a big city's
+    // day can exceed that; a truncated read here would silently skip stale rows.
+    let data: { id: string; direction: string; barcode: string; variance_name: string }[] = [];
+    for (let from = 0; ; from += 1000) {
+      const { data: page, error } = await db
+        .from("variances")
+        .select("id, direction, barcode, variance_name")
+        .eq("business_date", runDate)
+        .eq("city", cr.city)
+        .eq("status", "open")
+        .range(from, from + 999);
+      if (error) throw new Error(`resolveStaleOpenVariances select failed: ${error.message}`);
+      data = data.concat(page ?? []);
+      if (!page || page.length < 1000) break;
+    }
 
     const supersededIds: string[] = [];
     const resolvedIds: string[] = [];
