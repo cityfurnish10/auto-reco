@@ -47,6 +47,10 @@ export default function EmailPreview() {
   const { users } = useUsers();
 
   const [recip, setRecip] = useState<RecipientState>(EMPTY_RECIPIENTS);
+  // Server-persisted list: hydrate once from /api/email/recipients, then
+  // autosave every change back (debounced) — so add/remove survives refresh
+  // and the nightly digest goes to the same curated list.
+  const [recipHydrated, setRecipHydrated] = useState(false);
   const [extraInput, setExtraInput] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -86,13 +90,43 @@ export default function EmailPreview() {
     refreshScheduled();
   }, [refreshScheduled]);
 
-  // Seed the default To set from the configured DIGEST_RECIPIENTS once loaded.
-  /* eslint-disable react-hooks/set-state-in-effect -- one-time seed from fetched defaults */
+  // Hydrate the saved recipient list first…
+  /* eslint-disable react-hooks/set-state-in-effect -- async hydrate from the saved config */
   useEffect(() => {
-    if (!data?.recipients?.length) return;
+    let live = true;
+    fetch("/api/email/recipients", { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : { state: null }))
+      .then((j) => {
+        if (!live) return;
+        if (j.state) setRecip(j.state as RecipientState);
+        setRecipHydrated(true);
+      })
+      .catch(() => live && setRecipHydrated(true)); // offline → behave like before
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // …then seed the env-default To set on top (skips saved removals/choices).
+  useEffect(() => {
+    if (!recipHydrated || !data?.recipients?.length) return;
     setRecip((prev) => seedDefaults(prev, data.recipients!));
-  }, [data]);
+  }, [data, recipHydrated]);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Autosave (debounced) — every add / remove / slot change persists.
+  useEffect(() => {
+    if (!recipHydrated) return;
+    const t = setTimeout(() => {
+      fetch("/api/email/recipients", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ state: recip }),
+      }).catch(() => {});
+    }, 600);
+    return () => clearTimeout(t);
+  }, [recip, recipHydrated]);
 
   const candidates = useMemo(
     () =>

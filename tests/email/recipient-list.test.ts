@@ -5,6 +5,7 @@ import {
   candidatesOf,
   listsOf,
   removeRecipient,
+  sanitizeRecipientState,
   seedDefaults,
   toggleSlot,
   type RecipientState,
@@ -97,5 +98,26 @@ describe("email recipient list — add / remove / slots", () => {
     const s = addRecipient(seeded(), ROSTER[0]).state; // manually adds a roster address
     const c = candidatesOf(s, DEFAULTS, ROSTER);
     expect(c.filter((e) => e === ROSTER[0])).toHaveLength(1);
+  });
+
+  it("sanitizeRecipientState: round-trips a valid state and strips garbage", () => {
+    let s: RecipientState = addRecipient(seeded(), "cfo@cityfurnish.com").state;
+    s = toggleSlot(s, DEFAULTS[0], "cc");
+    s = removeRecipient(s, DEFAULTS[1]);
+    // a valid state survives a JSON round-trip untouched
+    expect(sanitizeRecipientState(JSON.parse(JSON.stringify(s)))).toEqual(s);
+    // garbage payloads collapse to a safe empty state
+    for (const bad of [null, 42, "x", [], { slots: "nope", extra: 7, removed: {} }]) {
+      expect(sanitizeRecipientState(bad)).toEqual(EMPTY_RECIPIENTS);
+    }
+    // invalid emails, bogus slot values and duplicates are dropped/normalized
+    const dirty = sanitizeRecipientState({
+      slots: { "ops@cityfurnish.com": "to", "not-an-email": "to", "x@y.com": "boss" },
+      extra: ["a@b.co", "a@b.co", "junk", 5],
+      removed: ["gone@x.io", "  "],
+    });
+    expect(dirty.slots).toEqual({ "ops@cityfurnish.com": "to", "x@y.com": null });
+    expect(dirty.extra).toEqual(["a@b.co"]);
+    expect(dirty.removed).toEqual(["gone@x.io"]);
   });
 });

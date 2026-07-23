@@ -94,3 +94,28 @@ export function listsOf(state: RecipientState): { to: string[]; cc: string[]; bc
       .map(([e]) => e);
   return { to: pick("to"), cc: pick("cc"), bcc: pick("bcc") };
 }
+
+// Coerce an untrusted payload (API body / stored JSON) into a valid
+// RecipientState: only well-formed email keys, only known slot values,
+// dedup, and hard caps so a bad write can never balloon the stored config.
+export function sanitizeRecipientState(raw: unknown): RecipientState {
+  const out: RecipientState = { slots: {}, extra: [], removed: [] };
+  if (!raw || typeof raw !== "object") return out;
+  const r = raw as Partial<Record<keyof RecipientState, unknown>>;
+
+  const MAX = 200;
+  if (r.slots && typeof r.slots === "object") {
+    for (const [email, slot] of Object.entries(r.slots as Record<string, unknown>)) {
+      const e = email.trim();
+      if (!EMAIL_RE.test(e) || Object.keys(out.slots).length >= MAX) continue;
+      out.slots[e] = slot === "to" || slot === "cc" || slot === "bcc" ? slot : null;
+    }
+  }
+  const cleanList = (v: unknown): string[] =>
+    Array.isArray(v)
+      ? [...new Set(v.filter((x): x is string => typeof x === "string").map((x) => x.trim()).filter((x) => EMAIL_RE.test(x)))].slice(0, MAX)
+      : [];
+  out.extra = cleanList(r.extra);
+  out.removed = cleanList(r.removed);
+  return out;
+}

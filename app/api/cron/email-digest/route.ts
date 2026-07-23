@@ -14,6 +14,7 @@ import {
   sendReconciliationDigest,
   isEmailConfigured,
 } from "@/lib/email";
+import { storedDigestLists } from "@/lib/email/recipient-store";
 import { drainScheduledEmails } from "@/lib/email/scheduled";
 import { saveEmailLog } from "@/lib/db/persist";
 
@@ -77,7 +78,10 @@ async function handle(req: NextRequest) {
   const date = run.business_date as string;
 
   const digest = await buildDigestFromDb(db, date);
-  const result = await sendReconciliationDigest(digest);
+  // Recipients: the admin-curated list saved from the compose panel wins;
+  // DIGEST_RECIPIENTS env stays the fallback for a fresh setup.
+  const stored = await storedDigestLists(db).catch(() => null);
+  const result = await sendReconciliationDigest(digest, stored ?? {});
 
   // Audit the send for the System Health timeline (best-effort).
   await saveEmailLog(db, {
