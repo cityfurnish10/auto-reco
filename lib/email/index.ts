@@ -49,12 +49,15 @@ export function digestRecipients(): string[] {
   return fallback ? [fallback] : [];
 }
 
-function dashboardUrl(): string | undefined {
-  const explicit = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (explicit) return `${explicit.replace(/\/$/, "")}/dashboard`;
-  const vercel = process.env.VERCEL_URL?.trim();
-  if (vercel) return `https://${vercel}/dashboard`;
-  return undefined;
+// The link recipients click — always the stable production domain, never
+// VERCEL_URL (that is the per-deployment URL: deployment-protected, so email
+// recipients would hit a 403/login wall). NEXT_PUBLIC_APP_URL still overrides
+// for a future custom domain.
+const PROD_APP_URL = "https://auto-reco.vercel.app";
+
+function dashboardUrl(): string {
+  const base = process.env.NEXT_PUBLIC_APP_URL?.trim() || PROD_APP_URL;
+  return `${base.replace(/\/$/, "")}/dashboard`;
 }
 
 export async function sendReconciliationDigest(
