@@ -61,6 +61,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
   const [page, setPage] = useState(1);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<{ id: string; product: string; barcode: string } | null>(null);
+  const [resolving, setResolving] = useState<{ id: string; product: string; barcode: string } | null>(null);
 
   // Debounce the search box; a search finds across all buckets/statuses.
   useEffect(() => {
@@ -165,6 +166,20 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
       refetchStats();
     } catch (e) {
       alert(`Could not reject: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+
+  // Admin resolves a variance directly — closes it with a reason + comment,
+  // no manager submission needed (the API's admin-only "close" action).
+  async function handleResolve(reason: string, note: string) {
+    if (!resolving) return;
+    try {
+      await patchVariance(resolving.id, "close", reason || undefined, note);
+      setResolving(null);
+      refetch();
+      refetchStats();
+    } catch (e) {
+      alert(`Could not resolve: ${e instanceof Error ? e.message : e}`);
     }
   }
 
@@ -417,15 +432,25 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     <Icon name="close" size={16} /> Reject
                   </button>
                 </div>
-              ) : v.status === "open" ? (
-                <button
-                  onClick={() => dispute(v.id)}
-                  disabled={busyId === v.id}
-                  className="btn btn-compact btn-secondary w-full mt-1 disabled:opacity-40"
-                >
-                  <Icon name="flag" size={16} />
-                  Dispute
-                </button>
+              ) : v.status === "open" || v.status === "in_progress" ? (
+                <div className="flex gap-2 mt-1">
+                  <button
+                    onClick={() => setResolving({ id: v.id, product: v.product ?? "", barcode: v.barcode })}
+                    disabled={busyId === v.id}
+                    className="btn btn-compact btn-primary flex-1 disabled:opacity-40"
+                  >
+                    <Icon name="task_alt" size={16} /> Resolve
+                  </button>
+                  {v.status === "open" && (
+                    <button
+                      onClick={() => dispute(v.id)}
+                      disabled={busyId === v.id}
+                      className="btn btn-compact btn-secondary flex-1 disabled:opacity-40"
+                    >
+                      <Icon name="flag" size={16} /> Dispute
+                    </button>
+                  )}
+                </div>
               ) : null}
             </div>
           ))}
@@ -503,18 +528,30 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                           <Icon name="close" size={18} />
                         </button>
                       </div>
-                    ) : v.status === "open" ? (
-                      <button
-                        onClick={() => dispute(v.id)}
-                        disabled={busyId === v.id}
-                        title="Flag as disputed — escalate to city manager"
-                        className="btn-icon row-action hover:text-danger disabled:opacity-40"
-                      >
-                        <Icon name="flag" size={18} />
-                      </button>
+                    ) : v.status === "open" || v.status === "in_progress" ? (
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          onClick={() => setResolving({ id: v.id, product: v.product ?? "", barcode: v.barcode })}
+                          disabled={busyId === v.id}
+                          title="Resolve — close with a reason and comment"
+                          className="btn-icon hover:text-success disabled:opacity-40"
+                        >
+                          <Icon name="task_alt" size={18} />
+                        </button>
+                        {v.status === "open" && (
+                          <button
+                            onClick={() => dispute(v.id)}
+                            disabled={busyId === v.id}
+                            title="Flag as disputed — escalate to city manager"
+                            className="btn-icon row-action hover:text-danger disabled:opacity-40"
+                          >
+                            <Icon name="flag" size={18} />
+                          </button>
+                        )}
+                      </div>
                     ) : (
                       <span className="text-text-disabled inline-flex p-1" title={v.status}>
-                        <Icon name={v.status === "closed" ? "task_alt" : "flag"} size={18} />
+                        <Icon name="task_alt" size={18} />
                       </span>
                     )}
                   </td>
@@ -559,6 +596,18 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
           notePlaceholder="Explain why this is being sent back to the manager…"
           onConfirm={handleReject}
           onCancel={() => setRejecting(null)}
+        />
+      )}
+
+      {resolving && (
+        <CloseVarianceModal
+          itemName={resolving.product}
+          itemCode={resolving.barcode}
+          title="Resolve Variance"
+          confirmLabel="Resolve & Close"
+          notePlaceholder="Add a comment about how this was resolved…"
+          onConfirm={handleResolve}
+          onCancel={() => setResolving(null)}
         />
       )}
 
