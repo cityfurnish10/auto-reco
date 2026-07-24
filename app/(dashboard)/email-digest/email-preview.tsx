@@ -307,7 +307,10 @@ export default function EmailPreview() {
         <div className="card p-4 bg-danger-soft border border-danger/20 text-sm text-danger font-semibold">{error}</div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start">
+      {/* minmax(0,1fr) lets the preview column SHRINK below its content width —
+          without it the 600px email iframe forces horizontal page scroll on
+          smaller screens. */}
+      <div className="grid grid-cols-1 lg:grid-cols-[380px_minmax(0,1fr)] gap-6 items-start">
         {/* Compose panel */}
         <div className="space-y-4">
           <section className="card p-4 space-y-4">
@@ -321,7 +324,7 @@ export default function EmailPreview() {
                 <p className="p-3 text-xs text-text-muted">No recipients yet — add one below.</p>
               )}
               {candidates.map((email) => (
-                <div key={email} className="flex items-center justify-between gap-2 p-2.5">
+                <div key={email} className="flex flex-wrap items-center justify-between gap-2 p-2.5">
                   <div className="min-w-0">
                     <p className="text-sm text-text-primary truncate">{nameFor(email) || email}</p>
                     {nameFor(email) && <p className="text-xs text-text-muted truncate">{email}</p>}
@@ -541,8 +544,8 @@ export default function EmailPreview() {
               <iframe
                 title="Archived email"
                 srcDoc={viewing.html}
-                className="w-full block"
-                style={{ height: "760px", border: "none", background: "#f3f4f6" }}
+                className="w-full block h-[65vh] min-h-[420px] lg:h-[760px]"
+                style={{ border: "none", background: "#f3f4f6" }}
               />
             </div>
           ) : loading ? (
@@ -561,8 +564,8 @@ export default function EmailPreview() {
               <iframe
                 title="Email digest preview"
                 srcDoc={data?.html ?? ""}
-                className="w-full block"
-                style={{ height: "760px", border: "none", background: "#f3f4f6" }}
+                className="w-full block h-[65vh] min-h-[420px] lg:h-[760px]"
+                style={{ border: "none", background: "#f3f4f6" }}
               />
             </div>
           )}
