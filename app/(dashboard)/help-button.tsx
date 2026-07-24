@@ -67,8 +67,10 @@ const HELP: Record<string, Help> = {
     blurb:
       "Compose, preview, and send the daily reconciliation digest — the same report that goes out automatically each morning.",
     points: [
-      "Pick recipients (To / Cc / Bcc) from your team and add an optional note that appears in the email.",
+      "Pick recipients (To / Cc / Bcc) from your team and add an optional note that appears in the email — the list is saved and also drives the daily 9 AM digest.",
       "Send Now, or Schedule it to go out 1–3 days later — optionally only once all REAL variances are closed.",
+      "Follow-up send: pick a past day, see how many of its losses are closed vs still open, add a note, and re-send that day's report — rebuilt from the latest data — to the same recipients.",
+      "Sent emails keeps a 30-day archive — pick a date and click any email to view exactly what was delivered.",
       "The preview is the exact email that will be delivered.",
     ],
   },
