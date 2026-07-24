@@ -77,7 +77,13 @@ export async function runReconcilePipeline(
       console.warn("loadRecentFloorBarcodes failed:", e instanceof Error ? e.message : e);
       return {};
     });
-    const run = runAllCities(rowsByCity, new Date(), reportedByCity, recentFloorByCity);
+    // runDate doubles as the engine's fallback date: a city with no register
+    // upload AND a quiet DT (no derivable dates) still reconciles its other
+    // sources against the requested day instead of failing.
+    const run = runAllCities(rowsByCity, new Date(), reportedByCity, recentFloorByCity, runDate);
+    for (const s of run.skipped) {
+      console.warn(`reconcile skipped ${s.city}: ${s.error}`);
+    }
 
     // 4. Upsert variances (dedup key; human closures/approvals preserved).
     const variancesUpserted = await upsertVariances(db, runId, run.perCity);
@@ -98,8 +104,9 @@ export async function runReconcilePipeline(
     // 5. Log ingestion health per source.
     await saveIngestionLogs(db, runId, results);
 
-    // 6. Finalize — partial if any source didn't return.
-    const status = presentSources === results.length ? "success" : "partial";
+    // 6. Finalize — partial if any source didn't return or any city was skipped.
+    const status =
+      presentSources === results.length && run.skipped.length === 0 ? "success" : "partial";
     await finalizeRun(db, runId, run, status);
 
     // 7. Retention backstop.

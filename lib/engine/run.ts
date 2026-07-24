@@ -76,13 +76,29 @@ export function runReconciliation(
   // adjacent day is an echo (register page spanning days / late write-up), and
   // an Odoo record created today for a floor-documented earlier movement is a
   // backlog entry — neither is a loss.
-  recentFloor: ReadonlySet<string> = new Set()
+  recentFloor: ReadonlySet<string> = new Set(),
+  // The date the caller INTENDS to reconcile (the pipeline always knows it).
+  // Used when Section-3 derivation has nothing to work from — a city whose
+  // register wasn't uploaded AND whose DT was quiet still reconciles its
+  // Sheet+Odoo rows against this date instead of throwing.
+  fallbackDate?: string
 ): CityRunResult {
   const warnings: string[] = [];
   const rows = allRows;
 
-  // Section 3 — derive the run date (throws if unparseable).
-  const runDate = deriveRunDate(rows);
+  // Section 3 — derive the run date. Derivation reads physical/DT dates; when
+  // neither source has a parseable date the intended date (if supplied) takes
+  // over, so a no-register no-DT day still reconciles the remaining sources.
+  let runDate: string;
+  try {
+    runDate = deriveRunDate(rows);
+  } catch (err) {
+    if (!fallbackDate) throw err;
+    runDate = fallbackDate;
+    warnings.push(
+      `Run-date derivation had no physical/DT dates — using the requested date ${fallbackDate}.`
+    );
+  }
 
   // Section 4 — window the Odoo rows for this city (posting-date based).
   const odooRaw = rows.filter((r) => r.source === "ODOO");
@@ -433,6 +449,9 @@ export interface MultiCityRun {
   ranAt: string;
   date: string;
   perCity: CityRunResult[];
+  // Cities whose reconciliation threw (bad dates with no fallback, etc.) —
+  // isolated so one broken city can never take down the other four.
+  skipped: { city: City; error: string }[];
   combined: {
     total: number;
     real_count: number;
@@ -446,20 +465,29 @@ export function runAllCities(
   rowsByCity: Record<City, SourceRow[]>,
   now: Date = new Date(),
   reportedByCity?: Partial<Record<City, ReportedSources>>,
-  recentFloorByCity?: Partial<Record<City, ReadonlySet<string>>>
+  recentFloorByCity?: Partial<Record<City, ReadonlySet<string>>>,
+  fallbackDate?: string
 ): MultiCityRun {
   const perCity: CityRunResult[] = [];
+  const skipped: { city: City; error: string }[] = [];
   for (const city of CITIES) {
     const rows = rowsByCity[city];
     if (!rows || rows.length === 0) continue;
-    perCity.push(
-      runReconciliation(
-        rows,
-        city,
-        reportedByCity?.[city] ?? ALL_REPORTED,
-        recentFloorByCity?.[city] ?? new Set()
-      )
-    );
+    // Per-city isolation: a city that cannot reconcile (e.g. unparseable dates
+    // and no fallback) is reported as skipped — the other cities still run.
+    try {
+      perCity.push(
+        runReconciliation(
+          rows,
+          city,
+          reportedByCity?.[city] ?? ALL_REPORTED,
+          recentFloorByCity?.[city] ?? new Set(),
+          fallbackDate
+        )
+      );
+    } catch (err) {
+      skipped.push({ city, error: err instanceof Error ? err.message : String(err) });
+    }
   }
 
   const by_variance: Record<string, number> = {};
@@ -479,8 +507,9 @@ export function runAllCities(
 
   return {
     ranAt: now.toISOString(),
-    date: perCity[0]?.date ?? "",
+    date: perCity[0]?.date ?? fallbackDate ?? "",
     perCity,
+    skipped,
     combined: { total, real_count, info_count, high_priority, by_variance },
   };
 }

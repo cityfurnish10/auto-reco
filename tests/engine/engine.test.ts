@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseDate, deriveRunDate, addDays } from "../../lib/engine/dates";
 import { canonicalize, isValidBarcode, isSpareOrConsumable } from "../../lib/engine/barcode";
 import { normalizeStatus } from "../../lib/engine/util";
-import { runReconciliation } from "../../lib/engine/run";
+import { runAllCities, runReconciliation } from "../../lib/engine/run";
 import { buildSampleRowsByCity } from "../../lib/sample-raw-sources";
 import { VARIANCE } from "../../lib/engine/variance-names";
 import type { SourceRow } from "../../lib/engine/types";
@@ -48,6 +48,42 @@ describe("Section 3 — date parsing & run-date derivation", () => {
   it("throws when no date can be parsed (never silent wrong-day)", () => {
     const rows = [r({ source: "PHYSICAL", direction: "OUT", barcode: "AAAAA", date: "garbage" })];
     expect(() => deriveRunDate(rows)).toThrow(/Run-date derivation failed/);
+  });
+
+  it("no-register + no-DT city: reconciles Sheet+Odoo against the caller's fallback date", () => {
+    // Register not uploaded and DT quiet → nothing to derive the run date from.
+    // With the pipeline's intended date supplied, the remaining sources still
+    // reconcile (previously this threw and killed the whole run).
+    const rows = [
+      r({ source: "SHEET", direction: "OUT", barcode: "SOFANOREG1", status: "done" }),
+      r({ source: "ODOO", direction: "OUT", barcode: "SOFANOREG1", status: "done", createdOn: RUN }),
+    ];
+    const rep = { P: false, S: true, D: false, O: true };
+    // without a fallback the old contract still holds…
+    expect(() => runReconciliation(rows, "MUMBAI", rep)).toThrow(/Run-date derivation failed/);
+    // …with the fallback it reconciles against the requested day.
+    const res = runReconciliation(rows, "MUMBAI", rep, new Set(), RUN);
+    expect(res.date).toBe(RUN);
+    expect(res.summary.movements).toBe(1);
+    expect(res.warnings.some((w) => w.includes("using the requested date"))).toBe(true);
+  });
+
+  it("one broken city cannot take down the others (runAllCities isolation)", () => {
+    const rowsByCity = {
+      MUMBAI: [
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "GOODCITY01", status: "done", date: RUN }),
+        r({ source: "SHEET", direction: "OUT", barcode: "GOODCITY01", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "GOODCITY01", status: "done", date: RUN }),
+        r({ source: "ODOO", direction: "OUT", barcode: "GOODCITY01", status: "done", createdOn: RUN }),
+      ],
+      // garbage dates, and no fallback passed → this city throws internally
+      DELHI: [r({ source: "PHYSICAL", direction: "OUT", barcode: "BADCITY001", status: "done", date: "garbage" })],
+    } as Parameters<typeof runAllCities>[0];
+    const run = runAllCities(rowsByCity);
+    expect(run.perCity.map((c) => c.city)).toEqual(["MUMBAI"]);
+    expect(run.skipped).toHaveLength(1);
+    expect(run.skipped[0].city).toBe("DELHI");
+    expect(run.skipped[0].error).toMatch(/Run-date derivation failed/);
   });
 
   it("addDays crosses month boundaries", () => {
