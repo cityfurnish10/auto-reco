@@ -5,7 +5,7 @@
 // user roster, add an admin note, and either Send Now or Schedule a deferred
 // send (e.g. 2 days later, once the variances are resolved).
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
 import { useUsers } from "@/lib/hooks/use-users";
 import {
@@ -27,6 +27,29 @@ interface PreviewData {
   html?: string;
   recipients?: string[];
 }
+
+// One row of the sent-email archive (email_logs metadata for one send).
+interface ArchiveRow {
+  id: string;
+  kind: string;
+  business_date: string | null;
+  status: string;
+  recipients: string[];
+  created_at: string;
+  error?: string | null;
+}
+
+interface ArchivedView {
+  id: string;
+  subject: string;
+  html: string;
+  archived: boolean;
+  createdAt: string;
+}
+
+// Today as an IST calendar date — the archive is bucketed by IST send day, and
+// the client's local timezone must not shift the default.
+const istToday = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
 
 const SLOT_STATUS: Record<string, string> = {
   pending: "badge badge-medium",
@@ -60,6 +83,15 @@ export default function EmailPreview() {
   const [scheduling, setScheduling] = useState(false);
   const [scheduled, setScheduled] = useState<ScheduledEmailDB[]>([]);
 
+  // Sent-email archive: pick an IST day → list that day's sends → view one.
+  const [archiveDate, setArchiveDate] = useState(istToday);
+  const [archiveList, setArchiveList] = useState<ArchiveRow[]>([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [viewing, setViewing] = useState<ArchivedView | null>(null);
+  const [viewingLoading, setViewingLoading] = useState<string | null>(null);
+  const [archiveRefresh, setArchiveRefresh] = useState(0); // bump to reload the list
+  const archiveSeq = useRef(0); // stale-guard for fast date flips
+
   /* eslint-disable react-hooks/set-state-in-effect -- async-fetch loading toggle */
   useEffect(() => {
     let live = true;
@@ -89,6 +121,44 @@ export default function EmailPreview() {
   useEffect(() => {
     refreshScheduled();
   }, [refreshScheduled]);
+
+  // Load the archive list for the picked day. The seq guard ensures a fast
+  // date flip can't let an older (slower) response overwrite a newer one.
+  /* eslint-disable react-hooks/set-state-in-effect -- async list fetch */
+  useEffect(() => {
+    const seq = ++archiveSeq.current;
+    setArchiveLoading(true);
+    fetch(`/api/email/archive?date=${archiveDate}`, { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : { data: [] }))
+      .then((j) => {
+        if (archiveSeq.current !== seq) return; // stale
+        setArchiveList(j.data ?? []);
+      })
+      .catch(() => archiveSeq.current === seq && setArchiveList([]))
+      .finally(() => archiveSeq.current === seq && setArchiveLoading(false));
+  }, [archiveDate, archiveRefresh]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Open one sent email in the right-hand pane.
+  async function openArchived(id: string) {
+    setViewingLoading(id);
+    try {
+      const res = await fetch(`/api/email/archive/${id}`, { credentials: "same-origin" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      setViewing({
+        id,
+        subject: json.subject ?? "",
+        html: json.html ?? "",
+        archived: !!json.archived,
+        createdAt: json.createdAt ?? "",
+      });
+    } catch (err) {
+      flash(`Could not load email: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setViewingLoading(null);
+    }
+  }
 
   // Hydrate the saved recipient list first…
   /* eslint-disable react-hooks/set-state-in-effect -- async hydrate from the saved config */
@@ -175,6 +245,7 @@ export default function EmailPreview() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
       flash(`Digest for ${json.date} sent to ${(json.recipients ?? []).join(", ")}.`);
+      setArchiveRefresh((n) => n + 1); // the new send appears in "Sent emails"
     } catch (err) {
       flash(`Send failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -394,11 +465,87 @@ export default function EmailPreview() {
               </div>
             </section>
           )}
+
+          {/* Sent-email archive — pick a day, view any email that went out */}
+          <section className="card p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-headline text-base text-text-primary">Sent emails</h2>
+              <input
+                type="date"
+                value={archiveDate}
+                max={istToday()}
+                onChange={(e) => setArchiveDate(e.target.value)}
+                className="input-clean w-40 cursor-pointer"
+                title="Show emails sent on this day (kept 30 days)"
+              />
+            </div>
+            {archiveLoading ? (
+              <p className="text-xs text-text-muted py-2">Loading…</p>
+            ) : archiveList.length === 0 ? (
+              <p className="text-xs text-text-muted py-2">No emails sent on this day.</p>
+            ) : (
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {archiveList.map((m) => {
+                  const clickable = m.status === "sent";
+                  const selected = viewing?.id === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => clickable && openArchived(m.id)}
+                      disabled={!clickable || viewingLoading === m.id}
+                      className={`w-full text-left flex items-center justify-between gap-2 text-xs border rounded-control p-2.5 transition-colors ${
+                        selected
+                          ? "border-accent bg-accent-soft"
+                          : "border-border"
+                      } ${clickable ? "hover:border-accent cursor-pointer" : "opacity-60 cursor-default"}`}
+                      title={clickable ? "View this email" : m.error ?? m.status}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-text-primary font-medium">
+                          {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          {m.business_date && <span className="text-text-muted font-normal"> · report for {m.business_date}</span>}
+                        </p>
+                        <p className="text-text-muted truncate">to {recipientSummary(m.recipients)}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="badge badge-suppressed uppercase">{m.kind}</span>
+                        <span className={`${SLOT_STATUS[m.status] ?? "badge"} uppercase`}>
+                          {viewingLoading === m.id ? "…" : m.status}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <p className="text-[11px] text-text-disabled">Sent emails are archived for 30 days.</p>
+          </section>
         </div>
 
-        {/* Preview */}
+        {/* Preview / archived-email viewer */}
         <div>
-          {loading ? (
+          {viewing ? (
+            <div className="card overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-border bg-surface-elevated flex flex-wrap items-center justify-between gap-2 text-xs text-text-muted">
+                <span className="min-w-0 truncate">
+                  <b className="text-text-secondary">{viewing.subject || "Sent email"}</b>
+                  {viewing.createdAt && <> · sent {new Date(viewing.createdAt).toLocaleString()}</>}
+                  {!viewing.archived && (
+                    <span className="text-warning"> · re-rendered from current data — may differ from the delivered email</span>
+                  )}
+                </span>
+                <button onClick={() => setViewing(null)} className="btn btn-compact btn-secondary shrink-0">
+                  <Icon name="arrow_back" size={14} /> Back to live preview
+                </button>
+              </div>
+              <iframe
+                title="Archived email"
+                srcDoc={viewing.html}
+                className="w-full block"
+                style={{ height: "760px", border: "none", background: "#f3f4f6" }}
+              />
+            </div>
+          ) : loading ? (
             <div className="card p-12 text-center text-text-muted">Loading preview…</div>
           ) : data?.empty ? (
             <div className="card p-12 text-center text-text-muted">

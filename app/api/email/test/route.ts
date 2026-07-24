@@ -14,6 +14,7 @@ import {
   sendReconciliationDigest,
   isEmailConfigured,
 } from "@/lib/email";
+import { saveEmailArchive } from "@/lib/email/email-archive";
 import { saveEmailLog } from "@/lib/db/persist";
 
 export const runtime = "nodejs";
@@ -78,8 +79,9 @@ export async function POST(req: NextRequest) {
   const digest = await buildDigestFromDb(db, date);
   const result = await sendReconciliationDigest(digest, { to, cc, bcc, notes });
 
-  // Audit the send for the System Health timeline (best-effort).
-  await saveEmailLog(db, {
+  // Audit the send for the System Health timeline (best-effort), then snapshot
+  // the delivered email into the 30-day archive (also best-effort).
+  const logId = await saveEmailLog(db, {
     kind: "test",
     businessDate: date,
     status: result.sent ? "sent" : result.error ? "failed" : "skipped",
@@ -90,13 +92,21 @@ export async function POST(req: NextRequest) {
     sentBy: me.id,
     messageId: result.messageId ?? null,
     error: result.error ?? result.skipped ?? null,
-  }).catch(() => {});
+  }).catch(() => null);
+  if (logId && result.sent && result.html) {
+    await saveEmailArchive(db, logId, {
+      subject: result.subject ?? "",
+      html: result.html,
+    }).catch(() => {});
+  }
 
+  // Strip the rendered body from the response — it's archived, not API payload.
+  const { html: _html, subject: _subject, ...meta } = result;
   if (!result.sent) {
     return NextResponse.json(
-      { error: result.error ?? result.skipped ?? "send failed", ...result },
+      { error: result.error ?? result.skipped ?? "send failed", ...meta },
       { status: 502 }
     );
   }
-  return NextResponse.json({ ok: true, date, ...result });
+  return NextResponse.json({ ok: true, date, ...meta });
 }

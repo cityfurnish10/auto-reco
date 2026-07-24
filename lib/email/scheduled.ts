@@ -6,6 +6,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildDigestFromDb, sendReconciliationDigest } from "./index";
+import { saveEmailArchive } from "./email-archive";
 import { saveEmailLog } from "../db/persist";
 import type { ScheduledEmailDB } from "../db/schema";
 
@@ -103,6 +104,13 @@ export async function drainScheduledEmails(db: SupabaseClient, nowIso: string): 
         messageId: result.messageId ?? null,
         error: result.error ?? result.skipped ?? null,
       }).catch(() => null);
+      // Snapshot the delivered email into the 30-day archive (best-effort).
+      if (logId && result.sent && result.html) {
+        await saveEmailArchive(db, logId, {
+          subject: result.subject ?? "",
+          html: result.html,
+        }).catch(() => {});
+      }
 
       await db
         .from("scheduled_emails")

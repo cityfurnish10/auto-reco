@@ -15,6 +15,7 @@ import {
   isEmailConfigured,
 } from "@/lib/email";
 import { storedDigestLists } from "@/lib/email/recipient-store";
+import { saveEmailArchive, pruneEmailArchive } from "@/lib/email/email-archive";
 import { drainScheduledEmails } from "@/lib/email/scheduled";
 import { saveEmailLog } from "@/lib/db/persist";
 
@@ -83,8 +84,9 @@ async function handle(req: NextRequest) {
   const stored = await storedDigestLists(db).catch(() => null);
   const result = await sendReconciliationDigest(digest, stored ?? {});
 
-  // Audit the send for the System Health timeline (best-effort).
-  await saveEmailLog(db, {
+  // Audit the send for the System Health timeline (best-effort), then snapshot
+  // the delivered email into the 30-day archive (also best-effort).
+  const logId = await saveEmailLog(db, {
     runId: run.id as string,
     kind: "digest",
     businessDate: date,
@@ -92,9 +94,38 @@ async function handle(req: NextRequest) {
     recipients: result.recipients ?? [],
     messageId: result.messageId ?? null,
     error: result.error ?? result.skipped ?? null,
-  }).catch(() => {});
+  }).catch(() => null);
+  if (logId && result.sent && result.html) {
+    await saveEmailArchive(db, logId, {
+      subject: result.subject ?? "",
+      html: result.html,
+    }).catch(() => {});
+  }
 
-  return NextResponse.json({ ok: true, date, ...result, scheduled });
+  // 30-day retention: prune old email logs + their archived documents.
+  // Best-effort and capped per run — must never fail the daily send. The
+  // scheduled_emails FK is ON DELETE SET NULL, so row deletion is safe.
+  let pruned = 0;
+  try {
+    const cutoff = new Date(Date.now() - 30 * 86400e3).toISOString();
+    const { data: old } = await db
+      .from("email_logs")
+      .select("id")
+      .lt("created_at", cutoff)
+      .limit(200);
+    const ids = (old ?? []).map((r) => r.id as string);
+    if (ids.length > 0) {
+      await pruneEmailArchive(db, ids); // files first — a failed row-delete retries next run
+      const { error: delErr } = await db.from("email_logs").delete().in("id", ids);
+      if (!delErr) pruned = ids.length;
+    }
+  } catch {
+    /* retention is a backstop — never fail the response */
+  }
+
+  // Strip the rendered body from the response — it's archived, not API payload.
+  const { html: _html, subject: _subject, ...meta } = result;
+  return NextResponse.json({ ok: true, date, ...meta, scheduled, pruned });
 }
 
 export async function GET(req: NextRequest) {

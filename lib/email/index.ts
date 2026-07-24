@@ -35,6 +35,10 @@ export interface SendResult {
   cc?: string[];
   bcc?: string[];
   messageId?: string;
+  // The exact rendered email, returned on success so callers can archive the
+  // delivered content (see lib/email/email-archive.ts).
+  subject?: string;
+  html?: string;
 }
 
 export function digestRecipients(): string[] {
@@ -83,17 +87,22 @@ export async function sendReconciliationDigest(
     return { sent: false, skipped: "transport unavailable", recipients, cc, bcc };
   }
 
+  // Render once — the same strings go to the wire and back to the caller for
+  // archiving, so the archive is byte-identical to the delivered email.
+  const subject = digestSubject(data);
+  const html = renderDigestHtml(data, dashboardUrl(), opts.notes);
+
   try {
     const info = await transport.sendMail({
       from: `Cityfurnish Ops <${cfg.user}>`,
       to: recipients.join(", "),
       cc: cc.length ? cc.join(", ") : undefined,
       bcc: bcc.length ? bcc.join(", ") : undefined,
-      subject: digestSubject(data),
+      subject,
       text: renderDigestText(data, opts.notes),
-      html: renderDigestHtml(data, dashboardUrl(), opts.notes),
+      html,
     });
-    return { sent: true, recipients, cc, bcc, messageId: info.messageId };
+    return { sent: true, recipients, cc, bcc, messageId: info.messageId, subject, html };
   } catch (err) {
     return {
       sent: false,
