@@ -71,9 +71,7 @@ export default function FollowUpSend({
 
   async function send() {
     if (!canSend) return;
-    const summary = agg
-      ? `${agg.closed} closed · ${agg.openReal} still open of ${agg.real} losses`
-      : "";
+    const summary = agg ? `${agg.closed} closed · ${agg.openReal} still open` : "";
     if (
       !window.confirm(
         `Send the follow-up report for ${date} (${summary}) to ${to.length} recipient(s) now?`
@@ -136,10 +134,6 @@ export default function FollowUpSend({
             <span className={agg!.openReal > 0 ? "badge badge-high" : "badge badge-done"}>
               {agg!.openReal} still open
             </span>
-            {agg!.pendingApproval > 0 && (
-              <span className="badge badge-medium">{agg!.pendingApproval} awaiting approval</span>
-            )}
-            <span className="text-text-muted">of {agg!.real} losses that day</span>
           </div>
           {stats!.byCity.length > 0 && (
             <p className="text-[11px] text-text-disabled leading-relaxed">
