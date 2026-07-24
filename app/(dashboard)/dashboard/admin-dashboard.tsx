@@ -447,7 +447,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                       disabled={busyId === v.id}
                       className="btn btn-compact btn-secondary flex-1 disabled:opacity-40"
                     >
-                      <Icon name="flag" size={16} /> Dispute
+                      <Icon name="flag" size={16} /> Flag
                     </button>
                   )}
                 </div>
@@ -529,23 +529,23 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                         </button>
                       </div>
                     ) : v.status === "open" || v.status === "in_progress" ? (
-                      <div className="inline-flex items-center gap-1">
+                      <div className="inline-flex items-center gap-1.5">
                         <button
                           onClick={() => setResolving({ id: v.id, product: v.product ?? "", barcode: v.barcode })}
                           disabled={busyId === v.id}
-                          title="Resolve — close with a reason and comment"
-                          className="btn-icon hover:text-success disabled:opacity-40"
+                          title="Close with a reason and comment"
+                          className="btn btn-compact btn-primary disabled:opacity-40"
                         >
-                          <Icon name="task_alt" size={18} />
+                          Resolve
                         </button>
                         {v.status === "open" && (
                           <button
                             onClick={() => dispute(v.id)}
                             disabled={busyId === v.id}
                             title="Flag as disputed — escalate to city manager"
-                            className="btn-icon row-action hover:text-danger disabled:opacity-40"
+                            className="btn btn-compact btn-secondary disabled:opacity-40"
                           >
-                            <Icon name="flag" size={18} />
+                            Flag
                           </button>
                         )}
                       </div>
