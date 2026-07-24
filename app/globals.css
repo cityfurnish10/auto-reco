@@ -239,10 +239,19 @@ body {
     justify-content: center;
     gap: 6px;
     white-space: nowrap;
-    transition: background-color 150ms ease, box-shadow 150ms ease, border-color 150ms ease, color 150ms ease;
+    transition: background-color 150ms ease, box-shadow 150ms ease, border-color 150ms ease, color 150ms ease, transform 100ms ease;
     cursor: pointer;
+    touch-action: manipulation; /* no 300ms double-tap delay on mobile */
+    -webkit-tap-highlight-color: transparent;
   }
   .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  /* Keyboard focus — visible ring without any layout shift. */
+  .btn:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  /* Pressed feedback — a hair of travel so every tap reads as registered. */
+  .btn:active:not(:disabled) { transform: translateY(1px); }
   .btn-compact { height: 32px; padding: 0 12px; }
 
   .btn-primary {
@@ -281,10 +290,20 @@ body {
     justify-content: center;
     color: var(--text-muted);
     background: transparent;
-    transition: background-color 150ms ease, color 150ms ease;
+    transition: background-color 150ms ease, color 150ms ease, transform 100ms ease;
     cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
-  .btn-icon:hover { background: var(--surface-elevated); color: var(--text-primary); }
+  .btn-icon:hover:not(:disabled) { background: var(--surface-elevated); color: var(--text-primary); }
+  .btn-icon:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  .btn-icon:active:not(:disabled) { transform: translateY(1px); }
+  /* Global fallback — several pages rely on ad-hoc disabled:opacity-40; this
+     guarantees a disabled icon button always reads (and behaves) disabled. */
+  .btn-icon:disabled { opacity: 0.45; cursor: not-allowed; }
 
   /* Inputs / selects --------------------------------------------------------*/
   .input-clean {
@@ -303,6 +322,7 @@ body {
     border-color: var(--color-accent);
     box-shadow: 0 0 0 3px var(--color-accent-soft);
   }
+
 
   /* Data table --------------------------------------------------------------*/
   .table-clean {
