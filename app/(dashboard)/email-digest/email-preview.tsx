@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
+import FollowUpSend from "./follow-up-send";
 import { useUsers } from "@/lib/hooks/use-users";
 import {
   EMPTY_RECIPIENTS,
@@ -441,6 +442,17 @@ export default function EmailPreview() {
               <p className="text-xs text-text-muted">Select at least one <b>To</b> recipient to send or schedule.</p>
             )}
           </section>
+
+          {/* Follow-up send — manual resend for a day once its cases are closed */}
+          <FollowUpSend
+            to={toList}
+            cc={ccList}
+            bcc={bccList}
+            onDone={(message, sent) => {
+              flash(message);
+              if (sent) setArchiveRefresh((n) => n + 1); // appears under "Sent emails"
+            }}
+          />
 
           {/* Scheduled sends */}
           {scheduled.length > 0 && (
