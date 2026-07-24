@@ -323,6 +323,16 @@ body {
     box-shadow: 0 0 0 3px var(--color-accent-soft);
   }
 
+  /* Touch ergonomics — phones/tablets only (coarse pointer), desktop unchanged.
+     44px is the recommended minimum tap target; 16px input text stops iOS
+     Safari from auto-zooming the page every time a field is focused. */
+  @media (pointer: coarse) {
+    .btn { min-height: 44px; }
+    .btn-compact { min-height: 40px; }
+    .btn-icon { width: 40px; height: 40px; }
+    .input-clean { font-size: 16px; min-height: 44px; }
+  }
+
 
   /* Data table --------------------------------------------------------------*/
   .table-clean {
