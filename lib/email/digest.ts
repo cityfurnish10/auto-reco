@@ -5,6 +5,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MultiCityRun } from "../engine/run";
 import { VARIANCE } from "../engine/variance-names";
+import { isCityOff, OFF_LABEL } from "../engine/schedule";
+import type { City } from "../sample-data";
 
 export interface CityDigestRow {
   city: string;
@@ -209,17 +211,25 @@ export function renderDigestHtml(data: DigestData, dashboardUrl?: string, notes?
   const brand = `<span style="font-size:22px;font-weight:800;letter-spacing:-0.4px;color:#111827;font-family:Helvetica,Arial,sans-serif;">Cityfurnish</span>`;
   const cityRows = data.cities
     .map((c) => {
-      const flag = c.open > 0;
+      // Weekly holiday: the city was closed — absent floor data is expected,
+      // so render OFF instead of numbers that read like gaps.
+      const off = isCityOff(c.city as City, data.date);
+      const flag = !off && c.open > 0;
       const nameStyle = flag ? "color:#b91c1c;font-weight:700;" : "color:#111827;";
       const bg = flag ? "background:#fef2f2;" : "";
-      const acc = c.accuracy === null ? "—" : `${c.accuracy}%`;
+      const acc = off ? "OFF" : c.accuracy === null ? "—" : `${c.accuracy}%`;
+      const topGap = off
+        ? `<span style="color:#9ca3af;">${OFF_LABEL}</span>`
+        : c.topIssue
+          ? esc(c.topIssue)
+          : "—";
       return `
       <tr style="${bg}">
-        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;${nameStyle}">${esc(c.city)}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#111827;">${acc}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;${nameStyle}">${esc(c.city)}${off ? ` <span style="font-size:10px;color:#9ca3af;letter-spacing:1px;">(OFF)</span>` : ""}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:${off ? "#9ca3af" : "#111827"};">${acc}</td>
         <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;${flag ? "color:#b91c1c;font-weight:700;" : "color:#6b7280;"}">${c.open}</td>
         <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280;">${c.ppBox}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;color:#374151;font-size:12px;">${c.topIssue ? esc(c.topIssue) : "—"}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;color:#374151;font-size:12px;">${topGap}</td>
       </tr>`;
     })
     .join("");
@@ -319,9 +329,10 @@ export function renderDigestText(data: DigestData, notes?: string): string {
   lines.push("");
   lines.push("CITY          ACC%   OPEN   PP   TOP GAP");
   for (const c of data.cities) {
-    const acc = c.accuracy === null ? "-" : `${c.accuracy}%`;
+    const off = isCityOff(c.city as City, data.date);
+    const acc = off ? "OFF" : c.accuracy === null ? "-" : `${c.accuracy}%`;
     lines.push(
-      `${c.city.padEnd(13)} ${acc.padStart(5)} ${String(c.open).padStart(5)} ${String(c.ppBox).padStart(4)}   ${c.topIssue ?? "-"}`
+      `${c.city.padEnd(13)} ${acc.padStart(5)} ${String(c.open).padStart(5)} ${String(c.ppBox).padStart(4)}   ${off ? OFF_LABEL : c.topIssue ?? "-"}`
     );
   }
   lines.push("");
