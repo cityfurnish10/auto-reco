@@ -7,6 +7,7 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import type { GuardUpload, UploadStatus } from "@/lib/db/schema";
 import { CITIES, type City, type UploadStatus as DemoUploadStatus } from "@/lib/sample-data";
 import { Icon } from "@/components/icon";
+import { isCityOff } from "@/lib/engine/schedule";
 
 const supabaseConfigured =
   !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -226,6 +227,17 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
           className="input-clean cursor-pointer sm:w-52 shrink-0"
         />
       </div>
+
+      {/* Weekly-off heads-up — the picked day is this warehouse's holiday */}
+      {registerDate && isCityOff(selectedCity, registerDate) && (
+        <div className="card p-3 mb-6 flex items-center gap-2.5 border-l-[3px] border-l-border">
+          <Icon name="event_busy" size={18} className="text-text-muted shrink-0" />
+          <p className="text-xs text-text-secondary">
+            {selectedCity} is <b>weekly-off on Thursdays</b> — a register for {registerDate} is not
+            expected. Upload anyway if the warehouse did operate that day.
+          </p>
+        </div>
+      )}
 
       {!isManager && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">

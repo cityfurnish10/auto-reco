@@ -82,6 +82,7 @@ const DASHBOARD_ADMIN: Help = {
     "Every barcode from the latest run, compared across all four sources — the guard register, ops sheet, Delivery Tracker, and Odoo.",
   points: [
     "The counts show only losses (REAL) — genuine cross-source gaps to chase. Posting-lag / hygiene entries (INFO) are kept in the DB for audit but hidden from the counts; switch the bucket filter to INFO to view them.",
+    "Cities show an OFF badge on their weekly holiday (Thursday for Mumbai, Hyderabad and Pune) — a missing register / ops sheet / DT that day is expected, not a gap.",
     "Filter by city tab, bucket, source, priority, status, or date; search any barcode / ticket / SO number.",
     "Approve or Reject the variances city managers submit — the bell shows how many are awaiting you.",
     "Export the current view to CSV.",
