@@ -9,6 +9,7 @@ import type { SessionUser } from "@/lib/demo-auth";
 import type { City } from "@/lib/sample-data";
 import type { Bucket, Priority, VarianceStatus } from "@/lib/db/schema";
 import CloseVarianceModal, { type ClosureReason } from "./close-variance-modal";
+import { isCityOff } from "@/lib/engine/schedule";
 import { SourceBadge } from "@/components/source-badge";
 import { Icon } from "@/components/icon";
 import {
@@ -140,6 +141,17 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
           {stats?.run && ` Run ${stats.run.business_date}${stats.usedFallbackRun ? " (latest available)" : ""}.`}
         </p>
       </div>
+
+      {/* Weekly-off notice — the reported day was this warehouse's holiday */}
+      {stats?.run && isCityOff(city, stats.run.business_date) && (
+        <div className="card p-4 flex items-center gap-3 border-l-[3px] border-l-border">
+          <Icon name="event_busy" size={20} className="text-text-muted shrink-0" />
+          <p className="text-sm text-text-secondary">
+            <b>{stats.run.business_date}</b> was your weekly off (Thursday) — no register, ops-sheet
+            or DT entries are expected for this day.
+          </p>
+        </div>
+      )}
 
       {/* KPI grid — loss-only. Posting-lag / hygiene (INFO) rows stay in the DB
           for audit but are excluded from these counts (see hidden-count note). */}

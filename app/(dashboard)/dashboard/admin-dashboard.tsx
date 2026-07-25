@@ -17,6 +17,7 @@ import type {
 import { SourceBadge } from "@/components/source-badge";
 import { Icon } from "@/components/icon";
 import CloseVarianceModal from "./close-variance-modal";
+import { isCityOff } from "@/lib/engine/schedule";
 import {
   useStats,
   useVariances,
@@ -288,22 +289,42 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         <div className="space-y-4">
           <h3 className="font-headline text-lg text-text-primary">City-wise Breakdown</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-            {stats.byCity.map((c) => (
+            {stats.byCity.map((c) => {
+              // Weekly holiday: the warehouse was closed — neutral border + OFF
+              // badge so empty numbers read as "expected", not as a data gap.
+              const off = isCityOff(c.city as City, stats.run?.business_date ?? "");
+              return (
               <div
                 key={c.city}
                 className={`card card-hover p-4 flex flex-col gap-3 border-l-[3px] ${
-                  c.real > 0 ? "border-l-danger" : "border-l-success"
+                  off ? "border-l-border" : c.real > 0 ? "border-l-danger" : "border-l-success"
                 }`}
               >
                 <div className="flex justify-between items-start">
-                  <h4 className="font-headline text-base text-text-primary">{c.city}</h4>
-                  <span className={`font-bold text-lg ${c.real > 0 ? "text-danger" : "text-success"}`}>
+                  <h4 className="font-headline text-base text-text-primary flex items-center gap-2">
+                    {c.city}
+                    {off && (
+                      <span
+                        className="badge badge-suppressed uppercase"
+                        title="Weekly off — no operations; register / ops sheet / DT are not expected for this day"
+                      >
+                        OFF
+                      </span>
+                    )}
+                  </h4>
+                  <span className={`font-bold text-lg ${off ? "text-text-disabled" : c.real > 0 ? "text-danger" : "text-success"}`}>
                     {c.real}
                   </span>
                 </div>
                 <div className="text-xs text-text-muted">
-                  <span className="text-danger font-semibold">{c.real} to chase</span> ·{" "}
-                  {c.openReal} open
+                  {off ? (
+                    <span>Weekly off — data not expected</span>
+                  ) : (
+                    <>
+                      <span className="text-danger font-semibold">{c.real} to chase</span> ·{" "}
+                      {c.openReal} open
+                    </>
+                  )}
                 </div>
                 <div className="text-xs text-text-disabled">
                   PP-Box {c.ppBox} · Consumable {c.consumable}
@@ -315,7 +336,8 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                   VIEW DETAIL
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
