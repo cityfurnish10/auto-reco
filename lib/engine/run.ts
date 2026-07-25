@@ -11,6 +11,7 @@ import { addDays, deriveRunDate, parseDate } from "./dates";
 import { detectDirectionConflicts } from "./direction-conflict";
 import { classify, duplicateHit } from "./ladder";
 import { filterOdooWindow } from "./odoo-window";
+import { isCityOff } from "./schedule";
 import { computeSuppressions } from "./suppressions";
 import { isSpareJobType, normalizeJobType } from "./util";
 import { bestGuardMatch } from "./fuzzy";
@@ -205,7 +206,18 @@ export function runReconciliation(
   // its own earlier/later day is a backlog data entry (clerk typing up an old
   // day); a no-SO / internal-transfer row isn't a per-barcode floor flow —
   // neither is a same-day movement the floor missed.
+  // Weekly-off gate: on the city's holiday nothing can physically move, so an
+  // Odoo record CREATED that day is data entry about another day's movement —
+  // never a same-day REAL. (Floor rows appearing on an off day still run the
+  // normal ladder: activity on a closed day is exactly what should surface.)
+  const offDay = isCityOff(city, runDate);
+  if (offDay) {
+    warnings.push(
+      `${city} weekly off (${runDate}) — floor sources are expected absent; Odoo-only rows cannot be same-day REAL.`
+    );
+  }
   const createdTodayFlag = (canonical: string, dir: Direction) =>
+    !offDay &&
     odooCreatedTodayCanon.has(canonical) &&
     odooCustomerDirCanon.has(`${dir}::${canonical}`) &&
     !recentFloor.has(canonical);

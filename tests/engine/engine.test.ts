@@ -3,6 +3,7 @@ import { parseDate, deriveRunDate, addDays } from "../../lib/engine/dates";
 import { canonicalize, isValidBarcode, isSpareOrConsumable } from "../../lib/engine/barcode";
 import { normalizeStatus } from "../../lib/engine/util";
 import { runAllCities, runReconciliation } from "../../lib/engine/run";
+import { isCityOff } from "../../lib/engine/schedule";
 import { buildSampleRowsByCity } from "../../lib/sample-raw-sources";
 import { VARIANCE } from "../../lib/engine/variance-names";
 import type { SourceRow } from "../../lib/engine/types";
@@ -66,6 +67,40 @@ describe("Section 3 — date parsing & run-date derivation", () => {
     expect(res.date).toBe(RUN);
     expect(res.summary.movements).toBe(1);
     expect(res.warnings.some((w) => w.includes("using the requested date"))).toBe(true);
+  });
+
+  it("weekly-off calendar: Thursday off for MUM/HYD/PUNE only", () => {
+    // 2026-07-23 was a Thursday; 2026-07-24 a Friday.
+    for (const city of ["MUMBAI", "HYDERABAD", "PUNE"] as const) {
+      expect(isCityOff(city, "2026-07-23")).toBe(true);
+      expect(isCityOff(city, "2026-07-24")).toBe(false);
+    }
+    for (const city of ["DELHI", "BANGALORE"] as const) {
+      expect(isCityOff(city, "2026-07-23")).toBe(false);
+    }
+    expect(isCityOff("MUMBAI", "garbage")).toBe(false);
+  });
+
+  it("off day: Odoo-only created-today stays INFO for a closed warehouse, REAL for an open one", () => {
+    const THU = "2026-07-23";
+    const mk = (city: "MUMBAI" | "BANGALORE") => [
+      // anchor rows dated the Thursday so run-date derivation lands on it
+      r({ source: "PHYSICAL", direction: "OUT", barcode: "ANCHOR-OK-9", status: "done", date: THU }),
+      r({ source: "SHEET", direction: "OUT", barcode: "ANCHOR-OK-9", status: "done", date: THU }),
+      r({ source: "DT", direction: "OUT", barcode: "ANCHOR-OK-9", status: "done", date: THU }),
+      r({ source: "ODOO", direction: "OUT", barcode: "ANCHOR-OK-9", status: "done", createdOn: THU, date: THU }),
+      r({ source: "ODOO", direction: "OUT", barcode: "OFFDAYTV01", status: "done", createdOn: THU, recordCreatedOn: THU, soNumber: "ON-RET-X-42424", ticketId: "X/OUT/1", date: THU }),
+    ];
+    const mum = runReconciliation(mk("MUMBAI"), "MUMBAI");
+    const vMum = mum.variances.find((x) => x.barcode === canonicalize("OFFDAYTV01"));
+    expect(vMum?.variance_name).toBe(VARIANCE.ODOO_ONLY);
+    expect(vMum?.bucket).toBe("INFO");
+    expect(mum.warnings.some((w) => w.includes("weekly off"))).toBe(true);
+
+    const ban = runReconciliation(mk("BANGALORE"), "BANGALORE");
+    const vBan = ban.variances.find((x) => x.barcode === canonicalize("OFFDAYTV01"));
+    expect(vBan?.variance_name).toBe(VARIANCE.ODOO_ONLY_TODAY);
+    expect(vBan?.bucket).toBe("REAL");
   });
 
   it("one broken city cannot take down the others (runAllCities isolation)", () => {
