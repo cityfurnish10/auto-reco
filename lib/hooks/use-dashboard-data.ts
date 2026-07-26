@@ -17,6 +17,10 @@ import type {
 export interface VarianceFilters {
   city?: City | "ALL";
   date?: string;
+  // Opt out of the API's default "latest run only" scoping. Set this when a
+  // query must span every business date (free-text lookups); leaving both
+  // `date` and this unset would otherwise silently return one day, not all.
+  allDates?: boolean;
   bucket?: Bucket | "ALL";
   source?: VarianceSource | "ALL";
   priority?: Priority | "ALL";
@@ -32,12 +36,14 @@ interface VariancesResponse {
   pageSize: number;
   total: number;
   totalPages: number;
+  businessDate: string | null;
 }
 
 function toQuery(f: VarianceFilters): string {
   const p = new URLSearchParams();
   if (f.city && f.city !== "ALL") p.set("city", f.city);
   if (f.date) p.set("date", f.date);
+  if (f.allDates) p.set("dates", "all");
   if (f.bucket && f.bucket !== "ALL") p.set("bucket", f.bucket);
   if (f.source && f.source !== "ALL") p.set("source", f.source);
   if (f.priority && f.priority !== "ALL") p.set("priority", f.priority);
@@ -48,10 +54,38 @@ function toQuery(f: VarianceFilters): string {
   return p.toString();
 }
 
+// Every row matching `filters`, not just the page on screen. Export used to map
+// over the visible page, so a filtered set of 340 silently produced a 25-row
+// file. Pages at the API maximum and stops at `cap` rows, reporting whether it
+// hit that ceiling so the caller can say so rather than truncate quietly.
+export async function fetchAllVariances(
+  filters: VarianceFilters,
+  cap = 10000
+): Promise<{ rows: VarianceDB[]; truncated: boolean; total: number }> {
+  const PAGE = 200;
+  const rows: VarianceDB[] = [];
+  let total = 0;
+  for (let page = 1; ; page++) {
+    const query = toQuery({ ...filters, page, pageSize: PAGE });
+    const res = await fetch(`/api/variances?${query}`, { credentials: "same-origin" });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+    const batch = (json as VariancesResponse).data ?? [];
+    total = (json as VariancesResponse).total ?? total;
+    rows.push(...batch);
+    if (batch.length < PAGE || rows.length >= cap || rows.length >= total) break;
+  }
+  return { rows: rows.slice(0, cap), truncated: total > cap, total };
+}
+
 export function useVariances(filters: VarianceFilters) {
   const [rows, setRows] = useState<VarianceDB[]>([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  // The business date the API actually applied. When the caller sends no date
+  // the server resolves the latest run — this is how the UI labels the table
+  // with a real date instead of an ambiguous blank.
+  const [businessDate, setBusinessDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -75,6 +109,7 @@ export function useVariances(filters: VarianceFilters) {
         setRows(json.data ?? []);
         setTotal(json.total ?? 0);
         setTotalPages(json.totalPages ?? 0);
+        setBusinessDate(json.businessDate ?? null);
       })
       .catch((e) => {
         if (mine !== seq.current) return;
@@ -91,7 +126,7 @@ export function useVariances(filters: VarianceFilters) {
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const refetch = useCallback(() => setReloadKey((k) => k + 1), []);
-  return { rows, total, totalPages, loading, error, refetch };
+  return { rows, total, totalPages, businessDate, loading, error, refetch };
 }
 
 export interface CityAgg {

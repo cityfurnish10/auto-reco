@@ -77,12 +77,16 @@ export async function GET(req: NextRequest) {
   let run = runsForDate?.[0] ?? null;
   let usedFallbackRun = false;
 
-  // … or fall back to the latest run overall.
+  // … or fall back to the latest run overall. Ordered by business_date first:
+  // ordering by created_at alone picked the *most recently executed* run, which
+  // is routinely a re-check pass over an older day — so the dashboard would
+  // silently report D-3 while /api/variances resolved D-1.
   if (!run) {
     const { data: latestRuns, error: latestErr } = await supabase
       .from("reconciliation_runs")
       .select("*")
       .in("status", ["success", "partial"])
+      .order("business_date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(1);
     if (latestErr) return NextResponse.json({ error: latestErr.message }, { status: 500 });
