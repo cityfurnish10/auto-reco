@@ -39,6 +39,7 @@ export default function BulkActionBar({
   ids,
   role,
   pendingApprovalCount,
+  variant = "fixed",
   onClear,
   onDone,
 }: {
@@ -46,6 +47,13 @@ export default function BulkActionBar({
   role: SessionUser["role"];
   /** How many of the selected rows are actually awaiting approval. */
   pendingApprovalCount: number;
+  /**
+   * "fixed" docks it to the viewport (pages). "inline" renders it in place,
+   * for use inside a dialog footer — a viewport-fixed bar would sit on top of
+   * the dialog's own pager, and it would have to out-rank the dialog's z-layer
+   * while staying under the confirm it opens.
+   */
+  variant?: "fixed" | "inline";
   onClear: () => void;
   onDone: () => void;
 }) {
@@ -91,66 +99,73 @@ export default function BulkActionBar({
 
   const m = pending ? META[pending] : null;
 
+  const bar = (
+    <div
+      role="region"
+      aria-label="Bulk actions"
+      className={
+        variant === "fixed"
+          ? // z-[105] is deliberate: above the list dialog (z-100) so it is
+            // reachable there, below the detail dialog (z-110) so it doesn't
+            // float over a row someone opened, and below its own confirm (120).
+            "fixed inset-x-3 bottom-3 lg:left-[284px] lg:right-6 z-[105] card shadow-card-hover border border-border px-4 py-3 flex flex-wrap items-center gap-3"
+          : "px-4 py-3 flex flex-wrap items-center gap-3 border-b border-border bg-accent-soft"
+      }
+    >
+      <span className="text-sm font-semibold text-text-primary">{ids.length} selected</span>
+      <button onClick={onClear} className="btn btn-compact btn-ghost">
+        Clear
+      </button>
+      <div className="h-5 w-px bg-border hidden sm:block" />
+      <div className="flex flex-wrap items-center gap-2 ml-auto">
+        {isAdmin ? (
+          <>
+            <button
+              onClick={() => open("approve")}
+              disabled={pendingApprovalCount === 0}
+              title={
+                pendingApprovalCount === 0
+                  ? "None of the selected rows are awaiting approval"
+                  : `Approve the ${pendingApprovalCount} awaiting approval`
+              }
+              className="btn btn-compact btn-primary disabled:opacity-40"
+            >
+              <Icon name="check_circle" size={16} />
+              Approve {pendingApprovalCount > 0 && pendingApprovalCount}
+            </button>
+            <button
+              onClick={() => open("reject")}
+              disabled={pendingApprovalCount === 0}
+              title={
+                pendingApprovalCount === 0
+                  ? "None of the selected rows are awaiting approval"
+                  : "Send these back to the manager"
+              }
+              className="btn btn-compact btn-secondary disabled:opacity-40"
+            >
+              <Icon name="close" size={16} />
+              Reject
+            </button>
+            <button onClick={() => open("close")} className="btn btn-compact btn-secondary">
+              <Icon name="task_alt" size={16} />
+              Resolve
+            </button>
+          </>
+        ) : (
+          <button onClick={() => open("submit")} className="btn btn-compact btn-primary">
+            <Icon name="send" size={16} />
+            Submit for approval
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <>
-      {typeof document !== "undefined" &&
-        createPortal(
-          <div
-            role="region"
-            aria-label="Bulk actions"
-            className="fixed inset-x-3 bottom-3 lg:left-[calc(var(--spacing-sidebar-width,260px)+24px)] lg:right-6 z-[90] card shadow-card-hover border border-border px-4 py-3 flex flex-wrap items-center gap-3"
-          >
-            <span className="text-sm font-semibold text-text-primary">
-              {ids.length} selected
-            </span>
-            <button onClick={onClear} className="btn btn-compact btn-ghost">
-              Clear
-            </button>
-            <div className="h-5 w-px bg-border hidden sm:block" />
-            <div className="flex flex-wrap items-center gap-2 ml-auto">
-              {isAdmin ? (
-                <>
-                  <button
-                    onClick={() => open("approve")}
-                    disabled={pendingApprovalCount === 0}
-                    title={
-                      pendingApprovalCount === 0
-                        ? "None of the selected rows are awaiting approval"
-                        : `Approve the ${pendingApprovalCount} awaiting approval`
-                    }
-                    className="btn btn-compact btn-primary disabled:opacity-40"
-                  >
-                    <Icon name="check_circle" size={16} />
-                    Approve {pendingApprovalCount > 0 && pendingApprovalCount}
-                  </button>
-                  <button
-                    onClick={() => open("reject")}
-                    disabled={pendingApprovalCount === 0}
-                    title={
-                      pendingApprovalCount === 0
-                        ? "None of the selected rows are awaiting approval"
-                        : "Send these back to the manager"
-                    }
-                    className="btn btn-compact btn-secondary disabled:opacity-40"
-                  >
-                    <Icon name="close" size={16} />
-                    Reject
-                  </button>
-                  <button onClick={() => open("close")} className="btn btn-compact btn-secondary">
-                    <Icon name="task_alt" size={16} />
-                    Resolve
-                  </button>
-                </>
-              ) : (
-                <button onClick={() => open("submit")} className="btn btn-compact btn-primary">
-                  <Icon name="send" size={16} />
-                  Submit for approval
-                </button>
-              )}
-            </div>
-          </div>,
-          document.body
-        )}
+      {variant === "inline"
+        ? bar
+        : typeof document !== "undefined" && createPortal(bar, document.body)}
 
       <Modal
         open={!!pending}

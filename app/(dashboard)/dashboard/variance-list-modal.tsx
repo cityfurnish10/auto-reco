@@ -5,11 +5,15 @@
 // own query, filters and pagination, and hands each row on to the detail
 // dialog.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
 import { Modal } from "@/components/modal";
 import { SourceBadge } from "@/components/source-badge";
 import { errText, useToast } from "@/components/toast";
+import { RowCheckbox, SelectAllCheckbox } from "@/components/row-checkbox";
+import { SortHeader, type SortState } from "@/components/sort-header";
+import { useSelection } from "@/lib/hooks/use-selection";
+import BulkActionBar from "./bulk-action-bar";
 import VarianceDetailModal from "./variance-detail-modal";
 import type { SessionUser } from "@/lib/demo-auth";
 import type { Bucket, Priority, VarianceDB, VarianceStatus } from "@/lib/db/schema";
@@ -19,6 +23,8 @@ import {
   PRIORITY_BADGE,
   STATUS_BADGE,
   STATUS_LABEL,
+  ageLabel,
+  formatTs,
 } from "@/lib/ui/variance-format";
 
 const PAGE_SIZE = 50;
@@ -52,6 +58,7 @@ export default function VarianceListModal({
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState<SortState>({ key: "date", dir: "desc" });
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Keeps the detail dialog painted even if a refetch drops the row from the
@@ -73,6 +80,7 @@ export default function VarianceListModal({
     setSearchInput("");
     setQ("");
     setPage(1);
+    setSort({ key: "date", dir: "desc" });
     setSelectedId(null);
     dirty.current = false;
   }, [request]);
@@ -96,11 +104,51 @@ export default function VarianceListModal({
     status: q ? "ALL" : status,
     allDates: !!q,
     q: q || undefined,
+    sort: sort.key,
+    dir: sort.dir,
     page,
     pageSize: PAGE_SIZE,
   });
 
   const selected = rows.find((r) => r.id === selectedId) ?? snapshot;
+
+  // Selection lives here, not in the parent — this dialog owns its own query,
+  // so its selection must reset when the dialog reopens against a new tile.
+  const visibleIds = useMemo(() => rows.map((r) => r.id), [rows]);
+  const sel = useSelection(visibleIds);
+  const lastClicked = useRef<string | null>(null);
+  const selectedPendingApproval = useMemo(
+    () => rows.filter((r) => sel.has(r.id) && r.status === "pending_approval").length,
+    [rows, sel]
+  );
+
+  function onRowCheck(id: string, shiftKey: boolean) {
+    if (shiftKey && lastClicked.current && lastClicked.current !== id) {
+      const a = visibleIds.indexOf(lastClicked.current);
+      const b = visibleIds.indexOf(id);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        sel.selectRange(visibleIds.slice(lo, hi + 1), !sel.has(id));
+        lastClicked.current = id;
+        return;
+      }
+    }
+    sel.toggle(id);
+    lastClicked.current = id;
+  }
+
+  function applySort(next: SortState) {
+    setSort(next);
+    setPage(1);
+  }
+
+  // Changing a filter redefines the working set, so a stale selection must not
+  // survive into a bulk action.
+  function changeFilter(fn: () => void) {
+    fn();
+    setPage(1);
+    sel.clear();
+  }
 
   function openDetail(row: VarianceDB) {
     // Don't hijack a click that was really a text selection.
@@ -130,7 +178,9 @@ export default function VarianceListModal({
   }
 
   const isAdmin = role === "ADMIN";
-  const colCount = showCityColumn ? 9 : 8;
+  // checkbox + item + barcode + [city] + ticket + source + variance + priority
+  // + status + age + action
+  const colCount = showCityColumn ? 11 : 10;
 
   const filters = (
     <div className="flex flex-wrap items-center gap-2">
@@ -150,10 +200,7 @@ export default function VarianceListModal({
       </div>
       <select
         value={bucket}
-        onChange={(e) => {
-          setBucket(e.target.value as Bucket | "ALL");
-          setPage(1);
-        }}
+        onChange={(e) => changeFilter(() => setBucket(e.target.value as Bucket | "ALL"))}
         className="input-clean font-semibold cursor-pointer"
       >
         <option value="ALL">All buckets</option>
@@ -162,10 +209,7 @@ export default function VarianceListModal({
       </select>
       <select
         value={status}
-        onChange={(e) => {
-          setStatus(e.target.value as VarianceStatus | "ALL");
-          setPage(1);
-        }}
+        onChange={(e) => changeFilter(() => setStatus(e.target.value as VarianceStatus | "ALL"))}
         className="input-clean font-semibold cursor-pointer"
       >
         <option value="ALL">All statuses</option>
@@ -176,10 +220,7 @@ export default function VarianceListModal({
       </select>
       <select
         value={priority}
-        onChange={(e) => {
-          setPriority(e.target.value as Priority | "ALL");
-          setPage(1);
-        }}
+        onChange={(e) => changeFilter(() => setPriority(e.target.value as Priority | "ALL"))}
         className="input-clean font-semibold cursor-pointer"
       >
         <option value="ALL">All priority</option>
@@ -218,6 +259,27 @@ export default function VarianceListModal({
         </button>
       </div>
     </div>
+  );
+
+  // The bulk bar lives in the dialog's own footer rather than docked to the
+  // viewport — a fixed bar would sit on top of the pager directly below it.
+  const footer = (
+    <>
+      {sel.count > 0 && (
+        <BulkActionBar
+          ids={sel.ids}
+          role={role}
+          pendingApprovalCount={selectedPendingApproval}
+          variant="inline"
+          onClear={sel.clear}
+          onDone={() => {
+            dirty.current = true;
+            refetch();
+          }}
+        />
+      )}
+      {pager}
+    </>
   );
 
   const rowActions = (v: VarianceDB) => {
@@ -274,21 +336,39 @@ export default function VarianceListModal({
             .join(" · ") || "Variances"
         }
         headerExtra={filters}
-        footer={pager}
+        footer={footer}
         bodyClassName="p-0"
       >
         {/* Mobile: cards */}
         <div className="md:hidden divide-y divide-border">
           {rows.map((v) => (
-            <button
+            <div
               key={v.id}
               onClick={() => openDetail(v)}
-              className="w-full text-left p-4 space-y-1.5 hover:bg-surface-elevated transition-colors"
+              className={`p-4 space-y-1.5 cursor-pointer transition-colors ${
+                sel.has(v.id) ? "bg-accent-soft" : "hover:bg-surface-elevated"
+              }`}
             >
               <div className="flex items-start justify-between gap-2">
-                <span className="font-mono font-semibold text-text-primary text-sm break-all">
-                  {v.barcode}
-                </span>
+                <div className="flex items-start gap-3 min-w-0">
+                  <span className="pt-0.5">
+                    <RowCheckbox
+                      checked={sel.has(v.id)}
+                      onChange={() => onRowCheck(v.id, false)}
+                      label={`Select ${v.barcode}`}
+                    />
+                  </span>
+                  {/* A <div> can't take focus — this button is the keyboard route in. */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openDetail(v);
+                    }}
+                    className="font-mono font-semibold text-text-primary text-sm break-all text-left hover:text-accent"
+                  >
+                    {v.barcode}
+                  </button>
+                </div>
                 <span className={`${PRIORITY_BADGE[v.priority]} shrink-0`}>{v.priority}</span>
               </div>
               {v.product && <p className="text-sm text-text-secondary">{v.product}</p>}
@@ -300,8 +380,9 @@ export default function VarianceListModal({
                 <span className={`${STATUS_BADGE[v.status]} uppercase`}>
                   {STATUS_LABEL[v.status]}
                 </span>
+                <span title={formatTs(v.first_seen_at)}>{ageLabel(v.first_seen_at)} old</span>
               </div>
-            </button>
+            </div>
           ))}
           {!loading && rows.length === 0 && (
             <div className="text-center py-12 text-text-muted flex flex-col items-center gap-2">
@@ -316,14 +397,37 @@ export default function VarianceListModal({
           <table className="table-clean table-sticky-head">
             <thead>
               <tr>
-                <th>Item</th>
-                <th>Barcode</th>
-                {showCityColumn && <th>City</th>}
-                <th>Ticket</th>
-                <th>Source</th>
-                <th>Variance</th>
-                <th>Priority</th>
-                <th>Status</th>
+                <th className="w-10">
+                  <SelectAllCheckbox
+                    checked={sel.allVisibleSelected}
+                    indeterminate={sel.someVisibleSelected}
+                    onChange={sel.toggleAllVisible}
+                    label={`Select all ${rows.length} rows on this page`}
+                  />
+                </th>
+                <SortHeader label="Item" sortKey="product" state={sort} onSort={applySort} />
+                <SortHeader label="Barcode" sortKey="barcode" state={sort} onSort={applySort} />
+                {showCityColumn && (
+                  <SortHeader label="City" sortKey="city" state={sort} onSort={applySort} />
+                )}
+                <SortHeader label="Ticket" sortKey="ticket" state={sort} onSort={applySort} />
+                <SortHeader label="Source" sortKey="source" state={sort} onSort={applySort} />
+                <SortHeader label="Variance" sortKey="variance" state={sort} onSort={applySort} />
+                <SortHeader
+                  label="Priority"
+                  sortKey="priority"
+                  state={sort}
+                  onSort={applySort}
+                  title="Sort by severity — High, Medium, Info"
+                />
+                <SortHeader label="Status" sortKey="status" state={sort} onSort={applySort} />
+                <SortHeader
+                  label="Age"
+                  sortKey="age"
+                  state={sort}
+                  onSort={applySort}
+                  title="Sort by how long this has been unresolved"
+                />
                 <th className="text-right">Action</th>
               </tr>
             </thead>
@@ -332,8 +436,21 @@ export default function VarianceListModal({
                 <tr
                   key={v.id}
                   onClick={() => openDetail(v)}
-                  className={`cursor-pointer ${selectedId === v.id ? "bg-surface-elevated" : ""}`}
+                  className={`cursor-pointer ${
+                    sel.has(v.id)
+                      ? "bg-accent-soft"
+                      : selectedId === v.id
+                        ? "bg-surface-elevated"
+                        : ""
+                  }`}
                 >
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <RowCheckbox
+                      checked={sel.has(v.id)}
+                      onChange={(shift) => onRowCheck(v.id, shift)}
+                      label={`Select ${v.barcode}`}
+                    />
+                  </td>
                   <td className="max-w-[200px] truncate" title={v.product ?? ""}>
                     {v.product ?? "—"}
                   </td>
@@ -366,6 +483,9 @@ export default function VarianceListModal({
                       {STATUS_LABEL[v.status]}
                     </span>
                   </td>
+                  <td className="text-text-secondary whitespace-nowrap" title={formatTs(v.first_seen_at)}>
+                    {ageLabel(v.first_seen_at)}
+                  </td>
                   <td className="text-right">{rowActions(v)}</td>
                 </tr>
               ))}
@@ -393,6 +513,7 @@ export default function VarianceListModal({
           refetch();
         }}
       />
+
     </>
   );
 }
