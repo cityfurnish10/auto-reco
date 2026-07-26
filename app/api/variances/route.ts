@@ -5,10 +5,11 @@
 // Query params (all optional): city, date (business_date exact match),
 // dateFrom, dateTo, bucket (REAL|INFO), source (Odoo|DT|Sheet|Physical|Cross —
 // maps to variance_source), priority (High|Medium|Info), status
-// (open|in_progress|closed), direction (IN|OUT|CROSS), q (free-text search
+// (open|in_progress|closed), direction (IN|OUT|CROSS), variance (exact
+// variance_name), responsible (exact responsible slug), q (free-text search
 // across barcode / ticket_id / so_number / product / customer), page (1-based,
 // default 1), pageSize (default 50, max 200), dates=all (opt out of the
-// default single-date scoping — see below).
+// default single-date scoping — see below), sort + dir (see SORTS).
 //
 // DATE SCOPING: with no date/dateFrom/dateTo this route used to return every
 // variance ever recorded, while the KPI tiles rendered above the same table
@@ -21,6 +22,35 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+
+// Sortable keys, whitelisted — the value reaches PostgREST's order() as a
+// column name, so it can never come straight from the query string.
+//
+// `rank` names a generated column from migration 0011 that encodes MEANING
+// rather than spelling: ordering priority as text gives "High, Info, Medium",
+// and status gives closed-before-open because 'c' < 'o'. Both are the opposite
+// of what a triage screen needs. If 0011 has not been applied the query fails
+// with 42703 and we retry on the plain column, reporting sortDegraded so the UI
+// can say the order is alphabetical rather than silently lying about it.
+const SORTS: Record<string, { cols: string[]; rank?: string; fallback?: string[] }> = {
+  date: { cols: ["business_date", "last_seen_at"] },
+  city: { cols: ["city", "business_date"] },
+  product: { cols: ["product", "barcode"] },
+  barcode: { cols: ["barcode"] },
+  ticket: { cols: ["ticket_id"] },
+  source: { cols: ["variance_source", "barcode"] },
+  so: { cols: ["so_number"] },
+  variance: { cols: ["variance_name", "barcode"] },
+  responsible: { cols: ["responsible", "barcode"] },
+  priority: { cols: ["priority_rank", "business_date"], rank: "priority_rank", fallback: ["priority"] },
+  status: { cols: ["status_rank", "last_seen_at"], rank: "status_rank", fallback: ["status"] },
+  // Age = how long this has been unresolved, so ASC (oldest first) is the
+  // useful default here, unlike every other column.
+  age: { cols: ["first_seen_at"] },
+  updated: { cols: ["last_seen_at"] },
+};
+
+const DEFAULT_SORT = "date";
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
@@ -60,55 +90,80 @@ export async function GET(req: NextRequest) {
     businessDate = latest?.[0]?.business_date ?? null;
   }
 
-  let query = supabase
-    .from("variances")
-    .select("*", { count: "exact" })
-    .order("business_date", { ascending: false })
-    .order("last_seen_at", { ascending: false })
-    .range(from, to);
+  const sortKey = sp.get("sort") && SORTS[sp.get("sort")!] ? sp.get("sort")! : DEFAULT_SORT;
+  // Age is "how long has this been unresolved", so oldest-first is the useful
+  // default; everything else defaults to newest/highest first.
+  const dirParam = sp.get("dir");
+  const ascending =
+    dirParam === "asc" ? true : dirParam === "desc" ? false : sortKey === "age";
 
+  // Filters are identical across the sort retry, so build them once.
   const city = sp.get("city");
-  if (city) query = query.eq("city", city);
-
-  if (businessDate) query = query.eq("business_date", businessDate);
-  if (dateFrom) query = query.gte("business_date", dateFrom);
-  if (dateTo) query = query.lte("business_date", dateTo);
-
   const bucket = sp.get("bucket");
-  if (bucket) query = query.eq("bucket", bucket);
-
   const source = sp.get("source");
-  if (source) query = query.eq("variance_source", source);
-
   const priority = sp.get("priority");
-  if (priority) query = query.eq("priority", priority);
-
   const status = sp.get("status");
-  if (status) query = query.eq("status", status);
-
   const direction = sp.get("direction");
-  if (direction) query = query.eq("direction", direction);
-
-  // Free-text search — case-insensitive substring across the identifier fields.
-  // Strip characters that would break PostgREST's or()/ilike grammar so the
-  // term is treated as a literal.
+  const varianceName = sp.get("variance");
+  const responsible = sp.get("responsible");
   const q = sp.get("q")?.trim();
-  if (q) {
-    const safe = q.replace(/[%,()*\\]/g, " ").trim();
-    if (safe) {
-      query = query.or(
-        [
-          `barcode.ilike.%${safe}%`,
-          `ticket_id.ilike.%${safe}%`,
-          `so_number.ilike.%${safe}%`,
-          `product.ilike.%${safe}%`,
-          `customer.ilike.%${safe}%`,
-        ].join(",")
-      );
+
+  function build(orderCols: string[]) {
+    let query = supabase.from("variances").select("*", { count: "exact" });
+
+    for (const col of orderCols) {
+      // nullsFirst:false keeps rows with no ticket / no SO at the bottom rather
+      // than filling the first page with blanks when sorting by them.
+      query = query.order(col, { ascending, nullsFirst: false });
     }
+    // Deterministic tiebreak — without it Postgres may return the same row on
+    // two different pages when the sort column ties across a page boundary.
+    query = query.order("id", { ascending: true }).range(from, to);
+
+    if (city) query = query.eq("city", city);
+    if (businessDate) query = query.eq("business_date", businessDate);
+    if (dateFrom) query = query.gte("business_date", dateFrom);
+    if (dateTo) query = query.lte("business_date", dateTo);
+    if (bucket) query = query.eq("bucket", bucket);
+    if (source) query = query.eq("variance_source", source);
+    if (priority) query = query.eq("priority", priority);
+    if (status) query = query.eq("status", status);
+    if (direction) query = query.eq("direction", direction);
+    if (varianceName) query = query.eq("variance_name", varianceName);
+    if (responsible) query = query.eq("responsible", responsible);
+
+    // Free-text search — case-insensitive substring across the identifier
+    // fields. Strip characters that would break PostgREST's or()/ilike grammar
+    // so the term is treated as a literal.
+    if (q) {
+      const safe = q.replace(/[%,()*\\]/g, " ").trim();
+      if (safe) {
+        query = query.or(
+          [
+            `barcode.ilike.%${safe}%`,
+            `ticket_id.ilike.%${safe}%`,
+            `so_number.ilike.%${safe}%`,
+            `product.ilike.%${safe}%`,
+            `customer.ilike.%${safe}%`,
+          ].join(",")
+        );
+      }
+    }
+    return query;
   }
 
-  const { data, error, count } = await query;
+  const sort = SORTS[sortKey];
+  let sortDegraded = false;
+  let { data, error, count } = await build(sort.cols);
+
+  // 42703 = undefined_column: migration 0011 (priority_rank / status_rank) has
+  // not been applied. Retry alphabetically rather than 500, and tell the client
+  // the order is not the one it asked for.
+  if (error && sort.fallback && (error.code === "42703" || /does not exist/i.test(error.message))) {
+    sortDegraded = true;
+    ({ data, error, count } = await build(sort.fallback));
+  }
+
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -123,5 +178,10 @@ export async function GET(req: NextRequest) {
     // labels the table with this so "blank" is never ambiguous.
     businessDate,
     dateScope: businessDate ? "day" : allDates ? "all" : dateFrom || dateTo ? "range" : "all",
+    sort: sortKey,
+    dir: ascending ? "asc" : "desc",
+    // True only when the requested severity/workflow order fell back to
+    // alphabetical because migration 0011 is not applied.
+    sortDegraded,
   });
 }
