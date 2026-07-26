@@ -12,6 +12,7 @@ import ThemeToggle from "./theme-toggle";
 import ApprovalsBell from "./approvals-bell";
 import HelpButton from "./help-button";
 import { Icon } from "@/components/icon";
+import { ToastProvider } from "@/components/toast";
 
 export default function DashboardShell({
   user,
@@ -23,6 +24,9 @@ export default function DashboardShell({
   const [navOpen, setNavOpen] = useState(false);
 
   return (
+    // ToastProvider wraps the whole shell — the sidebar raises toasts too, so it
+    // has to sit above both the nav and the page content.
+    <ToastProvider>
     <div className="min-h-screen bg-surface-page">
       <Sidebar user={user} open={navOpen} onClose={() => setNavOpen(false)} />
 
@@ -87,5 +91,6 @@ export default function DashboardShell({
         <div className="flex-1">{children}</div>
       </main>
     </div>
+    </ToastProvider>
   );
 }
