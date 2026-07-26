@@ -1,7 +1,8 @@
 // Scheduled digest email — sent every morning at 09:00 IST (see vercel.json),
-// decoupled from the reconcile run that happened the previous night at 22:00 IST.
-// It emails the digest for the LATEST reconciled business date (so it's always
-// "dated right" — the report shows the reconciled day, not the send day).
+// reporting the business day that last night's 22:00 IST reconcile closed:
+// the day before yesterday relative to the send morning (24 Jul is reconciled
+// on the night of the 25th and emailed on the morning of the 26th). The one-day
+// lag is deliberate — see lib/reconcile/cron-dates.ts.
 //
 // CRON_SECRET-gated, same as the reconcile job. GET (Vercel Cron) + POST (manual).
 // Optional ?date=YYYY-MM-DD to re-send a specific day's digest.
@@ -15,6 +16,7 @@ import {
   isEmailConfigured,
 } from "@/lib/email";
 import { storedDigestLists } from "@/lib/email/recipient-store";
+import { digestTargetDate } from "@/lib/reconcile/cron-dates";
 import { saveEmailArchive, pruneEmailArchive } from "@/lib/email/email-archive";
 import { drainScheduledEmails } from "@/lib/email/scheduled";
 import { saveEmailLog } from "@/lib/db/persist";
@@ -55,11 +57,15 @@ async function handle(req: NextRequest) {
     console.warn("scheduled email drain failed:", err instanceof Error ? err.message : err);
   }
 
-  // Resolve the run to report: explicit ?date=, else the latest reconciled
-  // BUSINESS date. Ordered by business_date (then created_at) — NOT created_at
-  // alone: the nightly D-1 re-run is created a minute after the day's own run,
-  // so latest-created would always pick yesterday's re-run and the morning
-  // digest would report the day before yesterday.
+  // Resolve the run to report: explicit ?date=, else the day last night's
+  // reconcile closed (digestTargetDate — see lib/reconcile/cron-dates.ts).
+  //
+  // The lookup is "latest reconciled business date AT OR BEFORE the target",
+  // which does two jobs at once: it picks the target when that run exists, and
+  // degrades to the most recent EARLIER day when a night was missed — while
+  // never reporting a day AHEAD of the target. That last part matters: a manual
+  // reconcile of a more recent date (or the nightly job racing the digest) must
+  // not hijack the morning mail into reporting a half-written day.
   const dateParam = req.nextUrl.searchParams.get("date");
   let query = db
     .from("reconciliation_runs")
@@ -68,7 +74,9 @@ async function handle(req: NextRequest) {
     .order("business_date", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(1);
-  if (dateParam) query = query.eq("business_date", dateParam);
+  query = dateParam
+    ? query.eq("business_date", dateParam)
+    : query.lte("business_date", digestTargetDate());
   const { data: runs, error: runErr } = await query;
   if (runErr) return NextResponse.json({ error: runErr.message }, { status: 500 });
 

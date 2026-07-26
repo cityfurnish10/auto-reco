@@ -10,6 +10,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runReconcilePipeline } from "@/lib/reconcile/pipeline";
+import { reconcileTargetDate } from "@/lib/reconcile/cron-dates";
 import { addDays } from "@/lib/engine/dates";
 
 export const runtime = "nodejs";
@@ -27,14 +28,12 @@ function authorized(req: NextRequest): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-// Reconciliation runs at 22:00 IST — the close of the business day — so the
-// default target date (when no `?date=` is given) is TODAY, the day being
-// closed. (22:00 IST is 16:30 UTC, still the same calendar date in UTC.) The
-// digest for this run is emailed the next morning at 09:00 IST by the separate
-// /api/cron/email-digest job, dated by this run's business date.
-function defaultRunDate(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+// The nightly run closes YESTERDAY, not today — a day's books aren't complete
+// when the day ends (ops sheet filled through the evening, DT scans trickling
+// in, ~half of Odoo postings landing the next day), so reconciling at 22:00 on
+// the day itself judges half-written data. See lib/reconcile/cron-dates.ts for
+// the full cadence; the digest for this run goes out the following morning at
+// 09:00 IST via /api/cron/email-digest.
 
 async function handle(req: NextRequest) {
   if (!authorized(req)) {
@@ -50,7 +49,7 @@ async function handle(req: NextRequest) {
     );
   }
 
-  const runDate = req.nextUrl.searchParams.get("date") || defaultRunDate();
+  const runDate = req.nextUrl.searchParams.get("date") || reconcileTargetDate();
   const trigger = req.method === "POST" ? "manual" : "cron";
   const db = createAdminClient();
 
@@ -59,21 +58,22 @@ async function handle(req: NextRequest) {
   // here — it goes out next morning at 09:00 IST via /api/cron/email-digest.
   const result = await runReconcilePipeline(db, { runDate, trigger });
 
-  // Next-day re-check: on the scheduled nightly run (GET, no explicit ?date=),
-  // also re-reconcile YESTERDAY so late entries posted today — chiefly Odoo
-  // postings that land next-day — fold into D-1 and its stale REAL rows resolve
-  // (see resolveStaleOpenVariances). Best-effort: a D-1 failure never fails the
-  // primary response, and the next night (or the manual "Run for date" button)
-  // retries. Skipped for explicit ?date= / POST so a targeted run stays single.
-  let yesterday: unknown;
+  // Second-pass re-check: on the scheduled nightly run (GET, no explicit
+  // ?date=), also re-reconcile the day BEFORE the primary target, so entries
+  // made even later — chiefly Odoo postings — fold in and stale REAL rows
+  // resolve (see resolveStaleOpenVariances). Best-effort: a failure here never
+  // fails the primary response, and the next night (or the manual "Run for
+  // date" button) retries. Skipped for explicit ?date= / POST so a targeted
+  // run stays single.
+  let recheck: unknown;
   if (req.method === "GET" && !req.nextUrl.searchParams.get("date")) {
-    yesterday = await runReconcilePipeline(db, {
+    recheck = await runReconcilePipeline(db, {
       runDate: addDays(runDate, -1),
       trigger: "cron",
     }).catch((e) => ({ ok: false, error: e instanceof Error ? e.message : String(e) }));
   }
 
-  return NextResponse.json({ ...result, yesterday }, { status: result.ok ? 200 : 500 });
+  return NextResponse.json({ ...result, recheck }, { status: result.ok ? 200 : 500 });
 }
 
 export async function GET(req: NextRequest) {
