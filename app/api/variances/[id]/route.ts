@@ -14,65 +14,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/db/current-user";
-
-type Action = "submit" | "approve" | "reject" | "close" | "dispute" | "reopen";
-
-const ALL_ACTIONS: Action[] = ["submit", "approve", "reject", "close", "dispute", "reopen"];
-// Everything except "submit" changes an approval/closure decision → admin only.
-const ADMIN_ONLY: Action[] = ["approve", "reject", "close", "dispute", "reopen"];
-
-function buildUpdate(action: Exclude<Action, "approve">, appUserId: string, now: string, reason?: string, note?: string) {
-  switch (action) {
-    case "submit":
-      return {
-        status: "pending_approval" as const,
-        submitted_by: appUserId,
-        submitted_at: now,
-        submit_reason: reason ?? null,
-        submit_note: note ?? null,
-        rejection_note: null,
-        closed_by: null,
-        closed_at: null,
-        closure_reason: null,
-        closure_note: null,
-      };
-    case "reject":
-      return {
-        status: "open" as const,
-        rejection_note: note ?? reason ?? null,
-        closed_by: null,
-        closed_at: null,
-        closure_reason: null,
-        closure_note: null,
-      };
-    case "close":
-      return {
-        status: "closed" as const,
-        closure_reason: reason ?? null,
-        closure_note: note ?? null,
-        closed_by: appUserId,
-        closed_at: now,
-        rejection_note: null,
-      };
-    case "dispute":
-      return {
-        status: "in_progress" as const,
-        closure_reason: reason ?? null,
-        closure_note: note ?? null,
-        closed_by: null,
-        closed_at: null,
-      };
-    case "reopen":
-      return {
-        status: "open" as const,
-        closure_reason: null,
-        closure_note: null,
-        closed_by: null,
-        closed_at: null,
-        rejection_note: null,
-      };
-  }
-}
+// Shared with the bulk route so the two can never disagree about what an
+// action writes — see ./actions.ts.
+import { ALL_ACTIONS, ADMIN_ONLY, buildUpdate, type Action } from "./actions";
 
 export async function PATCH(
   req: NextRequest,
