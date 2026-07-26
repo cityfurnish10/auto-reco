@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { getSupabaseClient } from "@/lib/supabase/client";
@@ -8,14 +9,19 @@ import { clearSessionCookie, type SessionUser } from "@/lib/demo-auth";
 import { useDemoStore } from "@/lib/demo-store";
 import { runAllCities } from "@/lib/engine/run";
 import { buildSampleRowsByCity } from "@/lib/sample-raw-sources";
-import { Icon } from "@/components/icon";
+import { Icon, type IconName } from "@/components/icon";
 import { istDate, reconcileTargetDate } from "@/lib/reconcile/cron-dates";
 
 const supabaseConfigured =
   !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
   !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-const NAV_ITEMS = [
+const NAV_ITEMS: {
+  href: string;
+  label: string;
+  icon: IconName;
+  roles: string[];
+}[] = [
   { href: "/dashboard", label: "Dashboard", icon: "dashboard", roles: ["ADMIN", "MANAGER"] },
   { href: "/uploads", label: "Guard Upload", icon: "upload_file", roles: ["ADMIN", "MANAGER"] },
   { href: "/leaderboard", label: "Leaderboard", icon: "leaderboard", roles: ["ADMIN", "MANAGER"] },
@@ -38,7 +44,7 @@ export default function Sidebar({
   const router = useRouter();
   const { applyReconciliationRun } = useDemoStore();
   const [running, setRunning] = useState(false);
-  const [runToast, setRunToast] = useState<string | null>(null);
+  const [runToast, setRunToast] = useState<{ ok: boolean; text: string } | null>(null);
   // Default to the same day the nightly job closes (yesterday) — today's books
   // are still being written, so reconciling today is rarely what's wanted.
   // Today stays selectable via the picker's max.
@@ -71,16 +77,23 @@ export default function Sidebar({
           throw new Error(json.error ?? `HTTP ${res.status}`);
         }
         const c = json.combined ?? {};
-        setRunToast(
-          `Run ${json.runDate} · ${json.status} — ${c.real_count ?? 0} losses to chase, ${json.variancesUpserted ?? 0} variances stored (${c.info_count ?? 0} posting-lag hidden).`
-        );
+        setRunToast({
+          ok: true,
+          text: `Run ${json.runDate} · ${json.status} — ${c.real_count ?? 0} losses to chase, ${json.variancesUpserted ?? 0} variances stored (${c.info_count ?? 0} posting-lag hidden).`,
+        });
         // Nudge any open dashboard to reload its data in place.
         window.dispatchEvent(new CustomEvent("reconcile:complete"));
       } catch (e) {
-        setRunToast(`Reconciliation failed: ${e instanceof Error ? e.message : String(e)}`);
+        setRunToast({
+          ok: false,
+          text: e instanceof Error ? e.message : String(e),
+        });
       } finally {
         setRunning(false);
-        setTimeout(() => setRunToast(null), 8000);
+        // A failure stays until dismissed — auto-hiding an error the admin may
+        // not have seen (the run takes up to a minute) is how a broken night
+        // goes unnoticed.
+        setTimeout(() => setRunToast((t) => (t?.ok ? null : t)), 8000);
       }
       return;
     }
@@ -91,9 +104,10 @@ export default function Sidebar({
       const run = runAllCities(buildSampleRowsByCity(runDate));
       applyReconciliationRun(run);
       setRunning(false);
-      setRunToast(
-        `Run complete — ${run.combined.real_count} losses to chase across ${run.perCity.length} cities (${run.combined.info_count} posting-lag hidden).`
-      );
+      setRunToast({
+        ok: true,
+        text: `Run complete — ${run.combined.real_count} losses to chase across ${run.perCity.length} cities (${run.combined.info_count} posting-lag hidden).`,
+      });
       setTimeout(() => setRunToast(null), 6000);
     }, 800);
   }
@@ -178,7 +192,11 @@ export default function Sidebar({
           <button
             onClick={handleRunReconciliation}
             disabled={running}
-            className="btn btn-primary w-full bg-white/10! hover:bg-white/15! border border-white/10"
+            // text-white! is deliberate: this button overrides btn-primary's
+            // accent background with white/10 on the always-navy sidebar, so it
+            // must NOT inherit the theme-flipping --color-on-accent (which goes
+            // near-black in dark mode and would vanish against the navy).
+            className="btn btn-primary w-full bg-white/10! hover:bg-white/15! border border-white/10 text-white!"
           >
             <Icon
               name={running ? "progress_activity" : "sync_alt"}
@@ -190,23 +208,42 @@ export default function Sidebar({
         </div>
       )}
 
-      {runToast && (
-        <div className="fixed inset-x-4 bottom-4 lg:inset-x-auto lg:left-[276px] lg:bottom-8 card bg-primary-container text-white px-6 py-4 flex items-center gap-4 z-[80] border-white/10">
-          <div className="w-8 h-8 rounded-full bg-success-soft text-success flex items-center justify-center">
-            <Icon name="check" size={18} />
-          </div>
-          <div>
-            <p className="text-sm font-medium">Reconciliation finished</p>
-            <p className="text-xs opacity-70">{runToast}</p>
-          </div>
-          <button
-            onClick={() => setRunToast(null)}
-            className="btn-icon text-white/60! hover:text-white! ml-2"
+      {/* Portalled to <body> deliberately. This <aside> carries a `translate`,
+          which makes it the containing block for any `position: fixed` child —
+          so while the drawer is closed (translated -100%) the toast rendered
+          off-screen, and a failed run reported itself where nobody could see
+          it. The portal escapes that containing block. */}
+      {runToast &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            role="status"
+            aria-live="polite"
+            className="fixed inset-x-4 bottom-4 lg:inset-x-auto lg:left-[276px] lg:bottom-8 lg:max-w-md card bg-primary-container text-white px-5 py-4 flex items-start gap-4 z-[80] border-white/10 shadow-xl"
           >
-            <Icon name="close" size={18} />
-          </button>
-        </div>
-      )}
+            <div
+              className={`w-8 h-8 shrink-0 rounded-full flex items-center justify-center ${
+                runToast.ok ? "bg-success-soft text-success" : "bg-danger-soft text-danger"
+              }`}
+            >
+              <Icon name={runToast.ok ? "check" : "error"} size={18} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium">
+                {runToast.ok ? "Reconciliation finished" : "Reconciliation failed"}
+              </p>
+              <p className="text-xs opacity-70 break-words">{runToast.text}</p>
+            </div>
+            <button
+              onClick={() => setRunToast(null)}
+              aria-label="Dismiss"
+              className="btn-icon text-white! opacity-60 hover:opacity-100 ml-auto shrink-0"
+            >
+              <Icon name="close" size={18} />
+            </button>
+          </div>,
+          document.body
+        )}
 
       <div className="mt-4 px-3 pt-4 border-t border-white/10 space-y-1">
         <div className="px-3 py-1.5">
