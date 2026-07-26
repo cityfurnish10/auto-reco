@@ -5,7 +5,7 @@
 // backdrop, and the header hamburger. layout.tsx stays a server component (it
 // resolves the session) and just renders this around the page children.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SessionUser } from "@/lib/demo-auth";
 import Sidebar from "./sidebar";
 import ThemeToggle from "./theme-toggle";
@@ -22,6 +22,23 @@ export default function DashboardShell({
   children: React.ReactNode;
 }) {
   const [navOpen, setNavOpen] = useState(false);
+
+  // Escape closes the drawer, matching every dialog in the app. Also locks the
+  // page behind it — without this the body scrolled under the open drawer,
+  // which on a phone looks like the menu is sliding away on its own.
+  useEffect(() => {
+    if (!navOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNavOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [navOpen]);
 
   return (
     // ToastProvider wraps the whole shell — the sidebar raises toasts too, so it
@@ -48,6 +65,8 @@ export default function DashboardShell({
               className="btn-icon lg:hidden"
               title="Open menu"
               aria-label="Open navigation menu"
+              aria-expanded={navOpen}
+              aria-controls="app-sidebar"
             >
               <Icon name="menu" size={22} />
             </button>

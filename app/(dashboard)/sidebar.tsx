@@ -139,8 +139,16 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`w-sidebar-width h-screen fixed left-0 top-0 bg-primary-container flex flex-col py-6 z-50 shadow-xl transition-transform duration-200 lg:translate-x-0 ${
-        open ? "translate-x-0" : "-translate-x-full"
+      id="app-sidebar"
+      aria-label="Main navigation"
+      // `invisible` when the drawer is shut, not just translated away: a
+      // translated element is still in the tab order, so tabbing from the
+      // hamburger used to walk keyboard focus through eight links nobody could
+      // see. It has to be CSS rather than the `inert` attribute, because the
+      // same element is permanently visible at lg+ where `open` is always
+      // false — hence `lg:visible`, which an attribute could not express.
+      className={`w-sidebar-width h-screen fixed left-0 top-0 bg-primary-container flex flex-col py-6 z-50 shadow-xl transition-transform duration-200 lg:translate-x-0 lg:visible ${
+        open ? "translate-x-0 visible" : "-translate-x-full invisible"
       }`}
     >
       <div className="px-6 mb-8 flex items-start justify-between">
@@ -170,6 +178,9 @@ export default function Sidebar({
               key={item.href}
               href={item.href}
               onClick={onClose}
+              // The colour + left rule showed which page you were on; nothing
+              // told a screen reader.
+              aria-current={active ? "page" : undefined}
               className={
                 active
                   ? "flex items-center gap-3 px-3 py-2.5 rounded-control bg-white/10 text-white border-l-[3px] border-primary-fixed-dim font-semibold transition-[background-color,border-color] duration-150"
