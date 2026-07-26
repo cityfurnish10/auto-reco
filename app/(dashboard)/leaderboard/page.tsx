@@ -10,6 +10,14 @@ const TREND_ICON: Record<string, { icon: IconName; cls: string }> = {
   flat: { icon: "trending_flat", cls: "text-text-muted" },
 };
 
+// Below this many movements a percentage says more about the sample than the
+// warehouse: 3 movements and 0 variances is 100%, and it was taking the trophy
+// off cities running thousands of movements at 96%. The API's ranking is left
+// alone — re-ordering it here would put a rank number next to a row that isn't
+// in that position — but the medal goes to the best city that actually cleared
+// the bar, and thin rows say so.
+const MIN_MOVEMENTS = 50;
+
 const WINDOWS: { key: WindowKey; label: string }[] = [
   { key: "latest", label: "Latest" },
   { key: "last7", label: "7 Days" },
@@ -51,6 +59,15 @@ export default function LeaderboardPage() {
   }
 
   const isEmpty = !loading && (data?.empty || rows.length === 0);
+
+  // The city the trophy actually belongs to: best-ranked with a real sample.
+  const medalCity = useMemo(
+    () => rows.find((r) => r.accuracy !== null && r.movements >= MIN_MOVEMENTS)?.city ?? null,
+    [rows]
+  );
+  const thinRows = rows.filter(
+    (r) => r.accuracy !== null && r.movements < MIN_MOVEMENTS
+  ).length;
 
   return (
     <div className="p-container-margin space-y-6">
@@ -162,10 +179,10 @@ export default function LeaderboardPage() {
               {rows.map((r) => {
                 const trend = TREND_ICON[r.trend];
                 return (
-                  <div key={r.city} className={`p-4 ${r.rank === 1 ? "row-gold" : ""}`}>
+                  <div key={r.city} className={`p-4 ${r.city === medalCity ? "row-gold" : ""}`}>
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        {r.rank === 1 ? (
+                        {r.city === medalCity ? (
                           <Icon name="workspace_premium" size={20} className="text-[#b9aa83] shrink-0" />
                         ) : (
                           <span className="font-headline text-base text-text-muted shrink-0">#{r.rank}</span>
@@ -173,12 +190,17 @@ export default function LeaderboardPage() {
                         <span className="font-headline text-base text-text-primary truncate">{r.city}</span>
                         <Icon name={trend.icon} size={18} className={`shrink-0 ${trend.cls}`} />
                       </div>
-                      <span className="font-bold text-text-primary shrink-0">{pct(r.accuracy)}</span>
+                      <span className="font-bold text-text-primary shrink-0 tabular-nums">
+                        {pct(r.accuracy)}
+                      </span>
                     </div>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted mt-2">
-                      <span>{r.movements.toLocaleString()} moves</span>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-muted mt-2">
+                      <span className="tabular-nums">{r.movements.toLocaleString()} moves</span>
                       <span className={r.real > 0 ? "text-danger font-semibold" : ""}>{r.real} REAL</span>
                       <span>{r.high} high</span>
+                      {r.accuracy !== null && r.movements < MIN_MOVEMENTS && (
+                        <span className="badge badge-suppressed">Low sample</span>
+                      )}
                     </div>
                   </div>
                 );
@@ -203,10 +225,11 @@ export default function LeaderboardPage() {
                   {rows.map((r) => {
                     const trend = TREND_ICON[r.trend];
                     const noData = r.accuracy === null;
+                    const thin = !noData && r.movements < MIN_MOVEMENTS;
                     return (
-                      <tr key={r.city} className={r.rank === 1 && !noData ? "row-gold" : ""}>
+                      <tr key={r.city} className={r.city === medalCity ? "row-gold" : ""}>
                         <td className="text-center">
-                          {r.rank === 1 && !noData ? (
+                          {r.city === medalCity ? (
                             <Icon name="workspace_premium" size={22} className="text-[#b9aa83] inline-block" />
                           ) : (
                             <span className="font-headline text-base text-text-muted">{r.rank}</span>
@@ -217,10 +240,24 @@ export default function LeaderboardPage() {
                           {noData && (
                             <span className="ml-2 text-xs text-text-muted">(no movements)</span>
                           )}
+                          {thin && (
+                            <span
+                              className="badge badge-suppressed ml-2"
+                              title={`Under ${MIN_MOVEMENTS} movements — this percentage is not comparable with a full warehouse`}
+                            >
+                              Low sample
+                            </span>
+                          )}
                         </td>
-                        <td className="text-right font-bold text-text-primary">{pct(r.accuracy)}</td>
-                        <td className="text-right">{r.movements.toLocaleString()}</td>
-                        <td className="text-right">{r.real}</td>
+                        <td
+                          className={`text-right font-bold tabular-nums ${
+                            thin ? "text-text-muted" : "text-text-primary"
+                          }`}
+                        >
+                          {pct(r.accuracy)}
+                        </td>
+                        <td className="text-right tabular-nums">{r.movements.toLocaleString()}</td>
+                        <td className="text-right tabular-nums">{r.real}</td>
                         <td className="text-center">
                           <span className={r.high > 0 ? "badge badge-high" : "badge badge-done"}>{r.high}</span>
                         </td>
@@ -235,10 +272,17 @@ export default function LeaderboardPage() {
             </div>
           </>
         )}
-        <div className="px-6 py-3 bg-surface-elevated border-t border-border flex items-center justify-between">
+        <div className="px-6 py-3 bg-surface-elevated border-t border-border flex flex-wrap items-center gap-x-3 gap-y-1">
           <span className="text-xs text-text-muted">
             {win ? `${win.label} • ranked by REAL variances per movement` : "—"}
           </span>
+          {thinRows > 0 && (
+            <span className="text-xs text-text-muted">
+              · {thinRows} cit{thinRows === 1 ? "y" : "ies"} under {MIN_MOVEMENTS} movements are
+              marked low sample and can&rsquo;t take the medal — a near-perfect score on a
+              handful of moves says more about the sample than the warehouse.
+            </span>
+          )}
         </div>
       </section>
     </div>
