@@ -4,7 +4,7 @@
 // ever sees their own city (enforced by RLS on the API; the city filter here
 // is belt-and-suspenders). Managers close variances with a reason (→ PATCH).
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { SessionUser } from "@/lib/demo-auth";
 import type { City } from "@/lib/sample-data";
 import type { Bucket, Priority, VarianceDB, VarianceStatus } from "@/lib/db/schema";
@@ -21,6 +21,9 @@ import {
   responsibleLabel,
 } from "@/lib/ui/variance-format";
 import { SortHeader, type SortState } from "@/components/sort-header";
+import { RowCheckbox, SelectAllCheckbox } from "@/components/row-checkbox";
+import { useSelection } from "@/lib/hooks/use-selection";
+import BulkActionBar from "./bulk-action-bar";
 import { SourceBadge } from "@/components/source-badge";
 import { Icon } from "@/components/icon";
 import { errText, useToast } from "@/components/toast";
@@ -108,6 +111,28 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
     setPage(1);
   }
 
+  // Selection deliberately survives paging — see use-selection.ts.
+  const visibleIds = useMemo(() => rows.map((r) => r.id), [rows]);
+  const sel = useSelection(visibleIds);
+  const lastClicked = useRef<string | null>(null);
+
+  // Shift-click selects the run between the two clicked rows, as in a file
+  // manager. Falls back to a plain toggle when the anchor has been paged away.
+  function onRowCheck(id: string, shiftKey: boolean) {
+    if (shiftKey && lastClicked.current && lastClicked.current !== id) {
+      const a = visibleIds.indexOf(lastClicked.current);
+      const b = visibleIds.indexOf(id);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        sel.selectRange(visibleIds.slice(lo, hi + 1), !sel.has(id));
+        lastClicked.current = id;
+        return;
+      }
+    }
+    sel.toggle(id);
+    lastClicked.current = id;
+  }
+
   // Shared by the desktop row and the mobile card. Don't hijack a click that
   // was really the end of a text selection.
   function openDetail(v: VarianceDB) {
@@ -127,7 +152,14 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
   }, [refetch, refetchStats]);
 
   function resetPage<T>(setter: (v: T) => void) {
-    return (v: T) => { setter(v); setPage(1); };
+    return (v: T) => {
+      setter(v);
+      setPage(1);
+      // A filter change redefines what's being looked at, so a selection made
+      // under the old filters must not survive into a bulk action. Paging
+      // deliberately does NOT clear it — see use-selection.ts.
+      sel.clear();
+    };
   }
 
   async function handleSubmitForApproval(reason: ClosureReason | "", note: string) {
@@ -389,19 +421,30 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
             <div
               key={v.id}
               onClick={() => openDetail(v)}
-              className="p-4 space-y-2 cursor-pointer active:bg-surface-elevated transition-colors"
+              className={`p-4 space-y-2 cursor-pointer transition-colors ${
+                sel.has(v.id) ? "bg-accent-soft" : "active:bg-surface-elevated"
+              }`}
             >
               <div className="flex items-start justify-between gap-2">
-                {/* A <div> can't take focus — this button is the keyboard route in. */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openDetail(v);
-                  }}
-                  className="font-mono font-semibold text-text-primary text-sm break-all text-left hover:text-accent"
-                >
-                  {v.barcode}
-                </button>
+                <div className="flex items-start gap-3 min-w-0">
+                  <span className="pt-0.5">
+                    <RowCheckbox
+                      checked={sel.has(v.id)}
+                      onChange={() => onRowCheck(v.id, false)}
+                      label={`Select ${v.barcode}`}
+                    />
+                  </span>
+                  {/* A <div> can't take focus — this button is the keyboard route in. */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openDetail(v);
+                    }}
+                    className="font-mono font-semibold text-text-primary text-sm break-all text-left hover:text-accent"
+                  >
+                    {v.barcode}
+                  </button>
+                </div>
                 <span className={`${PRIORITY_BADGE[v.priority]} shrink-0`}>{v.priority}</span>
               </div>
               {v.product && <p className="text-sm text-text-secondary">{v.product}</p>}
@@ -451,6 +494,14 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
           <table className="table-clean">
             <thead>
               <tr>
+                <th className="w-10">
+                  <SelectAllCheckbox
+                    checked={sel.allVisibleSelected}
+                    indeterminate={sel.someVisibleSelected}
+                    onChange={sel.toggleAllVisible}
+                    label={`Select all ${rows.length} rows on this page`}
+                  />
+                </th>
                 <SortHeader label="Date" sortKey="date" state={sort} onSort={applySort} />
                 <SortHeader label="Item Name" sortKey="product" state={sort} onSort={applySort} />
                 <SortHeader label="Barcode" sortKey="barcode" state={sort} onSort={applySort} />
@@ -479,7 +530,18 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
             </thead>
             <tbody>
               {rows.map((v) => (
-                <tr key={v.id} onClick={() => openDetail(v)} className="cursor-pointer">
+                <tr
+                  key={v.id}
+                  onClick={() => openDetail(v)}
+                  className={`cursor-pointer ${sel.has(v.id) ? "bg-accent-soft" : ""}`}
+                >
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <RowCheckbox
+                      checked={sel.has(v.id)}
+                      onChange={(shift) => onRowCheck(v.id, shift)}
+                      label={`Select ${v.barcode}`}
+                    />
+                  </td>
                   <td className="whitespace-nowrap text-text-secondary">{v.business_date}</td>
                   <td className="max-w-[200px] truncate" title={v.product ?? ""}>{v.product ?? "—"}</td>
                   <td>
@@ -529,7 +591,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
               ))}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="text-center py-10 text-text-muted">
+                  <td colSpan={13} className="text-center py-10 text-text-muted">
                     <div className="flex flex-col items-center gap-2">
                       <Icon name="search_off" size={32} className="text-text-disabled" />
                       No variances match the selected filters.
@@ -586,6 +648,17 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
         role={user.role}
         onClose={() => setDetail(null)}
         onChanged={() => {
+          refetch();
+          refetchStats();
+        }}
+      />
+
+      <BulkActionBar
+        ids={sel.ids}
+        role={user.role}
+        pendingApprovalCount={0}
+        onClear={sel.clear}
+        onDone={() => {
           refetch();
           refetchStats();
         }}

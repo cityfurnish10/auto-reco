@@ -5,7 +5,7 @@
 // Date, City, Item Name, Barcode, Ticket ID, Source, Ops Type, SO Number,
 // Variance, Priority, Status. Defaults to the REAL + open "chase list".
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { SessionUser } from "@/lib/demo-auth";
 import { CITIES, type City } from "@/lib/sample-data";
 import type {
@@ -31,6 +31,9 @@ import {
 } from "@/lib/ui/variance-format";
 import { downloadCsv, varianceRowsToCsv } from "@/lib/ui/variance-csv";
 import { SortHeader, type SortState } from "@/components/sort-header";
+import { RowCheckbox, SelectAllCheckbox } from "@/components/row-checkbox";
+import { useSelection } from "@/lib/hooks/use-selection";
+import BulkActionBar from "./bulk-action-bar";
 import { responsibleLabel } from "@/lib/ui/variance-format";
 import {
   useStats,
@@ -118,6 +121,36 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     date: dateF || undefined,
   });
 
+  // Selection deliberately survives paging — picking 20 on page 1 and 15 on
+  // page 2, then acting on all 35, is the workflow bulk actions exist for.
+  const visibleIds = useMemo(() => rows.map((r) => r.id), [rows]);
+  const sel = useSelection(visibleIds);
+  const lastClicked = useRef<string | null>(null);
+
+  // Shift-click selects the run between the two clicked rows, as in a file
+  // manager. Falls back to a plain toggle when the anchor has been paged away.
+  function onRowCheck(id: string, shiftKey: boolean) {
+    if (shiftKey && lastClicked.current && lastClicked.current !== id) {
+      const a = visibleIds.indexOf(lastClicked.current);
+      const b = visibleIds.indexOf(id);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        sel.selectRange(visibleIds.slice(lo, hi + 1), !sel.has(id));
+        lastClicked.current = id;
+        return;
+      }
+    }
+    sel.toggle(id);
+    lastClicked.current = id;
+  }
+
+  // Bulk approve/reject only apply to rows actually awaiting approval — the bar
+  // shows that count so "Approve 30" never means "…and silently skip 12".
+  const selectedPendingApproval = useMemo(
+    () => rows.filter((r) => sel.has(r.id) && r.status === "pending_approval").length,
+    [rows, sel]
+  );
+
   // A manual "Run Reconciliation" (sidebar) dispatches this event — reload the
   // KPIs and variance table in place, keeping the admin's current filters.
   useEffect(() => {
@@ -143,6 +176,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     return (v: T) => {
       setter(v);
       setPage(1);
+      // A filter change redefines what the user is looking at, so a selection
+      // made under the old filters must not survive into a bulk action. Paging
+      // deliberately does NOT clear it — see use-selection.ts.
+      sel.clear();
     };
   }
 
@@ -570,19 +607,30 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             <div
               key={v.id}
               onClick={() => openDetail(v)}
-              className="p-4 space-y-2 cursor-pointer active:bg-surface-elevated transition-colors"
+              className={`p-4 space-y-2 cursor-pointer transition-colors ${
+                sel.has(v.id) ? "bg-accent-soft" : "active:bg-surface-elevated"
+              }`}
             >
               <div className="flex items-start justify-between gap-2">
-                {/* A <div> can't take focus — this button is the keyboard route in. */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openDetail(v);
-                  }}
-                  className="font-mono font-semibold text-text-primary text-sm break-all text-left hover:text-accent"
-                >
-                  {v.barcode}
-                </button>
+                <div className="flex items-start gap-3 min-w-0">
+                  <span className="pt-0.5">
+                    <RowCheckbox
+                      checked={sel.has(v.id)}
+                      onChange={() => onRowCheck(v.id, false)}
+                      label={`Select ${v.barcode}`}
+                    />
+                  </span>
+                  {/* A <div> can't take focus — this button is the keyboard route in. */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openDetail(v);
+                    }}
+                    className="font-mono font-semibold text-text-primary text-sm break-all text-left hover:text-accent"
+                  >
+                    {v.barcode}
+                  </button>
+                </div>
                 <span className={`${PRIORITY_BADGE[v.priority]} shrink-0`}>{v.priority}</span>
               </div>
               {v.product && <p className="text-sm text-text-secondary">{v.product}</p>}
@@ -667,6 +715,14 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
           <table className="table-clean">
             <thead>
               <tr>
+                <th className="w-10">
+                  <SelectAllCheckbox
+                    checked={sel.allVisibleSelected}
+                    indeterminate={sel.someVisibleSelected}
+                    onChange={sel.toggleAllVisible}
+                    label={`Select all ${rows.length} rows on this page`}
+                  />
+                </th>
                 <SortHeader label="Date" sortKey="date" state={sort} onSort={applySort} />
                 <SortHeader label="City" sortKey="city" state={sort} onSort={applySort} />
                 <SortHeader label="Item Name" sortKey="product" state={sort} onSort={applySort} />
@@ -703,7 +759,18 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             </thead>
             <tbody>
               {rows.map((v) => (
-                <tr key={v.id} onClick={() => openDetail(v)} className="cursor-pointer">
+                <tr
+                  key={v.id}
+                  onClick={() => openDetail(v)}
+                  className={`cursor-pointer ${sel.has(v.id) ? "bg-accent-soft" : ""}`}
+                >
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <RowCheckbox
+                      checked={sel.has(v.id)}
+                      onChange={(shift) => onRowCheck(v.id, shift)}
+                      label={`Select ${v.barcode}`}
+                    />
+                  </td>
                   <td className="whitespace-nowrap text-text-secondary">{v.business_date}</td>
                   <td>{v.city}</td>
                   <td className="max-w-[200px] truncate" title={v.product ?? ""}>{v.product ?? "—"}</td>
@@ -808,7 +875,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               ))}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={14} className="text-center py-10 text-text-muted">
+                  <td colSpan={15} className="text-center py-10 text-text-muted">
                     <div className="flex flex-col items-center gap-2">
                       <Icon name="search_off" size={32} className="text-text-disabled" />
                       No variances match the selected filters.
@@ -874,6 +941,14 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         role={user.role}
         onClose={() => setDetail(null)}
         onChanged={refreshAll}
+      />
+
+      <BulkActionBar
+        ids={sel.ids}
+        role={user.role}
+        pendingApprovalCount={selectedPendingApproval}
+        onClear={sel.clear}
+        onDone={refreshAll}
       />
     </section>
   );
