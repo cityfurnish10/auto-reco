@@ -7,9 +7,12 @@
 import { useEffect, useMemo, useState } from "react";
 import type { SessionUser } from "@/lib/demo-auth";
 import type { City } from "@/lib/sample-data";
-import type { Bucket, Priority, VarianceStatus } from "@/lib/db/schema";
+import type { Bucket, Priority, VarianceDB, VarianceStatus } from "@/lib/db/schema";
 import CloseVarianceModal, { type ClosureReason } from "./close-variance-modal";
+import VarianceDetailModal from "./variance-detail-modal";
+import VarianceListModal, { type ListModalRequest } from "./variance-list-modal";
 import { isCityOff } from "@/lib/engine/schedule";
+import { PRIORITY_BADGE, STATUS_BADGE, STATUS_LABEL } from "@/lib/ui/variance-format";
 import { SourceBadge } from "@/components/source-badge";
 import { Icon } from "@/components/icon";
 import {
@@ -18,25 +21,6 @@ import {
   patchVariance,
   type VarianceFilters,
 } from "@/lib/hooks/use-dashboard-data";
-
-const PRIORITY_BADGE: Record<Priority, string> = {
-  High: "badge badge-high",
-  Medium: "badge badge-medium",
-  Info: "badge badge-done",
-};
-const STATUS_BADGE: Record<VarianceStatus, string> = {
-  open: "badge badge-medium",
-  in_progress: "badge badge-suppressed",
-  pending_approval: "badge badge-info",
-  closed: "badge badge-done",
-};
-
-const STATUS_LABEL: Record<VarianceStatus, string> = {
-  open: "open",
-  in_progress: "in progress",
-  pending_approval: "pending approval",
-  closed: "closed",
-};
 
 const PAGE_SIZE = 25;
 
@@ -50,6 +34,8 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
   const [dateF, setDateF] = useState(""); // "" = latest run
   const [page, setPage] = useState(1);
   const [submitting, setSubmitting] = useState<{ id: string; product: string; barcode: string } | null>(null);
+  const [listRequest, setListRequest] = useState<ListModalRequest | null>(null);
+  const [detail, setDetail] = useState<VarianceDB | null>(null);
 
   // Debounce the search box; a search finds across all buckets/statuses.
   useEffect(() => {
@@ -156,31 +142,57 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
       {/* KPI grid — loss-only. Posting-lag / hygiene (INFO) rows stay in the DB
           for audit but are excluded from these counts (see hidden-count note). */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="kpi-tile kpi-tile--danger card-hover">
+        <button
+          onClick={() => setListRequest({ bucket: "REAL", status: "ALL", title: "All loss variances" })}
+          className="kpi-tile kpi-tile--danger card-hover text-left group cursor-pointer"
+        >
           <div className="p-2 bg-danger-soft text-danger rounded-control w-fit mb-4"><Icon name="warning" size={22} /></div>
-          <p className="kpi-label">Variances — losses</p>
+          <p className="kpi-label group-hover:underline">Variances — losses</p>
           <h3 className="kpi-value text-danger mt-1">{statsLoading ? "…" : cityAgg?.real ?? 0}</h3>
-        </div>
-        <div className="kpi-tile card-hover">
+        </button>
+        <button
+          onClick={() => setListRequest({ bucket: "REAL", status: "open", title: "Open losses" })}
+          className="kpi-tile card-hover text-left group cursor-pointer"
+        >
           <div className="p-2 bg-accent-soft text-accent rounded-control w-fit mb-4"><Icon name="pending_actions" size={22} /></div>
-          <p className="kpi-label">Open</p>
+          <p className="kpi-label group-hover:underline">Open</p>
           <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.openReal ?? 0}</h3>
-        </div>
-        <div className="kpi-tile card-hover">
+        </button>
+        <button
+          onClick={() =>
+            setListRequest({ bucket: "REAL", status: "pending_approval", title: "Awaiting approval" })
+          }
+          className="kpi-tile card-hover text-left group cursor-pointer"
+        >
           <div className="p-2 bg-surface-elevated rounded-control text-accent w-fit mb-4"><Icon name="approval" size={22} /></div>
-          <p className="kpi-label">Awaiting approval</p>
+          <p className="kpi-label group-hover:underline">Awaiting approval</p>
           <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.pendingApproval ?? 0}</h3>
-        </div>
-        <div className="kpi-tile kpi-tile--success card-hover">
+        </button>
+        <button
+          onClick={() => setListRequest({ bucket: "REAL", status: "closed", title: "Closed variances" })}
+          className="kpi-tile kpi-tile--success card-hover text-left group cursor-pointer"
+        >
           <div className="p-2 bg-success-soft text-success rounded-control w-fit mb-4"><Icon name="task_alt" size={22} /></div>
-          <p className="kpi-label">Closed</p>
+          <p className="kpi-label group-hover:underline">Closed</p>
           <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.closed ?? 0}</h3>
-        </div>
+        </button>
       </div>
       {!statsLoading && (cityAgg?.infoBucket ?? 0) > 0 && (
         <p className="text-xs text-text-disabled -mt-2">
-          + {cityAgg?.infoBucket} posting-lag / hygiene entries hidden (audit only — switch the table
-          filter to INFO to view)
+          + {cityAgg?.infoBucket} posting-lag / hygiene entries hidden (audit only —{" "}
+          <button
+            onClick={() =>
+              setListRequest({
+                bucket: "INFO",
+                status: "ALL",
+                title: "Posting-lag & hygiene entries",
+              })
+            }
+            className="underline hover:text-text-secondary"
+          >
+            view them
+          </button>
+          )
         </p>
       )}
 
@@ -330,10 +342,28 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
             </thead>
             <tbody>
               {rows.map((v) => (
-                <tr key={v.id}>
+                <tr
+                  key={v.id}
+                  onClick={() => {
+                    if (window.getSelection()?.isCollapsed === false) return;
+                    setDetail(v);
+                  }}
+                  className="cursor-pointer"
+                >
                   <td className="whitespace-nowrap text-text-secondary">{v.business_date}</td>
                   <td className="max-w-[200px] truncate" title={v.product ?? ""}>{v.product ?? "—"}</td>
-                  <td className="font-mono font-semibold text-text-primary">{v.barcode}</td>
+                  <td>
+                    {/* A <tr> can't take focus — this is the keyboard route in. */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDetail(v);
+                      }}
+                      className="font-mono font-semibold text-text-primary hover:text-accent hover:underline"
+                    >
+                      {v.barcode}
+                    </button>
+                  </td>
                   <td className="text-text-secondary">{v.ticket_id ?? "—"}</td>
                   <td><SourceBadge source={v.variance_source} /></td>
                   <td className="text-text-secondary text-xs">{v.job_type ?? "—"}</td>
@@ -352,7 +382,10 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                       <span className="badge badge-info" title={v.submit_note ?? undefined}>Pending approval</span>
                     ) : (
                       <button
-                        onClick={() => setSubmitting({ id: v.id, product: v.product ?? "", barcode: v.barcode })}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSubmitting({ id: v.id, product: v.product ?? "", barcode: v.barcode });
+                        }}
                         className="btn btn-compact btn-primary"
                       >
                         Submit
@@ -401,6 +434,29 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
           onCancel={() => setSubmitting(null)}
         />
       )}
+
+      <VarianceListModal
+        request={listRequest}
+        city={city}
+        date={dateF || undefined}
+        role={user.role}
+        showCityColumn={false}
+        onClose={() => setListRequest(null)}
+        onDirty={() => {
+          refetch();
+          refetchStats();
+        }}
+      />
+
+      <VarianceDetailModal
+        variance={detail}
+        role={user.role}
+        onClose={() => setDetail(null)}
+        onChanged={() => {
+          refetch();
+          refetchStats();
+        }}
+      />
     </div>
   );
 }

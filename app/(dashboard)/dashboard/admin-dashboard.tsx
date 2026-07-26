@@ -5,19 +5,27 @@
 // Date, City, Item Name, Barcode, Ticket ID, Source, Ops Type, SO Number,
 // Variance, Priority, Status. Defaults to the REAL + open "chase list".
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SessionUser } from "@/lib/demo-auth";
 import { CITIES, type City } from "@/lib/sample-data";
 import type {
   Bucket,
   Priority,
+  VarianceDB,
   VarianceSource,
   VarianceStatus,
 } from "@/lib/db/schema";
 import { SourceBadge } from "@/components/source-badge";
 import { Icon } from "@/components/icon";
 import CloseVarianceModal from "./close-variance-modal";
+import VarianceDetailModal from "./variance-detail-modal";
+import VarianceListModal, { type ListModalRequest } from "./variance-list-modal";
 import { isCityOff } from "@/lib/engine/schedule";
+import {
+  PRIORITY_BADGE,
+  STATUS_BADGE,
+  STATUS_LABEL,
+} from "@/lib/ui/variance-format";
 import {
   useStats,
   useVariances,
@@ -26,26 +34,6 @@ import {
 } from "@/lib/hooks/use-dashboard-data";
 
 type CityTab = "ALL" | City;
-
-const PRIORITY_BADGE: Record<Priority, string> = {
-  High: "badge badge-high",
-  Medium: "badge badge-medium",
-  Info: "badge badge-done",
-};
-
-const STATUS_BADGE: Record<VarianceStatus, string> = {
-  open: "badge badge-medium",
-  in_progress: "badge badge-suppressed",
-  pending_approval: "badge badge-info",
-  closed: "badge badge-done",
-};
-
-const STATUS_LABEL: Record<VarianceStatus, string> = {
-  open: "open",
-  in_progress: "in progress",
-  pending_approval: "pending approval",
-  closed: "closed",
-};
 
 const SOURCES: VarianceSource[] = ["Odoo", "DT", "Sheet", "Physical", "Cross"];
 const PAGE_SIZE = 25;
@@ -130,20 +118,13 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     };
   }
 
-  // Drill-down from a KPI tile: apply its filter to the variance table and
-  // bring the table into view. Any active search is cleared first — a search
-  // deliberately spans every bucket/status (see `filters`), so leaving one on
-  // would silently ignore the filter the click just asked for.
-  const tableRef = useRef<HTMLDivElement>(null);
-  function showInTable(next: { bucket: Bucket | "ALL"; status: VarianceStatus | "ALL" }) {
-    setSearchInput("");
-    setQ("");
-    setBucket(next.bucket);
-    setStatus(next.status);
-    setPage(1);
-    requestAnimationFrame(() =>
-      tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-    );
+  // Drill-down from a KPI tile opens a dialog over the page — the table below
+  // keeps whatever filters and search the admin already had.
+  const [listRequest, setListRequest] = useState<ListModalRequest | null>(null);
+  const [detail, setDetail] = useState<VarianceDB | null>(null);
+  function refreshAll() {
+    refetch();
+    refetchStats();
   }
 
   async function dispute(id: string) {
@@ -249,8 +230,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="kpi-tile kpi-tile--accent flex flex-col justify-between group">
           <button
-            onClick={() => showInTable({ bucket: "REAL", status: "ALL" })}
-            title="Show every loss variance in the table below"
+            onClick={() =>
+              setListRequest({ bucket: "REAL", status: "ALL", title: "All loss variances" })
+            }
+            title="Open every loss variance"
             className="w-full text-left flex flex-col cursor-pointer"
           >
             <span className="kpi-label group-hover:underline">Variances — losses</span>
@@ -265,8 +248,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         </div>
         <div className="kpi-tile kpi-tile--danger flex flex-col justify-between group">
           <button
-            onClick={() => showInTable({ bucket: "REAL", status: "open" })}
-            title="Show the open losses in the table below"
+            onClick={() =>
+              setListRequest({ bucket: "REAL", status: "open", title: "Open losses" })
+            }
+            title="Open the losses awaiting action"
             className="w-full text-left flex flex-col cursor-pointer"
           >
             <span className="kpi-label group-hover:underline">Open</span>
@@ -275,7 +260,13 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
           <span className="text-xs text-text-muted mt-1">
             {(agg?.pendingApproval ?? 0) > 0 ? (
               <button
-                onClick={() => showInTable({ bucket: "REAL", status: "pending_approval" })}
+                onClick={() =>
+                  setListRequest({
+                    bucket: "REAL",
+                    status: "pending_approval",
+                    title: "Awaiting your approval",
+                  })
+                }
                 className="text-accent font-semibold hover:underline"
               >
                 {agg?.pendingApproval} pending approval
@@ -287,8 +278,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         </div>
         <div className="kpi-tile flex flex-col justify-between group">
           <button
-            onClick={() => showInTable({ bucket: "REAL", status: "closed" })}
-            title="Show the resolved losses in the table below"
+            onClick={() =>
+              setListRequest({ bucket: "REAL", status: "closed", title: "Resolved losses" })
+            }
+            title="Open the resolved losses"
             className="w-full text-left flex flex-col cursor-pointer"
           >
             <span className="kpi-label group-hover:underline">Resolved</span>
@@ -301,7 +294,13 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         <p className="text-xs text-text-disabled -mt-2">
           + {agg?.infoBucket} posting-lag / hygiene entries hidden (audit only —{" "}
           <button
-            onClick={() => showInTable({ bucket: "INFO", status: "ALL" })}
+            onClick={() =>
+              setListRequest({
+                bucket: "INFO",
+                status: "ALL",
+                title: "Posting-lag & hygiene entries",
+              })
+            }
             className="underline hover:text-text-secondary"
           >
             view them
@@ -384,8 +383,8 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         </div>
       )}
 
-      {/* Variance table — KPI-tile clicks filter it and scroll it into view */}
-      <div ref={tableRef} className="card overflow-hidden scroll-mt-4">
+      {/* Variance table — rows open the detail dialog */}
+      <div className="card overflow-hidden">
         <div className="p-4 border-b border-border bg-surface-elevated flex flex-col lg:flex-row justify-between lg:items-center gap-4">
           <div>
             <h3 className="font-headline text-lg text-text-primary">
@@ -547,11 +546,29 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             </thead>
             <tbody>
               {rows.map((v) => (
-                <tr key={v.id}>
+                <tr
+                  key={v.id}
+                  onClick={() => {
+                    if (window.getSelection()?.isCollapsed === false) return;
+                    setDetail(v);
+                  }}
+                  className="cursor-pointer"
+                >
                   <td className="whitespace-nowrap text-text-secondary">{v.business_date}</td>
                   <td>{v.city}</td>
                   <td className="max-w-[200px] truncate" title={v.product ?? ""}>{v.product ?? "—"}</td>
-                  <td className="font-mono font-semibold text-text-primary">{v.barcode}</td>
+                  <td>
+                    {/* A <tr> can't take focus — this is the keyboard route in. */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDetail(v);
+                      }}
+                      className="font-mono font-semibold text-text-primary hover:text-accent hover:underline"
+                    >
+                      {v.barcode}
+                    </button>
+                  </td>
                   <td className="text-text-secondary">{v.ticket_id ?? "—"}</td>
                   <td><SourceBadge source={v.variance_source} /></td>
                   <td className="text-text-secondary text-xs">{v.job_type ?? "—"}</td>
@@ -576,7 +593,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     {v.status === "pending_approval" ? (
                       <div className="inline-flex items-center gap-1">
                         <button
-                          onClick={() => approve(v.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            approve(v.id);
+                          }}
                           disabled={busyId === v.id}
                           title="Approve — closes this variance"
                           className="btn-icon hover:text-success disabled:opacity-40"
@@ -584,7 +604,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                           <Icon name="check_circle" size={18} />
                         </button>
                         <button
-                          onClick={() => setRejecting({ id: v.id, product: v.product ?? "", barcode: v.barcode })}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRejecting({ id: v.id, product: v.product ?? "", barcode: v.barcode });
+                          }}
                           disabled={busyId === v.id}
                           title="Reject — send back to the manager"
                           className="btn-icon hover:text-danger disabled:opacity-40"
@@ -595,7 +618,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     ) : v.status === "open" || v.status === "in_progress" ? (
                       <div className="inline-flex items-center gap-1.5">
                         <button
-                          onClick={() => setResolving({ id: v.id, product: v.product ?? "", barcode: v.barcode })}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setResolving({ id: v.id, product: v.product ?? "", barcode: v.barcode });
+                          }}
                           disabled={busyId === v.id}
                           title="Close with a reason and comment"
                           className="btn btn-compact btn-primary disabled:opacity-40"
@@ -604,7 +630,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                         </button>
                         {v.status === "open" && (
                           <button
-                            onClick={() => dispute(v.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              dispute(v.id);
+                            }}
                             disabled={busyId === v.id}
                             title="Flag as disputed — escalate to city manager"
                             className="btn btn-compact btn-secondary disabled:opacity-40"
@@ -675,8 +704,21 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         />
       )}
 
-      {/* user prop reserved for future per-admin audit; referenced to satisfy lint */}
-      <span className="hidden">{user.email}</span>
+      <VarianceListModal
+        request={listRequest}
+        city={cityTab}
+        date={dateF || undefined}
+        role={user.role}
+        onClose={() => setListRequest(null)}
+        onDirty={refreshAll}
+      />
+
+      <VarianceDetailModal
+        variance={detail}
+        role={user.role}
+        onClose={() => setDetail(null)}
+        onChanged={refreshAll}
+      />
     </section>
   );
 }
