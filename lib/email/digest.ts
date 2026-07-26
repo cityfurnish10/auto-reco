@@ -274,7 +274,7 @@ export function renderDigestHtml(data: DigestData, dashboardUrl?: string, notes?
             <td style="text-align:right;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9ca3af;">Daily Digest</td>
           </tr></table>
           <h2 style="margin:18px 0 6px;font-size:18px;color:#111827;">Warehouse Reconciliation Report</h2>
-          <p style="margin:0;color:#6b7280;font-size:13px;">${dateLabel} — business day reconciled (D-1).</p>
+          <p style="margin:0;color:#6b7280;font-size:13px;">${dateLabel} — business day reconciled.</p>
         </td></tr>
 
         ${noteBlock}

@@ -9,6 +9,7 @@ import { useDemoStore } from "@/lib/demo-store";
 import { runAllCities } from "@/lib/engine/run";
 import { buildSampleRowsByCity } from "@/lib/sample-raw-sources";
 import { Icon } from "@/components/icon";
+import { istDate, reconcileTargetDate } from "@/lib/reconcile/cron-dates";
 
 const supabaseConfigured =
   !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -38,8 +39,11 @@ export default function Sidebar({
   const { applyReconciliationRun } = useDemoStore();
   const [running, setRunning] = useState(false);
   const [runToast, setRunToast] = useState<string | null>(null);
-  const today = new Date().toISOString().slice(0, 10);
-  const [runDate, setRunDate] = useState(today); // which date the run reconciles
+  // Default to the same day the nightly job closes (yesterday) — today's books
+  // are still being written, so reconciling today is rarely what's wanted.
+  // Today stays selectable via the picker's max.
+  const today = istDate();
+  const [runDate, setRunDate] = useState(reconcileTargetDate); // date the run reconciles
 
   async function handleRunReconciliation() {
     if (running) return;
