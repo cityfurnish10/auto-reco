@@ -7,6 +7,7 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import type { GuardUpload, UploadStatus } from "@/lib/db/schema";
 import { CITIES, type City, type UploadStatus as DemoUploadStatus } from "@/lib/sample-data";
 import { Icon } from "@/components/icon";
+import { errText, useToast } from "@/components/toast";
 import { isCityOff } from "@/lib/engine/schedule";
 
 const supabaseConfigured =
@@ -57,7 +58,7 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
   const [uploading, setUploading] = useState(false);
   const [processing, setProcessing] = useState(false); // OCR running right after upload
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const toast = useToast();
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [history, setHistory] = useState<GuardUpload[]>([]);
@@ -133,10 +134,9 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
       if (!procRes.ok) {
         throw new Error(proc.error ?? proc.reason ?? `OCR failed (HTTP ${procRes.status})`);
       }
-      setToast(
-        `"${file.name}" processed — ${proc.rows ?? 0} rows extracted and stored for ${selectedCity} (register dated ${registerDate}).`
-      );
-      setTimeout(() => setToast(null), 6000);
+      toast.success(`"${file.name}" processed.`, {
+        detail: `${proc.rows ?? 0} rows extracted and stored for ${selectedCity} (register dated ${registerDate}).`,
+      });
       refreshHistory();
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : String(e));
@@ -151,13 +151,26 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
   // Admin-only: permanently remove a register — the PDF, its OCR'd rows in the
   // DB, and the Drive mirror. Requires an explicit confirm.
   async function handleDelete(u: GuardUpload) {
-    if (
-      !window.confirm(
-        `Remove "${u.file_name}" (${u.city}, ${u.business_date})?\n\nThis permanently deletes the PDF and its OCR'd data from the database. It cannot be undone.`
-      )
-    ) {
-      return;
-    }
+    const ok = await toast.confirm({
+      title: "Remove this register?",
+      destructive: true,
+      confirmLabel: "Delete permanently",
+      body: (
+        <>
+          <p>
+            <b className="text-text-primary">{u.file_name}</b> — {u.city},{" "}
+            {u.business_date}.
+          </p>
+          <p>
+            This deletes the PDF, its OCR&rsquo;d rows in the database and the Drive
+            mirror. Any reconciliation that already used those rows keeps its results,
+            but re-running {u.business_date} will treat the guard register as missing.
+          </p>
+          <p className="text-danger font-medium">This cannot be undone.</p>
+        </>
+      ),
+    });
+    if (!ok) return;
     setDeletingId(u.id);
     setUploadError(null);
     try {
@@ -167,11 +180,10 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-      setToast(`Removed "${u.file_name}" and its OCR data.`);
-      setTimeout(() => setToast(null), 6000);
+      toast.success(`Removed "${u.file_name}" and its OCR data.`);
       refreshHistory();
     } catch (e) {
-      setUploadError(`Could not delete: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Could not delete "${u.file_name}".`, { detail: errText(e) });
     } finally {
       setDeletingId(null);
     }
@@ -436,20 +448,6 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
         </section>
       </div>
 
-      {toast && (
-        <div className="fixed inset-x-4 bottom-4 md:inset-x-auto md:right-8 md:bottom-8 card bg-accent text-on-accent px-6 py-4 flex items-center gap-4 z-[60] shadow-card-hover">
-          <div className="w-8 h-8 bg-success-soft text-success rounded-full flex items-center justify-center">
-            <Icon name="check" size={18} />
-          </div>
-          <div>
-            <p className="text-sm font-medium">Upload received!</p>
-            <p className="text-xs opacity-70">{toast}</p>
-          </div>
-          <button onClick={() => setToast(null)} className="btn-icon text-on-accent! opacity-60 hover:opacity-100 ml-4">
-            <Icon name="close" size={18} />
-          </button>
-        </div>
-      )}
     </div>
   );
 }
@@ -465,7 +463,7 @@ function DemoUploadsClient({ user }: { user: SessionUser }) {
   const [selectedCity, setSelectedCity] = useState<City>(isManager ? user.city! : "DELHI");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const toast = useToast();
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -502,8 +500,7 @@ function DemoUploadsClient({ user }: { user: SessionUser }) {
       const fakeRows = 60 + Math.floor(Math.random() * 80);
       setUploadStatus(id, "PARSED", fakeRows);
       setUploading(false);
-      setToast(`"${file.name}" parsed — ${fakeRows} rows staged for ${selectedCity}.`);
-      setTimeout(() => setToast(null), 5000);
+      toast.success(`"${file.name}" parsed — ${fakeRows} rows staged for ${selectedCity}.`);
     }, 1500);
 
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -723,20 +720,6 @@ function DemoUploadsClient({ user }: { user: SessionUser }) {
         </section>
       </div>
 
-      {toast && (
-        <div className="fixed inset-x-4 bottom-4 md:inset-x-auto md:right-8 md:bottom-8 card bg-accent text-on-accent px-6 py-4 flex items-center gap-4 z-[60] shadow-card-hover">
-          <div className="w-8 h-8 bg-success-soft text-success rounded-full flex items-center justify-center">
-            <Icon name="check" size={18} />
-          </div>
-          <div>
-            <p className="text-sm font-medium">Upload successful!</p>
-            <p className="text-xs opacity-70">{toast}</p>
-          </div>
-          <button onClick={() => setToast(null)} className="btn-icon text-on-accent! opacity-60 hover:opacity-100 ml-4">
-            <Icon name="close" size={18} />
-          </button>
-        </div>
-      )}
     </div>
   );
 }

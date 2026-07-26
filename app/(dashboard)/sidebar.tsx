@@ -10,6 +10,7 @@ import { useDemoStore } from "@/lib/demo-store";
 import { runAllCities } from "@/lib/engine/run";
 import { buildSampleRowsByCity } from "@/lib/sample-raw-sources";
 import { Icon, type IconName } from "@/components/icon";
+import { useToast } from "@/components/toast";
 import { istDate, reconcileTargetDate } from "@/lib/reconcile/cron-dates";
 
 const supabaseConfigured =
@@ -43,6 +44,7 @@ export default function Sidebar({
   const pathname = usePathname();
   const router = useRouter();
   const { applyReconciliationRun } = useDemoStore();
+  const toast = useToast();
   const [running, setRunning] = useState(false);
   const [runToast, setRunToast] = useState<{ ok: boolean; text: string } | null>(null);
   // Default to the same day the nightly job closes (yesterday) — today's books
@@ -57,13 +59,23 @@ export default function Sidebar({
     // Real mode: trigger the actual server-side pipeline (POST /api/reconcile),
     // same as the nightly cron, then tell the dashboard to refetch.
     if (supabaseConfigured) {
-      if (
-        !window.confirm(
-          `Run reconciliation for ${runDate} now? It pulls all four sources (guard, sheet, DT, Odoo) and can take up to a minute.`
-        )
-      ) {
-        return;
-      }
+      const ok = await toast.confirm({
+        title: `Run reconciliation for ${runDate}?`,
+        body: (
+          <>
+            <p>
+              This pulls all four sources — guard register, ops sheet, DT and Odoo — and
+              re-derives every variance for that day. It can take up to a minute.
+            </p>
+            <p className="text-text-muted">
+              Existing variances are refreshed in place; anything already resolved or
+              approved keeps its status.
+            </p>
+          </>
+        ),
+        confirmLabel: "Run now",
+      });
+      if (!ok) return;
       setRunning(true);
       try {
         const res = await fetch("/api/reconcile", {

@@ -15,6 +15,7 @@ import { isCityOff } from "@/lib/engine/schedule";
 import { PRIORITY_BADGE, STATUS_BADGE, STATUS_LABEL } from "@/lib/ui/variance-format";
 import { SourceBadge } from "@/components/source-badge";
 import { Icon } from "@/components/icon";
+import { errText, useToast } from "@/components/toast";
 import { downloadCsv, varianceRowsToCsv } from "@/lib/ui/variance-csv";
 import {
   useStats,
@@ -27,6 +28,7 @@ import {
 const PAGE_SIZE = 25;
 
 export default function ManagerDashboard({ user }: { user: SessionUser }) {
+  const toast = useToast();
   const city = user.city as City;
   const [bucket, setBucket] = useState<Bucket | "ALL">("REAL");
   const [priority, setPriority] = useState<Priority | "ALL">("ALL");
@@ -102,11 +104,12 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
     if (!submitting) return;
     try {
       await patchVariance(submitting.id, "submit", reason || undefined, note);
+      toast.success(`${submitting.barcode} submitted — awaiting admin approval.`);
       setSubmitting(null);
       refetch();
       refetchStats();
     } catch (e) {
-      alert(`Could not submit for approval: ${e instanceof Error ? e.message : e}`);
+      toast.error("Could not submit for approval.", { detail: errText(e) });
     }
   }
 
@@ -127,12 +130,14 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
         varianceRowsToCsv(all)
       );
       if (truncated) {
-        alert(
-          `Export capped at ${all.length} rows. Narrow the filters (status or date) to get the rest.`
-        );
+        toast.info(`Exported the first ${all.length} rows.`, {
+          detail: "That's the export cap — narrow by status or date to get the rest.",
+        });
+      } else {
+        toast.success(`Exported ${all.length} row${all.length === 1 ? "" : "s"}.`);
       }
     } catch (e) {
-      alert(`Export failed: ${e instanceof Error ? e.message : e}`);
+      toast.error("Export failed.", { detail: errText(e) });
     } finally {
       setExporting(false);
     }

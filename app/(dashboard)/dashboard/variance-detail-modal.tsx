@@ -15,6 +15,7 @@ import { Icon } from "@/components/icon";
 import { Modal } from "@/components/modal";
 import { SourceBadge } from "@/components/source-badge";
 import { Skeleton } from "@/components/skeleton";
+import { errText, useToast } from "@/components/toast";
 import CloseVarianceModal from "./close-variance-modal";
 import type { SessionUser } from "@/lib/demo-auth";
 import type { SourceRowDB, VarianceDB } from "@/lib/db/schema";
@@ -34,6 +35,13 @@ import {
   formatTs,
   responsibleLabel,
 } from "@/lib/ui/variance-format";
+
+// Past tense for the confirmation toast — "resolved", not "close".
+const ACTION_PAST: Record<string, string> = {
+  submit: "submitted for approval",
+  reject: "sent back to the manager",
+  close: "resolved",
+};
 
 function Field({ label, value, mono }: { label: string; value?: string | null; mono?: boolean }) {
   return (
@@ -96,6 +104,7 @@ export default function VarianceDetailModal({
 }) {
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<"close" | "reject" | "submit" | null>(null);
+  const toast = useToast();
 
   const { bySource, coverage, loading: evidenceLoading } = useSourceRows({
     runId: v?.run_id ?? null,
@@ -118,10 +127,13 @@ export default function VarianceDetailModal({
     setBusy(true);
     try {
       await patchVariance(v!.id, action);
+      toast.success(`${v!.barcode} — ${label}d.`);
       onChanged();
       onClose();
     } catch (e) {
-      alert(`Could not ${label}: ${e instanceof Error ? e.message : e}`);
+      // A toast, not alert(): this modal holds a focus trap, and a native
+      // alert pulls focus out of it and blocks the thread.
+      toast.error(`Could not ${label} ${v!.barcode}.`, { detail: errText(e) });
     } finally {
       setBusy(false);
     }
@@ -137,10 +149,11 @@ export default function VarianceDetailModal({
         note
       );
       setConfirming(null);
+      toast.success(`${v!.barcode} — ${ACTION_PAST[action]}.`);
       onChanged();
       onClose();
     } catch (e) {
-      alert(`Could not ${action}: ${e instanceof Error ? e.message : e}`);
+      toast.error(`Could not ${action} ${v!.barcode}.`, { detail: errText(e) });
     }
   }
 

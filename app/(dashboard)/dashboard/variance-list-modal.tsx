@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
 import { Modal } from "@/components/modal";
 import { SourceBadge } from "@/components/source-badge";
+import { errText, useToast } from "@/components/toast";
 import VarianceDetailModal from "./variance-detail-modal";
 import type { SessionUser } from "@/lib/demo-auth";
 import type { Bucket, Priority, VarianceDB, VarianceStatus } from "@/lib/db/schema";
@@ -60,6 +61,7 @@ export default function VarianceListModal({
   // Actions here shouldn't refetch the page behind the overlay on every click;
   // the parent syncs once, on close.
   const dirty = useRef(false);
+  const toast = useToast();
 
   // Seed from the tile that opened us, and reset per opening.
   /* eslint-disable react-hooks/set-state-in-effect -- seed on open */
@@ -116,10 +118,12 @@ export default function VarianceListModal({
     setBusyId(id);
     try {
       await patchVariance(id, action);
+      toast.success(`Variance ${label}d.`);
       dirty.current = true;
       refetch();
     } catch (e) {
-      alert(`Could not ${label}: ${e instanceof Error ? e.message : e}`);
+      // A toast, not alert(): this dialog holds a focus trap.
+      toast.error(`Could not ${label} this variance.`, { detail: errText(e) });
     } finally {
       setBusyId(null);
     }

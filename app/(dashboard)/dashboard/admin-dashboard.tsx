@@ -17,6 +17,7 @@ import type {
 } from "@/lib/db/schema";
 import { SourceBadge } from "@/components/source-badge";
 import { Icon } from "@/components/icon";
+import { errText, useToast } from "@/components/toast";
 import CloseVarianceModal from "./close-variance-modal";
 import VarianceDetailModal from "./variance-detail-modal";
 import VarianceListModal, { type ListModalRequest } from "./variance-list-modal";
@@ -41,6 +42,7 @@ const SOURCES: VarianceSource[] = ["Odoo", "DT", "Sheet", "Physical", "Cross"];
 const PAGE_SIZE = 25;
 
 export default function AdminDashboard({ user }: { user: SessionUser }) {
+  const toast = useToast();
   const [cityTab, setCityTab] = useState<CityTab>("ALL");
   const [bucket, setBucket] = useState<Bucket | "ALL">("REAL");
   const [source, setSource] = useState<VarianceSource | "ALL">("ALL");
@@ -145,10 +147,11 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     setBusyId(id);
     try {
       await patchVariance(id, "dispute");
+      toast.success("Flagged — escalated to the city manager.");
       refetch();
       refetchStats();
     } catch (e) {
-      alert(`Could not dispute: ${e instanceof Error ? e.message : e}`);
+      toast.error("Could not flag this variance.", { detail: errText(e) });
     } finally {
       setBusyId(null);
     }
@@ -159,10 +162,11 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     setBusyId(id);
     try {
       await patchVariance(id, "approve");
+      toast.success("Approved and closed.");
       refetch();
       refetchStats();
     } catch (e) {
-      alert(`Could not approve: ${e instanceof Error ? e.message : e}`);
+      toast.error("Could not approve this submission.", { detail: errText(e) });
     } finally {
       setBusyId(null);
     }
@@ -174,10 +178,11 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     try {
       await patchVariance(rejecting.id, "reject", undefined, note);
       setRejecting(null);
+      toast.success(`${rejecting.barcode} sent back to the manager.`);
       refetch();
       refetchStats();
     } catch (e) {
-      alert(`Could not reject: ${e instanceof Error ? e.message : e}`);
+      toast.error("Could not reject this submission.", { detail: errText(e) });
     }
   }
 
@@ -188,10 +193,11 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     try {
       await patchVariance(resolving.id, "close", reason || undefined, note);
       setResolving(null);
+      toast.success(`${resolving.barcode} resolved.`);
       refetch();
       refetchStats();
     } catch (e) {
-      alert(`Could not resolve: ${e instanceof Error ? e.message : e}`);
+      toast.error("Could not resolve this variance.", { detail: errText(e) });
     }
   }
 
@@ -212,12 +218,14 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         varianceRowsToCsv(all)
       );
       if (truncated) {
-        alert(
-          `Export capped at ${all.length} rows. Narrow the filters (city, status or date) to get the rest.`
-        );
+        toast.info(`Exported the first ${all.length} rows.`, {
+          detail: "That's the export cap — narrow by city, status or date to get the rest.",
+        });
+      } else {
+        toast.success(`Exported ${all.length} row${all.length === 1 ? "" : "s"}.`);
       }
     } catch (e) {
-      alert(`Export failed: ${e instanceof Error ? e.message : e}`);
+      toast.error("Export failed.", { detail: errText(e) });
     } finally {
       setExporting(false);
     }

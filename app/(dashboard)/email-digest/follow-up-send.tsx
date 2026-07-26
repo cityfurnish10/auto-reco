@@ -9,6 +9,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
+import { useToast } from "@/components/toast";
 
 interface DayAgg {
   real: number;
@@ -46,6 +47,7 @@ export default function FollowUpSend({
   const [statsLoading, setStatsLoading] = useState(false);
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
+  const toast = useToast();
   const seq = useRef(0); // stale-guard for fast date flips
 
   /* eslint-disable react-hooks/set-state-in-effect -- async fetch loading toggle */
@@ -71,14 +73,29 @@ export default function FollowUpSend({
 
   async function send() {
     if (!canSend) return;
-    const summary = agg ? `${agg.closed} closed · ${agg.openReal} still open` : "";
-    if (
-      !window.confirm(
-        `Send the follow-up report for ${date} (${summary}) to ${to.length} recipient(s) now?`
-      )
-    ) {
-      return;
-    }
+    const ok = await toast.confirm({
+      title: `Send the ${date} follow-up now?`,
+      confirmLabel: `Send to ${to.length}`,
+      body: (
+        <>
+          <p>
+            This emails the {date} report to{" "}
+            <b className="text-text-primary">{to.length}</b> recipient
+            {to.length === 1 ? "" : "s"}
+            {cc.length > 0 && `, cc ${cc.length}`}
+            {bcc.length > 0 && `, bcc ${bcc.length}`}.
+          </p>
+          {agg && (
+            <p>
+              It will report <b className="text-text-primary">{agg.closed} closed</b> and{" "}
+              <b className="text-text-primary">{agg.openReal} still open</b>.
+            </p>
+          )}
+          <p className="text-text-muted">Outbound mail cannot be recalled.</p>
+        </>
+      ),
+    });
+    if (!ok) return;
     setSending(true);
     try {
       const res = await fetch("/api/email/test", {

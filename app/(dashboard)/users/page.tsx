@@ -7,6 +7,7 @@
 import { useMemo, useState } from "react";
 import { CITIES, type City } from "@/lib/sample-data";
 import { Icon } from "@/components/icon";
+import { errText, useToast } from "@/components/toast";
 import {
   useUsers,
   createUser,
@@ -33,6 +34,7 @@ const EMPTY: FormState = {
 
 export default function UsersPage() {
   const { users, loading, error, refetch } = useUsers();
+  const toast = useToast();
   const [search, setSearch] = useState("");
   const [panelOpen, setPanelOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY);
@@ -92,20 +94,45 @@ export default function UsersPage() {
   }
 
   async function toggleStatus(u: ManagedUser) {
+    const next = u.status === "active" ? "inactive" : "active";
     try {
-      await updateUser(u.id, { status: u.status === "active" ? "inactive" : "active" });
+      await updateUser(u.id, { status: next });
+      toast.success(
+        next === "active" ? `${u.name} can sign in again.` : `${u.name} can no longer sign in.`
+      );
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
+      toast.error(`Could not update ${u.name}.`, { detail: errText(err) });
     }
   }
   async function handleDelete(u: ManagedUser) {
-    if (!confirm(`Delete ${u.name} (${u.email})? This removes their login for good.`)) return;
+    const ok = await toast.confirm({
+      title: `Delete ${u.name}?`,
+      destructive: true,
+      confirmLabel: "Delete user",
+      body: (
+        <>
+          <p>
+            <b className="text-text-primary">{u.email}</b>
+            {u.city ? ` — ${u.city} manager` : " — administrator"}.
+          </p>
+          <p>
+            Their login is removed for good. Variances they closed or submitted keep
+            their audit trail, but the name behind it will no longer resolve.
+          </p>
+          <p className="text-text-muted">
+            To block access without losing the record, deactivate them instead.
+          </p>
+        </>
+      ),
+    });
+    if (!ok) return;
     try {
       await deleteUser(u.id);
+      toast.success(`${u.name} deleted.`);
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
+      toast.error(`Could not delete ${u.name}.`, { detail: errText(err) });
     }
   }
 
