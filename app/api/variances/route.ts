@@ -127,7 +127,15 @@ export async function GET(req: NextRequest) {
     if (bucket) query = query.eq("bucket", bucket);
     if (source) query = query.eq("variance_source", source);
     if (priority) query = query.eq("priority", priority);
-    if (status) query = query.eq("status", status);
+    // Comma-separated status accepted so a view can span several. The one that
+    // matters is "open,in_progress": flagging a variance moves it to
+    // in_progress, and the whole point of a flag is to escalate it TO the city
+    // manager — whose default view filtered exactly that status out, so the
+    // escalation landed somewhere nobody was looking.
+    if (status) {
+      const list = status.split(",").map((s) => s.trim()).filter(Boolean);
+      query = list.length > 1 ? query.in("status", list) : query.eq("status", list[0]);
+    }
     if (direction) query = query.eq("direction", direction);
     if (varianceName) query = query.eq("variance_name", varianceName);
     if (responsible) query = query.eq("responsible", responsible);

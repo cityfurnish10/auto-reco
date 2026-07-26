@@ -24,7 +24,13 @@ export interface VarianceFilters {
   bucket?: Bucket | "ALL";
   source?: VarianceSource | "ALL";
   priority?: Priority | "ALL";
-  status?: VarianceStatus | "ALL";
+  /**
+   * A single status, "ALL", or the pseudo-status "ACTIVE" = open + in_progress
+   * — everything still needing a human, which is what a triage view wants as
+   * its default. A flagged (in_progress) row is otherwise invisible under a
+   * plain "open" filter.
+   */
+  status?: VarianceStatus | "ALL" | "ACTIVE";
   /** Exact variance_name — isolates "the 57 losses that share one cause". */
   variance?: string | "ALL";
   /** Exact responsible slug — the team a chaser would actually go talk to. */
@@ -73,7 +79,9 @@ function toQuery(f: VarianceFilters): string {
   if (f.bucket && f.bucket !== "ALL") p.set("bucket", f.bucket);
   if (f.source && f.source !== "ALL") p.set("source", f.source);
   if (f.priority && f.priority !== "ALL") p.set("priority", f.priority);
-  if (f.status && f.status !== "ALL") p.set("status", f.status);
+  if (f.status && f.status !== "ALL") {
+    p.set("status", f.status === "ACTIVE" ? "open,in_progress" : f.status);
+  }
   if (f.variance && f.variance !== "ALL") p.set("variance", f.variance);
   if (f.responsible && f.responsible !== "ALL") p.set("responsible", f.responsible);
   if (f.q && f.q.trim()) p.set("q", f.q.trim());

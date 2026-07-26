@@ -34,6 +34,7 @@ import { SortHeader, type SortState } from "@/components/sort-header";
 import { RowCheckbox, SelectAllCheckbox } from "@/components/row-checkbox";
 import { CardListSkeleton, TableBodySkeleton } from "@/components/skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { StaleRunBanner } from "./stale-run-banner";
 import { useSelection } from "@/lib/hooks/use-selection";
 import BulkActionBar from "./bulk-action-bar";
 import { responsibleLabel } from "@/lib/ui/variance-format";
@@ -57,7 +58,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
   const [bucket, setBucket] = useState<Bucket | "ALL">("REAL");
   const [source, setSource] = useState<VarianceSource | "ALL">("ALL");
   const [priority, setPriority] = useState<Priority | "ALL">("ALL");
-  const [status, setStatus] = useState<VarianceStatus | "ALL">("open");
+  const [status, setStatus] = useState<VarianceStatus | "ALL" | "ACTIVE">("ACTIVE");
   const [varianceName, setVarianceName] = useState<string>("ALL");
   const [responsible, setResponsible] = useState<string>("ALL");
   const [sort, setSort] = useState<SortState>({ key: "date", dir: "desc" });
@@ -198,7 +199,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     bucket !== "REAL" ||
     source !== "ALL" ||
     priority !== "ALL" ||
-    status !== "open" ||
+    status !== "ACTIVE" ||
     varianceName !== "ALL" ||
     responsible !== "ALL" ||
     !!dateF ||
@@ -209,7 +210,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     setBucket("REAL");
     setSource("ALL");
     setPriority("ALL");
-    setStatus("open");
+    setStatus("ACTIVE");
     setVarianceName("ALL");
     setResponsible("ALL");
     setDateF("");
@@ -330,12 +331,22 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     }
   }
 
+  // The "(latest available)" parenthetical is gone — it is a banner now, since
+  // it means every number on the page describes a different day.
   const runLabel = stats?.run
-    ? `Run ${stats.run.business_date}${stats.usedFallbackRun ? " (latest available)" : ""} · ${stats.run.status}`
+    ? `Run ${stats.run.business_date} · ${stats.run.status}`
     : "No reconciliation run yet";
 
   return (
     <section className="p-container-margin space-y-8">
+      {stats?.usedFallbackRun && stats.run && (
+        <StaleRunBanner
+          showingDate={stats.run.business_date}
+          requestedDate={dateF || undefined}
+          onClear={dateF ? () => resetPage(setDateF)("") : undefined}
+        />
+      )}
+
       {/* City tabs */}
       <div className="border-b border-border flex gap-1 overflow-x-auto scrollbar-hide">
         {(["ALL", ...CITIES] as CityTab[]).map((tab) => (
@@ -582,12 +593,16 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               <option value="Medium">Medium</option>
               <option value="Info">Info</option>
             </select>
-            <select value={status} onChange={(e) => resetPage(setStatus)(e.target.value as VarianceStatus | "ALL")} className="input-clean font-semibold cursor-pointer">
-              <option value="ALL">All Status</option>
-              <option value="open">Open</option>
-              <option value="in_progress">In Progress</option>
+            <select value={status} onChange={(e) => resetPage(setStatus)(e.target.value as VarianceStatus | "ALL" | "ACTIVE")} className="input-clean font-semibold cursor-pointer">
+              {/* "Needs action" spans open + in_progress. Flagging moves a row
+                  to in_progress, and a plain "open" filter hid exactly the rows
+                  the flag was meant to escalate. */}
+              <option value="ACTIVE">Needs action (open + flagged)</option>
+              <option value="open">Open only</option>
+              <option value="in_progress">Flagged / in progress</option>
               <option value="pending_approval">Pending Approval</option>
               <option value="closed">Closed</option>
+              <option value="ALL">All Status</option>
             </select>
             {/* Variance type — this is what makes the digest's "Top Gap: 57
                 losses share one cause" line actionable. */}

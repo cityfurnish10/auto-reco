@@ -24,6 +24,7 @@ import { SortHeader, type SortState } from "@/components/sort-header";
 import { RowCheckbox, SelectAllCheckbox } from "@/components/row-checkbox";
 import { CardListSkeleton, TableBodySkeleton } from "@/components/skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { StaleRunBanner } from "./stale-run-banner";
 import { useSelection } from "@/lib/hooks/use-selection";
 import BulkActionBar from "./bulk-action-bar";
 import { SourceBadge } from "@/components/source-badge";
@@ -46,7 +47,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
   const city = user.city as City;
   const [bucket, setBucket] = useState<Bucket | "ALL">("REAL");
   const [priority, setPriority] = useState<Priority | "ALL">("ALL");
-  const [statusF, setStatusF] = useState<VarianceStatus | "ALL">("open");
+  const [statusF, setStatusF] = useState<VarianceStatus | "ALL" | "ACTIVE">("ACTIVE");
   const [varianceName, setVarianceName] = useState<string>("ALL");
   const [responsible, setResponsible] = useState<string>("ALL");
   const [sort, setSort] = useState<SortState>({ key: "date", dir: "desc" });
@@ -117,7 +118,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
   const filtersActive =
     bucket !== "REAL" ||
     priority !== "ALL" ||
-    statusF !== "open" ||
+    statusF !== "ACTIVE" ||
     varianceName !== "ALL" ||
     responsible !== "ALL" ||
     !!dateF ||
@@ -126,7 +127,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
   function clearFilters() {
     setBucket("REAL");
     setPriority("ALL");
-    setStatusF("open");
+    setStatusF("ACTIVE");
     setVarianceName("ALL");
     setResponsible("ALL");
     setDateF("");
@@ -243,9 +244,19 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
         <h2 className="font-headline text-xl text-text-primary">Warehouse Operations Dashboard</h2>
         <p className="text-sm text-text-muted">
           Inventory reconciliation and variance resolution for {city}.
-          {stats?.run && ` Run ${stats.run.business_date}${stats.usedFallbackRun ? " (latest available)" : ""}.`}
+          {stats?.run && ` Run ${stats.run.business_date}.`}
         </p>
       </div>
+
+      {/* Not a parenthetical: a fallback means every figure below describes a
+          different day than the one asked for. */}
+      {stats?.usedFallbackRun && stats.run && (
+        <StaleRunBanner
+          showingDate={stats.run.business_date}
+          requestedDate={dateF || undefined}
+          onClear={dateF ? () => resetPage(setDateF)("") : undefined}
+        />
+      )}
 
       {/* Weekly-off notice — the reported day was this warehouse's holiday */}
       {stats?.run && isCityOff(city, stats.run.business_date) && (
@@ -393,12 +404,16 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
               <option value="Medium">Medium</option>
               <option value="Info">Info</option>
             </select>
-            <select value={statusF} onChange={(e) => resetPage(setStatusF)(e.target.value as VarianceStatus | "ALL")} className="input-clean cursor-pointer">
-              <option value="ALL">All Status</option>
-              <option value="open">Open</option>
-              <option value="in_progress">In Progress</option>
+            <select value={statusF} onChange={(e) => resetPage(setStatusF)(e.target.value as VarianceStatus | "ALL" | "ACTIVE")} className="input-clean cursor-pointer">
+              {/* "Needs action" spans open + in_progress. Flagging moves a row
+                  to in_progress, and a plain "open" filter hid exactly the rows
+                  the flag was meant to escalate. */}
+              <option value="ACTIVE">Needs action (open + flagged)</option>
+              <option value="open">Open only</option>
+              <option value="in_progress">Flagged / in progress</option>
               <option value="pending_approval">Pending Approval</option>
               <option value="closed">Closed</option>
+              <option value="ALL">All Status</option>
             </select>
             {/* Variance type — lets a manager work one cause at a time instead
                 of a mixed list. */}
@@ -601,7 +616,20 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                   <td><SourceBadge source={v.variance_source} /></td>
                   <td className="text-text-secondary text-xs">{v.job_type ?? "—"}</td>
                   <td className="text-text-secondary">{v.so_number ?? "—"}</td>
-                  <td className="max-w-[220px]" title={v.note ?? ""}>{v.variance_name}</td>
+                  <td className="max-w-[220px]" title={v.note ?? ""}>
+                    {v.variance_name}
+                    {/* A rejected submission used to look identical to one
+                        nobody had touched — the admin's note was a hover
+                        tooltip on the status badge, so on the desktop table the
+                        only place the manager would ever see it, they wouldn't.
+                        It is now on the row itself. */}
+                    {v.status !== "closed" && v.rejection_note && (
+                      <span className="mt-1 flex items-start gap-1.5 text-xs text-danger">
+                        <Icon name="error" size={14} className="mt-px" />
+                        <span>Sent back: {v.rejection_note}</span>
+                      </span>
+                    )}
+                  </td>
                   <td><span className={PRIORITY_BADGE[v.priority]}>{v.priority}</span></td>
                   <td>
                     <span className={`${STATUS_BADGE[v.status]} uppercase`} title={v.closure_reason ?? v.rejection_note ?? undefined}>
@@ -624,7 +652,10 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                         }}
                         className="btn btn-compact btn-primary"
                       >
-                        Submit
+                        {/* Naming the second attempt "Resubmit" is the only
+                            thing on this row that says the first one came
+                            back. */}
+                        {v.rejection_note ? "Resubmit" : "Submit"}
                       </button>
                     )}
                   </td>
