@@ -7,6 +7,7 @@
 import { useMemo, useState } from "react";
 import { CITIES, type City } from "@/lib/sample-data";
 import { Icon } from "@/components/icon";
+import { Modal } from "@/components/modal";
 import { errText, useToast } from "@/components/toast";
 import {
   useUsers,
@@ -251,23 +252,51 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {/* Create / edit slide-in panel */}
-      {panelOpen && (
-        <>
-          <div className="fixed inset-0 bg-primary-container/40 z-[60]" onClick={() => setPanelOpen(false)}></div>
-          <div className="fixed right-0 top-0 h-full w-full max-w-[440px] bg-surface-card shadow-card-hover z-[70] flex flex-col">
-            <div className="p-container-margin border-b border-border flex justify-between items-center">
-              <h3 className="font-headline text-lg font-bold text-text-primary">
-                {form.id === null ? "Add New User" : "Manage User"}
-              </h3>
-              <button onClick={() => setPanelOpen(false)} className="btn-icon">
-                <Icon name="close" size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleSave} className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex-1 overflow-y-auto p-container-margin space-y-6">
+      {/* Create / edit dialog. This was the one panel in the app that wasn't on
+          the shared primitive — hand-rolled overlay, no Escape, no focus trap,
+          no scroll lock, and an overlay tint (#1a1a2e at 40%) that barely dimmed
+          a dark page. Moving it onto <Modal> fixes all of that at once. */}
+      <Modal
+        open={panelOpen}
+        onClose={() => setPanelOpen(false)}
+        title={form.id === null ? "Add New User" : "Manage User"}
+        subtitle={form.id === null ? undefined : form.email}
+        icon={form.id === null ? "person_add" : "person"}
+        size="md"
+        mobile="fullscreen"
+        bodyClassName="p-0"
+        footer={
+          <div className="p-4 flex gap-3">
+            <button type="button" onClick={() => setPanelOpen(false)} className="btn btn-secondary flex-1">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="user-form"
+              disabled={busy}
+              className="btn btn-primary flex-1 disabled:opacity-50"
+            >
+              <Icon
+                name={busy ? "progress_activity" : "check"}
+                size={18}
+                className={busy ? "animate-spin" : ""}
+              />
+              {busy ? "Saving…" : form.id === null ? "Create User" : "Save Changes"}
+            </button>
+          </div>
+        }
+      >
+            {/* The submit button lives in the Modal footer, outside this form's
+                DOM subtree, so it reaches back via form="user-form". */}
+            <form id="user-form" onSubmit={handleSave}>
+              <div className="p-container-margin space-y-6">
                 {formError && (
-                  <div className="badge badge-high w-full justify-start py-2">{formError}</div>
+                  <p
+                    role="alert"
+                    className="text-sm text-danger bg-danger-soft border border-danger/20 rounded-control px-3 py-2"
+                  >
+                    {formError}
+                  </p>
                 )}
                 <div>
                   <label className="block text-sm font-medium text-text-secondary mb-2">Full Name</label>
@@ -341,16 +370,8 @@ export default function UsersPage() {
                   </p>
                 </div>
               </div>
-              <div className="p-container-margin border-t border-border flex gap-3">
-                <button type="button" onClick={() => setPanelOpen(false)} className="btn btn-secondary flex-1">Cancel</button>
-                <button type="submit" disabled={busy} className="btn btn-primary flex-1 disabled:opacity-50">
-                  {busy ? "Saving…" : form.id === null ? "Create User" : "Save Changes"}
-                </button>
-              </div>
             </form>
-          </div>
-        </>
-      )}
+      </Modal>
     </div>
   );
 }
