@@ -5,7 +5,7 @@
 // Date, City, Item Name, Barcode, Ticket ID, Source, Ops Type, SO Number,
 // Variance, Priority, Status. Defaults to the REAL + open "chase list".
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { SessionUser } from "@/lib/demo-auth";
 import { CITIES, type City } from "@/lib/sample-data";
 import type {
@@ -130,6 +130,22 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     };
   }
 
+  // Drill-down from a KPI tile: apply its filter to the variance table and
+  // bring the table into view. Any active search is cleared first — a search
+  // deliberately spans every bucket/status (see `filters`), so leaving one on
+  // would silently ignore the filter the click just asked for.
+  const tableRef = useRef<HTMLDivElement>(null);
+  function showInTable(next: { bucket: Bucket | "ALL"; status: VarianceStatus | "ALL" }) {
+    setSearchInput("");
+    setQ("");
+    setBucket(next.bucket);
+    setStatus(next.status);
+    setPage(1);
+    requestAnimationFrame(() =>
+      tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    );
+  }
+
   async function dispute(id: string) {
     setBusyId(id);
     try {
@@ -231,21 +247,35 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
       {/* KPI cards — loss-only. Posting-lag / hygiene (INFO) rows are kept in the
           DB for audit but excluded from these counts (see the hidden-count note). */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="kpi-tile kpi-tile--accent flex flex-col justify-between">
-          <span className="kpi-label">Variances — losses</span>
-          <div className="flex items-end justify-between mt-2">
-            <span className="kpi-value">{statsLoading ? "…" : agg?.real ?? 0}</span>
-            {(agg?.high ?? 0) > 0 && <span className="badge badge-high">{agg?.high} High</span>}
-          </div>
-          <span className="text-xs text-text-muted mt-1">Genuine cross-source gaps · {runLabel}</span>
+        <div className="kpi-tile kpi-tile--accent flex flex-col justify-between group">
+          <button
+            onClick={() => showInTable({ bucket: "REAL", status: "ALL" })}
+            title="Show every loss variance in the table below"
+            className="w-full text-left flex flex-col cursor-pointer"
+          >
+            <span className="kpi-label group-hover:underline">Variances — losses</span>
+            <div className="flex items-end justify-between mt-2">
+              <span className="kpi-value">{statsLoading ? "…" : agg?.real ?? 0}</span>
+              {(agg?.high ?? 0) > 0 && <span className="badge badge-high">{agg?.high} High</span>}
+            </div>
+            <span className="text-xs text-text-muted mt-1">
+              Genuine cross-source gaps · {runLabel}
+            </span>
+          </button>
         </div>
-        <div className="kpi-tile kpi-tile--danger flex flex-col justify-between">
-          <span className="kpi-label">Open</span>
-          <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.openReal ?? 0}</span>
+        <div className="kpi-tile kpi-tile--danger flex flex-col justify-between group">
+          <button
+            onClick={() => showInTable({ bucket: "REAL", status: "open" })}
+            title="Show the open losses in the table below"
+            className="w-full text-left flex flex-col cursor-pointer"
+          >
+            <span className="kpi-label group-hover:underline">Open</span>
+            <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.openReal ?? 0}</span>
+          </button>
           <span className="text-xs text-text-muted mt-1">
             {(agg?.pendingApproval ?? 0) > 0 ? (
               <button
-                onClick={() => resetPage(setStatus)("pending_approval")}
+                onClick={() => showInTable({ bucket: "REAL", status: "pending_approval" })}
                 className="text-accent font-semibold hover:underline"
               >
                 {agg?.pendingApproval} pending approval
@@ -255,16 +285,28 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             )}
           </span>
         </div>
-        <div className="kpi-tile flex flex-col justify-between">
-          <span className="kpi-label">Resolved</span>
-          <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.closed ?? 0}</span>
-          <span className="text-xs text-text-muted mt-1">Closed on this business date</span>
+        <div className="kpi-tile flex flex-col justify-between group">
+          <button
+            onClick={() => showInTable({ bucket: "REAL", status: "closed" })}
+            title="Show the resolved losses in the table below"
+            className="w-full text-left flex flex-col cursor-pointer"
+          >
+            <span className="kpi-label group-hover:underline">Resolved</span>
+            <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.closed ?? 0}</span>
+            <span className="text-xs text-text-muted mt-1">Closed on this business date</span>
+          </button>
         </div>
       </div>
       {!statsLoading && (agg?.infoBucket ?? 0) > 0 && (
         <p className="text-xs text-text-disabled -mt-2">
-          + {agg?.infoBucket} posting-lag / hygiene entries hidden (audit only — switch the table filter
-          to INFO to view)
+          + {agg?.infoBucket} posting-lag / hygiene entries hidden (audit only —{" "}
+          <button
+            onClick={() => showInTable({ bucket: "INFO", status: "ALL" })}
+            className="underline hover:text-text-secondary"
+          >
+            view them
+          </button>
+          )
         </p>
       )}
 
@@ -342,8 +384,8 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         </div>
       )}
 
-      {/* Variance table */}
-      <div className="card overflow-hidden">
+      {/* Variance table — KPI-tile clicks filter it and scroll it into view */}
+      <div ref={tableRef} className="card overflow-hidden scroll-mt-4">
         <div className="p-4 border-b border-border bg-surface-elevated flex flex-col lg:flex-row justify-between lg:items-center gap-4">
           <div>
             <h3 className="font-headline text-lg text-text-primary">
