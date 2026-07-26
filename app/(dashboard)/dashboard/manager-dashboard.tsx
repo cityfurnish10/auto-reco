@@ -12,7 +12,15 @@ import CloseVarianceModal, { type ClosureReason } from "./close-variance-modal";
 import VarianceDetailModal from "./variance-detail-modal";
 import VarianceListModal, { type ListModalRequest } from "./variance-list-modal";
 import { isCityOff } from "@/lib/engine/schedule";
-import { PRIORITY_BADGE, STATUS_BADGE, STATUS_LABEL } from "@/lib/ui/variance-format";
+import {
+  PRIORITY_BADGE,
+  STATUS_BADGE,
+  STATUS_LABEL,
+  ageLabel,
+  formatTs,
+  responsibleLabel,
+} from "@/lib/ui/variance-format";
+import { SortHeader, type SortState } from "@/components/sort-header";
 import { SourceBadge } from "@/components/source-badge";
 import { Icon } from "@/components/icon";
 import { errText, useToast } from "@/components/toast";
@@ -20,6 +28,7 @@ import { downloadCsv, varianceRowsToCsv } from "@/lib/ui/variance-csv";
 import {
   useStats,
   useVariances,
+  useVarianceFacets,
   patchVariance,
   fetchAllVariances,
   type VarianceFilters,
@@ -33,6 +42,9 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
   const [bucket, setBucket] = useState<Bucket | "ALL">("REAL");
   const [priority, setPriority] = useState<Priority | "ALL">("ALL");
   const [statusF, setStatusF] = useState<VarianceStatus | "ALL">("open");
+  const [varianceName, setVarianceName] = useState<string>("ALL");
+  const [responsible, setResponsible] = useState<string>("ALL");
+  const [sort, setSort] = useState<SortState>({ key: "date", dir: "desc" });
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
   const [dateF, setDateF] = useState(""); // "" = latest run
@@ -65,18 +77,36 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
       bucket: q ? "ALL" : bucket,
       priority: q ? "ALL" : priority,
       status: q ? "ALL" : statusF,
+      variance: q ? "ALL" : varianceName,
+      responsible: q ? "ALL" : responsible,
       date: q ? undefined : dateF || undefined,
       // A search must find the barcode whatever night it landed on; everything
       // else stays scoped to a single run so the table agrees with the KPIs.
       allDates: !!q,
       q: q || undefined,
+      sort: sort.key,
+      dir: sort.dir,
       page,
       pageSize: PAGE_SIZE,
     }),
-    [city, bucket, priority, statusF, dateF, q, page]
+    [city, bucket, priority, statusF, varianceName, responsible, dateF, q, sort, page]
   );
-  const { rows, total, totalPages, businessDate, loading, error, refetch } =
+  const { rows, total, totalPages, businessDate, sortDegraded, loading, error, refetch } =
     useVariances(filters);
+
+  // Options come from this city's data, so the dropdowns only offer filters
+  // that will return something.
+  const { varianceNames, responsibles } = useVarianceFacets({
+    city,
+    date: dateF || undefined,
+  });
+
+  // Sorting is server-side, so a new sort must restart at page 1 — otherwise
+  // you land on page 4 of a completely different order.
+  function applySort(next: SortState) {
+    setSort(next);
+    setPage(1);
+  }
 
   // Shared by the desktop row and the mobile card. Don't hijack a click that
   // was really the end of a text selection.
@@ -253,6 +283,11 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                 </span>
               )}
               {q && <span className="text-accent"> · results for “{q}” across all dates (filters paused)</span>}
+              {sortDegraded && (
+                <span className="text-status-warning">
+                  {" "}· sorted alphabetically (migration 0011 not applied)
+                </span>
+              )}
               {error && <span className="text-danger"> · {error}</span>}
             </p>
           </div>
@@ -300,6 +335,34 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
               <option value="in_progress">In Progress</option>
               <option value="pending_approval">Pending Approval</option>
               <option value="closed">Closed</option>
+            </select>
+            {/* Variance type — lets a manager work one cause at a time instead
+                of a mixed list. */}
+            <select
+              value={varianceName}
+              onChange={(e) => resetPage(setVarianceName)(e.target.value)}
+              className="input-clean cursor-pointer max-w-[220px]"
+              title="Filter to one kind of variance"
+            >
+              <option value="ALL">All Variance Types</option>
+              {varianceNames.map((f) => (
+                <option key={f.value} value={f.value}>
+                  {f.value} ({f.real})
+                </option>
+              ))}
+            </select>
+            <select
+              value={responsible}
+              onChange={(e) => resetPage(setResponsible)(e.target.value)}
+              className="input-clean cursor-pointer"
+              title="Filter to the team that owns these"
+            >
+              <option value="ALL">All Owners</option>
+              {responsibles.map((f) => (
+                <option key={f.value} value={f.value}>
+                  {responsibleLabel(f.value)} ({f.real})
+                </option>
+              ))}
             </select>
             <button
               onClick={exportCsv}
@@ -388,16 +451,29 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
           <table className="table-clean">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Item Name</th>
-                <th>Barcode</th>
-                <th>Ticket ID</th>
-                <th>Source</th>
+                <SortHeader label="Date" sortKey="date" state={sort} onSort={applySort} />
+                <SortHeader label="Item Name" sortKey="product" state={sort} onSort={applySort} />
+                <SortHeader label="Barcode" sortKey="barcode" state={sort} onSort={applySort} />
+                <SortHeader label="Ticket ID" sortKey="ticket" state={sort} onSort={applySort} />
+                <SortHeader label="Source" sortKey="source" state={sort} onSort={applySort} />
                 <th>Ops Type</th>
-                <th>SO Number</th>
-                <th>Variance</th>
-                <th>Priority</th>
-                <th>Status</th>
+                <SortHeader label="SO Number" sortKey="so" state={sort} onSort={applySort} />
+                <SortHeader label="Variance" sortKey="variance" state={sort} onSort={applySort} />
+                <SortHeader
+                  label="Priority"
+                  sortKey="priority"
+                  state={sort}
+                  onSort={applySort}
+                  title="Sort by severity — High, Medium, Info"
+                />
+                <SortHeader label="Status" sortKey="status" state={sort} onSort={applySort} />
+                <SortHeader
+                  label="Age"
+                  sortKey="age"
+                  state={sort}
+                  onSort={applySort}
+                  title="Sort by how long this has been unresolved"
+                />
                 <th className="text-right">Action</th>
               </tr>
             </thead>
@@ -429,6 +505,9 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                       {STATUS_LABEL[v.status]}
                     </span>
                   </td>
+                  <td className="text-text-secondary whitespace-nowrap" title={formatTs(v.first_seen_at)}>
+                    {ageLabel(v.first_seen_at)}
+                  </td>
                   <td className="text-right">
                     {v.status === "closed" ? (
                       <button disabled className="btn btn-compact btn-ghost opacity-50 cursor-not-allowed">Closed</button>
@@ -450,7 +529,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
               ))}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="text-center py-10 text-text-muted">
+                  <td colSpan={12} className="text-center py-10 text-text-muted">
                     <div className="flex flex-col items-center gap-2">
                       <Icon name="search_off" size={32} className="text-text-disabled" />
                       No variances match the selected filters.

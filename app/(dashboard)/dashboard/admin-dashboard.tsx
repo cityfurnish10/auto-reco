@@ -26,11 +26,16 @@ import {
   PRIORITY_BADGE,
   STATUS_BADGE,
   STATUS_LABEL,
+  ageLabel,
+  formatTs,
 } from "@/lib/ui/variance-format";
 import { downloadCsv, varianceRowsToCsv } from "@/lib/ui/variance-csv";
+import { SortHeader, type SortState } from "@/components/sort-header";
+import { responsibleLabel } from "@/lib/ui/variance-format";
 import {
   useStats,
   useVariances,
+  useVarianceFacets,
   patchVariance,
   fetchAllVariances,
   type VarianceFilters,
@@ -48,6 +53,9 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
   const [source, setSource] = useState<VarianceSource | "ALL">("ALL");
   const [priority, setPriority] = useState<Priority | "ALL">("ALL");
   const [status, setStatus] = useState<VarianceStatus | "ALL">("open");
+  const [varianceName, setVarianceName] = useState<string>("ALL");
+  const [responsible, setResponsible] = useState<string>("ALL");
+  const [sort, setSort] = useState<SortState>({ key: "date", dir: "desc" });
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
   const [dateF, setDateF] = useState(""); // "" = latest run
@@ -86,18 +94,29 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
       source: q ? "ALL" : source,
       priority: q ? "ALL" : priority,
       status: q ? "ALL" : status,
+      variance: q ? "ALL" : varianceName,
+      responsible: q ? "ALL" : responsible,
       date: q ? undefined : dateF || undefined,
       // A search must find the barcode whatever night it landed on; everything
       // else stays scoped to a single run so the table agrees with the KPIs.
       allDates: !!q,
       q: q || undefined,
+      sort: sort.key,
+      dir: sort.dir,
       page,
       pageSize: PAGE_SIZE,
     }),
-    [cityTab, bucket, source, priority, status, dateF, q, page]
+    [cityTab, bucket, source, priority, status, varianceName, responsible, dateF, q, sort, page]
   );
-  const { rows, total, totalPages, businessDate, loading, error, refetch } =
+  const { rows, total, totalPages, businessDate, sortDegraded, loading, error, refetch } =
     useVariances(filters);
+
+  // Options come from the data in scope, so the dropdowns only ever offer
+  // filters that will return something.
+  const { varianceNames, responsibles } = useVarianceFacets({
+    city: cityTab,
+    date: dateF || undefined,
+  });
 
   // A manual "Run Reconciliation" (sidebar) dispatches this event — reload the
   // KPIs and variance table in place, keeping the admin's current filters.
@@ -125,6 +144,13 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
       setter(v);
       setPage(1);
     };
+  }
+
+  // Sorting is server-side (the table is paginated), so a new sort has to start
+  // from page 1 — otherwise you land on page 4 of a completely different order.
+  function applySort(next: SortState) {
+    setSort(next);
+    setPage(1);
   }
 
   // Drill-down from a KPI tile opens a dialog over the page — the table below
@@ -431,6 +457,13 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 </span>
               )}
               {q && <span className="text-accent"> · results for “{q}” across all dates (filters paused)</span>}
+              {/* Never present an alphabetical order as if it were the severity
+                  order that was asked for — see migration 0011. */}
+              {sortDegraded && (
+                <span className="text-status-warning">
+                  {" "}· sorted alphabetically (migration 0011 not applied)
+                </span>
+              )}
               {error && <span className="text-danger"> · {error}</span>}
             </p>
           </div>
@@ -482,6 +515,35 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               <option value="in_progress">In Progress</option>
               <option value="pending_approval">Pending Approval</option>
               <option value="closed">Closed</option>
+            </select>
+            {/* Variance type — this is what makes the digest's "Top Gap: 57
+                losses share one cause" line actionable. */}
+            <select
+              value={varianceName}
+              onChange={(e) => resetPage(setVarianceName)(e.target.value)}
+              className="input-clean cursor-pointer max-w-[220px]"
+              title="Filter to one kind of variance"
+            >
+              <option value="ALL">All Variance Types</option>
+              {varianceNames.map((f) => (
+                <option key={f.value} value={f.value}>
+                  {f.value} ({f.real})
+                </option>
+              ))}
+            </select>
+            {/* Owner — triage is a routing job, and this is the routing field. */}
+            <select
+              value={responsible}
+              onChange={(e) => resetPage(setResponsible)(e.target.value)}
+              className="input-clean cursor-pointer"
+              title="Filter to the team that owns these"
+            >
+              <option value="ALL">All Owners</option>
+              {responsibles.map((f) => (
+                <option key={f.value} value={f.value}>
+                  {responsibleLabel(f.value)} ({f.real})
+                </option>
+              ))}
             </select>
             <button
               onClick={exportCsv}
@@ -605,17 +667,37 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
           <table className="table-clean">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>City</th>
-                <th>Item Name</th>
-                <th>Barcode</th>
-                <th>Ticket ID</th>
-                <th>Source</th>
+                <SortHeader label="Date" sortKey="date" state={sort} onSort={applySort} />
+                <SortHeader label="City" sortKey="city" state={sort} onSort={applySort} />
+                <SortHeader label="Item Name" sortKey="product" state={sort} onSort={applySort} />
+                <SortHeader label="Barcode" sortKey="barcode" state={sort} onSort={applySort} />
+                <SortHeader label="Ticket ID" sortKey="ticket" state={sort} onSort={applySort} />
+                <SortHeader label="Source" sortKey="source" state={sort} onSort={applySort} />
                 <th>Ops Type</th>
-                <th>SO Number</th>
-                <th>Variance</th>
-                <th>Priority</th>
-                <th>Status</th>
+                <SortHeader label="SO Number" sortKey="so" state={sort} onSort={applySort} />
+                <SortHeader label="Variance" sortKey="variance" state={sort} onSort={applySort} />
+                <SortHeader
+                  label="Owner"
+                  sortKey="responsible"
+                  state={sort}
+                  onSort={applySort}
+                  title="Sort by the team responsible"
+                />
+                <SortHeader
+                  label="Priority"
+                  sortKey="priority"
+                  state={sort}
+                  onSort={applySort}
+                  title="Sort by severity — High, Medium, Info"
+                />
+                <SortHeader label="Status" sortKey="status" state={sort} onSort={applySort} />
+                <SortHeader
+                  label="Age"
+                  sortKey="age"
+                  state={sort}
+                  onSort={applySort}
+                  title="Sort by how long this has been unresolved"
+                />
                 <th className="text-center">Action</th>
               </tr>
             </thead>
@@ -644,6 +726,9 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                   <td className="max-w-[220px]" title={v.note ?? ""}>
                     <span className="text-text-primary">{v.variance_name}</span>
                   </td>
+                  <td className="text-text-secondary whitespace-nowrap">
+                    {responsibleLabel(v.responsible)}
+                  </td>
                   <td><span className={PRIORITY_BADGE[v.priority]}>{v.priority}</span></td>
                   <td>
                     <span
@@ -656,6 +741,9 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     >
                       {STATUS_LABEL[v.status]}
                     </span>
+                  </td>
+                  <td className="text-text-secondary whitespace-nowrap" title={formatTs(v.first_seen_at)}>
+                    {ageLabel(v.first_seen_at)}
                   </td>
                   <td className="text-center">
                     {v.status === "pending_approval" ? (
@@ -720,7 +808,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               ))}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="text-center py-10 text-text-muted">
+                  <td colSpan={14} className="text-center py-10 text-text-muted">
                     <div className="flex flex-col items-center gap-2">
                       <Icon name="search_off" size={32} className="text-text-disabled" />
                       No variances match the selected filters.

@@ -25,10 +25,35 @@ export interface VarianceFilters {
   source?: VarianceSource | "ALL";
   priority?: Priority | "ALL";
   status?: VarianceStatus | "ALL";
+  /** Exact variance_name — isolates "the 57 losses that share one cause". */
+  variance?: string | "ALL";
+  /** Exact responsible slug — the team a chaser would actually go talk to. */
+  responsible?: string | "ALL";
   q?: string; // free-text search: barcode / ticket / SO / product / customer
+  sort?: SortKey;
+  dir?: SortDir;
   page?: number;
   pageSize?: number;
 }
+
+// Mirrors the SORTS whitelist in app/api/variances/route.ts. Anything not in
+// this union is ignored by the server and falls back to `date`.
+export type SortKey =
+  | "date"
+  | "city"
+  | "product"
+  | "barcode"
+  | "ticket"
+  | "source"
+  | "so"
+  | "variance"
+  | "responsible"
+  | "priority"
+  | "status"
+  | "age"
+  | "updated";
+
+export type SortDir = "asc" | "desc";
 
 interface VariancesResponse {
   data: VarianceDB[];
@@ -37,6 +62,7 @@ interface VariancesResponse {
   total: number;
   totalPages: number;
   businessDate: string | null;
+  sortDegraded?: boolean;
 }
 
 function toQuery(f: VarianceFilters): string {
@@ -48,7 +74,11 @@ function toQuery(f: VarianceFilters): string {
   if (f.source && f.source !== "ALL") p.set("source", f.source);
   if (f.priority && f.priority !== "ALL") p.set("priority", f.priority);
   if (f.status && f.status !== "ALL") p.set("status", f.status);
+  if (f.variance && f.variance !== "ALL") p.set("variance", f.variance);
+  if (f.responsible && f.responsible !== "ALL") p.set("responsible", f.responsible);
   if (f.q && f.q.trim()) p.set("q", f.q.trim());
+  if (f.sort) p.set("sort", f.sort);
+  if (f.dir) p.set("dir", f.dir);
   p.set("page", String(f.page ?? 1));
   p.set("pageSize", String(f.pageSize ?? 25));
   return p.toString();
@@ -86,6 +116,10 @@ export function useVariances(filters: VarianceFilters) {
   // the server resolves the latest run — this is how the UI labels the table
   // with a real date instead of an ambiguous blank.
   const [businessDate, setBusinessDate] = useState<string | null>(null);
+  // True when a priority/status sort silently fell back to alphabetical because
+  // migration 0011 isn't applied — the UI says so rather than showing a wrong
+  // order as if it were the requested one.
+  const [sortDegraded, setSortDegraded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -110,6 +144,7 @@ export function useVariances(filters: VarianceFilters) {
         setTotal(json.total ?? 0);
         setTotalPages(json.totalPages ?? 0);
         setBusinessDate(json.businessDate ?? null);
+        setSortDegraded(!!json.sortDegraded);
       })
       .catch((e) => {
         if (mine !== seq.current) return;
@@ -126,7 +161,76 @@ export function useVariances(filters: VarianceFilters) {
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const refetch = useCallback(() => setReloadKey((k) => k + 1), []);
-  return { rows, total, totalPages, businessDate, loading, error, refetch };
+  return { rows, total, totalPages, businessDate, sortDegraded, loading, error, refetch };
+}
+
+// ─── Facets: the variance types / owners actually present in this scope ──────
+export interface Facet {
+  value: string;
+  count: number;
+  real: number;
+}
+
+export function useVarianceFacets(scope: {
+  city?: City | "ALL";
+  date?: string;
+  enabled?: boolean;
+}) {
+  const [varianceNames, setVarianceNames] = useState<Facet[]>([]);
+  const [responsibles, setResponsibles] = useState<Facet[]>([]);
+  const seq = useRef(0);
+  const key = `${scope.city ?? "ALL"}|${scope.date ?? ""}|${scope.enabled !== false}`;
+
+  // No set-state-in-effect disable needed here: every setState below is inside
+  // an async .then, never in the effect's synchronous body.
+  useEffect(() => {
+    if (scope.enabled === false) return;
+    const mine = ++seq.current;
+    const p = new URLSearchParams();
+    if (scope.city && scope.city !== "ALL") p.set("city", scope.city);
+    if (scope.date) p.set("date", scope.date);
+    fetch(`/api/variances/facets?${p}`, { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (mine !== seq.current || !json) return;
+        setVarianceNames(json.varianceNames ?? []);
+        setResponsibles(json.responsibles ?? []);
+      })
+      // A failed facet fetch must not break the table — the filters just stay
+      // empty, which reads as "no options" rather than an error state.
+      .catch(() => {});
+    // key covers every field read above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return { varianceNames, responsibles };
+}
+
+// ─── Bulk actions ───────────────────────────────────────────────────────────
+export interface BulkResult {
+  action: VarianceAction;
+  requested: number;
+  updated: number;
+  /** Rows RLS blocked, or that changed between render and click. */
+  skipped: number;
+  updatedIds: string[];
+}
+
+export async function bulkPatchVariances(
+  ids: string[],
+  action: VarianceAction,
+  reason?: string,
+  note?: string
+): Promise<BulkResult> {
+  const res = await fetch("/api/variances/bulk", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ ids, action, reason, note }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+  return json as BulkResult;
 }
 
 export interface CityAgg {
