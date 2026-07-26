@@ -128,8 +128,13 @@ const config: Config = {
         // any `font-medium`/`font-bold` on the same element and produces the
         // uneven/mismatched bolding this pass is fixing. Weight is always set
         // explicitly via a `font-*` class instead.
-        xs: ["11px", { lineHeight: "14px" }],
-        sm: ["12px", { lineHeight: "16px" }],
+        // Raised the two smallest steps by 1px each (was 11/12). `text-sm` was
+        // SMALLER than `text-base`, which inverts what the name implies, and it
+        // carries real content — product names, variance names, the whole
+        // mobile card. 11px secondary text on a warehouse phone in daylight is
+        // not a readable floor. Hierarchy is unchanged: 12 < 13 < 14.
+        xs: ["12px", { lineHeight: "16px" }],
+        sm: ["13px", { lineHeight: "18px" }],
         base: ["14px", { lineHeight: "20px" }],
         md: ["15px", { lineHeight: "22px" }],
         lg: ["18px", { lineHeight: "26px" }],

@@ -103,6 +103,36 @@ body {
   font-size: 14px;
   line-height: 20px;
   transition: background-color 150ms ease, color 150ms ease;
+  /* Stops iOS/Safari inflating text in landscape, which was breaking the
+     table's column widths on a phone held sideways. */
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+}
+
+/* Digits line up in columns everywhere numbers are compared — counts, KPI
+   values, table figures. Without this the default proportional figures make a
+   column of numbers look ragged. */
+.kpi-value,
+.table-clean td,
+.badge {
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+}
+
+/* ── Keyboard focus, globally ────────────────────────────────────────────────
+   .btn and .btn-icon defined their own focus rings, but nothing else did — so
+   tabbing through a KPI tile, a sort header, a barcode link or a nav item left
+   no visible indication of where you were. :where() keeps specificity at zero,
+   so the component-specific rings below still win, and `.input-clean:focus`
+   (which deliberately sets outline:none in favour of a border + shadow) also
+   still wins. */
+:where(a, button, [role="button"], summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 /* Subtle dotted pattern for navy surfaces (login backdrop, sidebar accents) */
@@ -197,11 +227,15 @@ body {
   }
 
   /* Badges / pills --------------------------------------------------------- */
+  /* 12px, not 11: a badge carries status someone has to READ (priority,
+     workflow state), unlike the uppercase column/field labels below, which are
+     chrome — read once, fixed position, and cheaper to keep narrow in a
+     14-column table. */
   .badge {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.01em;
     padding: 2px 8px;
@@ -219,7 +253,7 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     padding: 4px 10px;
     border-radius: 999px;
@@ -377,6 +411,17 @@ body {
   }
   .table-clean tbody tr:hover {
     background: var(--surface-elevated);
+  }
+  /* A <tr> can't take focus, so tabbing to the barcode button inside it left
+     the row itself unhighlighted — you could see the ring but not which row it
+     belonged to, which in a 14-column table is most of the information. */
+  .table-clean tbody tr:focus-within {
+    background: var(--surface-elevated);
+  }
+  /* Long free-text columns (variance name, product) get to wrap instead of
+     being clipped mid-word; identifiers stay on one line via utilities. */
+  .table-clean td {
+    overflow-wrap: anywhere;
   }
   .table-clean .row-action {
     opacity: 0;
