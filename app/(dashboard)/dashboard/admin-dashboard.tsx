@@ -32,6 +32,8 @@ import {
 import { downloadCsv, varianceRowsToCsv } from "@/lib/ui/variance-csv";
 import { SortHeader, type SortState } from "@/components/sort-header";
 import { RowCheckbox, SelectAllCheckbox } from "@/components/row-checkbox";
+import { CardListSkeleton, TableBodySkeleton } from "@/components/skeleton";
+import { EmptyState } from "@/components/empty-state";
 import { useSelection } from "@/lib/hooks/use-selection";
 import BulkActionBar from "./bulk-action-bar";
 import { responsibleLabel } from "@/lib/ui/variance-format";
@@ -189,6 +191,40 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     setSort(next);
     setPage(1);
   }
+
+  // Any filter is on = the empty state is recoverable, so offer the way out.
+  const filtersActive =
+    cityTab !== "ALL" ||
+    bucket !== "REAL" ||
+    source !== "ALL" ||
+    priority !== "ALL" ||
+    status !== "open" ||
+    varianceName !== "ALL" ||
+    responsible !== "ALL" ||
+    !!dateF ||
+    !!q;
+
+  function clearFilters() {
+    setCityTab("ALL");
+    setBucket("REAL");
+    setSource("ALL");
+    setPriority("ALL");
+    setStatus("open");
+    setVarianceName("ALL");
+    setResponsible("ALL");
+    setDateF("");
+    setSearchInput("");
+    setPage(1);
+    sel.clear();
+  }
+
+  // Resolving the last row on page 8 drops the total to 7 pages and strands you
+  // on a page that no longer exists — "No variances match" above "Page 8 of 7".
+  /* eslint-disable react-hooks/set-state-in-effect -- clamp after a load */
+  useEffect(() => {
+    if (!loading && totalPages > 0 && page > totalPages) setPage(totalPages);
+  }, [loading, totalPages, page]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Drill-down from a KPI tile opens a dialog over the page — the table below
   // keeps whatever filters and search the admin already had.
@@ -702,11 +738,20 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               ) : null}
             </div>
           ))}
+          {loading && rows.length === 0 && <CardListSkeleton />}
           {!loading && rows.length === 0 && (
-            <div className="text-center py-10 text-text-muted flex flex-col items-center gap-2">
-              <Icon name="search_off" size={32} className="text-text-disabled" />
-              No variances match the selected filters.
-            </div>
+            <EmptyState
+              compact
+              icon={filtersActive ? "search_off" : "task_alt"}
+              title={filtersActive ? "No variances match these filters" : "Nothing to chase here"}
+              detail={
+                filtersActive
+                  ? "The rows may exist on another date, city or status."
+                  : `No open losses for ${businessDate ?? "this run"}.`
+              }
+              actionLabel={filtersActive ? "Reset filters" : undefined}
+              onAction={filtersActive ? clearFilters : undefined}
+            />
           )}
         </div>
 
@@ -873,13 +918,23 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                   </td>
                 </tr>
               ))}
+              {loading && rows.length === 0 && <TableBodySkeleton cols={15} />}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={15} className="text-center py-10 text-text-muted">
-                    <div className="flex flex-col items-center gap-2">
-                      <Icon name="search_off" size={32} className="text-text-disabled" />
-                      No variances match the selected filters.
-                    </div>
+                  <td colSpan={15}>
+                    <EmptyState
+                      icon={filtersActive ? "search_off" : "task_alt"}
+                      title={
+                        filtersActive ? "No variances match these filters" : "Nothing to chase here"
+                      }
+                      detail={
+                        filtersActive
+                          ? "The rows may exist on another date, city or status."
+                          : `No open losses for ${businessDate ?? "this run"}.`
+                      }
+                      actionLabel={filtersActive ? "Reset filters" : undefined}
+                      onAction={filtersActive ? clearFilters : undefined}
+                    />
                   </td>
                 </tr>
               )}

@@ -68,6 +68,46 @@ export function TableSkeleton({
   );
 }
 
+// Placeholder rows INSIDE an existing <table>, for the client-fetched tables
+// that can't use a route-level loading.tsx. Those previously rendered an empty
+// <tbody> while fetching, so every filter change flashed a blank panel — which
+// reads as "no results" for the moment before the data lands.
+export function TableBodySkeleton({ rows = 6, cols }: { rows?: number; cols: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, r) => (
+        <tr key={r} aria-hidden="true">
+          {Array.from({ length: cols }).map((_, c) => (
+            <td key={c}>
+              {/* Varying widths so it reads as content, not a loading bar. */}
+              <Skeleton className={`h-3.5 ${c % 3 === 0 ? "w-24" : c % 3 === 1 ? "w-16" : "w-20"}`} />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  );
+}
+
+// The mobile counterpart — matches the card list's shape so the swap to real
+// content doesn't jump.
+export function CardListSkeleton({ count = 4 }: { count?: number }) {
+  return (
+    <div className="divide-y divide-border" aria-hidden="true">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="p-4 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-4 w-12" />
+          </div>
+          <Skeleton className="h-3 w-2/3" />
+          <Skeleton className="h-3 w-1/2" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // A grid of simple content cards (city cards, connector cards).
 export function CardGridSkeleton({
   count = 5,

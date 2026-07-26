@@ -11,6 +11,8 @@ import { Modal } from "@/components/modal";
 import { SourceBadge } from "@/components/source-badge";
 import { errText, useToast } from "@/components/toast";
 import { RowCheckbox, SelectAllCheckbox } from "@/components/row-checkbox";
+import { CardListSkeleton, TableBodySkeleton } from "@/components/skeleton";
+import { EmptyState } from "@/components/empty-state";
 import { SortHeader, type SortState } from "@/components/sort-header";
 import { useSelection } from "@/lib/hooks/use-selection";
 import BulkActionBar from "./bulk-action-bar";
@@ -141,6 +143,32 @@ export default function VarianceListModal({
     setSort(next);
     setPage(1);
   }
+
+  // Only offer "reset" when the user has narrowed things past what the tile
+  // opened with — resetting to the tile's own filters is the useful action, not
+  // resetting to everything.
+  const narrowed =
+    !!request &&
+    (bucket !== request.bucket || status !== request.status || priority !== "ALL" || !!q);
+
+  function resetToTile() {
+    if (!request) return;
+    setBucket(request.bucket);
+    setStatus(request.status);
+    setPriority("ALL");
+    setSearchInput("");
+    setQ("");
+    setPage(1);
+    sel.clear();
+  }
+
+  // Acting on the last row of the last page would otherwise strand the dialog
+  // on a page that no longer exists.
+  /* eslint-disable react-hooks/set-state-in-effect -- clamp after a load */
+  useEffect(() => {
+    if (!loading && totalPages > 0 && page > totalPages) setPage(totalPages);
+  }, [loading, totalPages, page]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Changing a filter redefines the working set, so a stale selection must not
   // survive into a bulk action.
@@ -384,11 +412,16 @@ export default function VarianceListModal({
               </div>
             </div>
           ))}
+          {loading && rows.length === 0 && <CardListSkeleton />}
           {!loading && rows.length === 0 && (
-            <div className="text-center py-12 text-text-muted flex flex-col items-center gap-2">
-              <Icon name="search_off" size={32} className="text-text-disabled" />
-              No variances match these filters.
-            </div>
+            <EmptyState
+              compact
+              title={narrowed ? "No variances match these filters" : "Nothing in this category"}
+              detail={narrowed ? undefined : "Everything here has been dealt with."}
+              icon={narrowed ? "search_off" : "task_alt"}
+              actionLabel={narrowed ? "Back to all in this category" : undefined}
+              onAction={narrowed ? resetToTile : undefined}
+            />
           )}
         </div>
 
@@ -489,13 +522,19 @@ export default function VarianceListModal({
                   <td className="text-right">{rowActions(v)}</td>
                 </tr>
               ))}
+              {loading && rows.length === 0 && <TableBodySkeleton cols={colCount} />}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={colCount} className="text-center py-12 text-text-muted">
-                    <div className="flex flex-col items-center gap-2">
-                      <Icon name="search_off" size={32} className="text-text-disabled" />
-                      No variances match these filters.
-                    </div>
+                  <td colSpan={colCount}>
+                    <EmptyState
+                      title={
+                        narrowed ? "No variances match these filters" : "Nothing in this category"
+                      }
+                      detail={narrowed ? undefined : "Everything here has been dealt with."}
+                      icon={narrowed ? "search_off" : "task_alt"}
+                      actionLabel={narrowed ? "Back to all in this category" : undefined}
+                      onAction={narrowed ? resetToTile : undefined}
+                    />
                   </td>
                 </tr>
               )}
