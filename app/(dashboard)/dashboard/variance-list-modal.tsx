@@ -84,13 +84,15 @@ export default function VarianceListModal({
   }, [searchInput]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const { rows, total, totalPages, loading, refetch } = useVariances({
+  const { rows, total, totalPages, businessDate, loading, refetch } = useVariances({
     city,
     date,
-    // A free-text search spans every bucket/status, same rule as the page table.
+    // A free-text search spans every bucket/status/date, same rule as the page
+    // table. Without allDates the API would scope to the latest run only.
     bucket: q ? "ALL" : bucket,
     priority: q ? "ALL" : priority,
     status: q ? "ALL" : status,
+    allDates: !!q,
     q: q || undefined,
     page,
     pageSize: PAGE_SIZE,
@@ -253,11 +255,19 @@ export default function VarianceListModal({
         mobile="fullscreen"
         title={request?.title ?? "Variances"}
         subtitle={
-          date
-            ? `Business date ${date}${city !== "ALL" ? ` · ${city}` : ""}`
-            : city !== "ALL"
-              ? String(city)
-              : "Latest reconciliation run"
+          // Name the date the API actually applied rather than asserting
+          // "latest run" — with a search active the list deliberately spans
+          // every date, and saying otherwise would be wrong.
+          [
+            q
+              ? "All dates"
+              : businessDate
+                ? `Business date ${businessDate}${date ? "" : " · latest run"}`
+                : null,
+            city !== "ALL" ? String(city) : null,
+          ]
+            .filter(Boolean)
+            .join(" · ") || "Variances"
         }
         headerExtra={filters}
         footer={pager}

@@ -26,10 +26,12 @@ import {
   STATUS_BADGE,
   STATUS_LABEL,
 } from "@/lib/ui/variance-format";
+import { downloadCsv, varianceRowsToCsv } from "@/lib/ui/variance-csv";
 import {
   useStats,
   useVariances,
   patchVariance,
+  fetchAllVariances,
   type VarianceFilters,
 } from "@/lib/hooks/use-dashboard-data";
 
@@ -49,6 +51,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
   const [dateF, setDateF] = useState(""); // "" = latest run
   const [page, setPage] = useState(1);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const [rejecting, setRejecting] = useState<{ id: string; product: string; barcode: string } | null>(null);
   const [resolving, setResolving] = useState<{ id: string; product: string; barcode: string } | null>(null);
 
@@ -82,13 +85,17 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
       priority: q ? "ALL" : priority,
       status: q ? "ALL" : status,
       date: q ? undefined : dateF || undefined,
+      // A search must find the barcode whatever night it landed on; everything
+      // else stays scoped to a single run so the table agrees with the KPIs.
+      allDates: !!q,
       q: q || undefined,
       page,
       pageSize: PAGE_SIZE,
     }),
     [cityTab, bucket, source, priority, status, dateF, q, page]
   );
-  const { rows, total, totalPages, loading, error, refetch } = useVariances(filters);
+  const { rows, total, totalPages, businessDate, loading, error, refetch } =
+    useVariances(filters);
 
   // A manual "Run Reconciliation" (sidebar) dispatches this event — reload the
   // KPIs and variance table in place, keeping the admin's current filters.
@@ -125,6 +132,13 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
   function refreshAll() {
     refetch();
     refetchStats();
+  }
+
+  // Shared by the desktop row and the mobile card. Don't hijack a click that
+  // was really the end of a text selection.
+  function openDetail(v: VarianceDB) {
+    if (window.getSelection()?.isCollapsed === false) return;
+    setDetail(v);
   }
 
   async function dispute(id: string) {
@@ -181,25 +195,32 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     }
   }
 
-  function exportCsv() {
-    const header =
-      "Date,City,Direction,Item Name,Barcode,Ticket ID,Source,Ops Type,SO Number,Variance,Priority,Bucket,Status\n";
-    const body = rows
-      .map((v) =>
-        [
-          v.business_date, v.city, v.direction, `"${(v.product ?? "").replace(/"/g, "'")}"`,
-          v.barcode, v.ticket_id ?? "", v.variance_source ?? "", v.job_type ?? "",
-          v.so_number ?? "", `"${v.variance_name}"`, v.priority, v.bucket, v.status,
-        ].join(",")
-      )
-      .join("\n");
-    const blob = new Blob([header + body], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `variances_${cityTab.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  // Exports every row matching the current filters — not the page on screen.
+  async function exportCsv() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      // Pin the resolved date so every page of the export describes the same
+      // run — otherwise the server re-resolves "latest" per request and a run
+      // landing mid-export would splice two days together.
+      const { rows: all, truncated } = await fetchAllVariances({
+        ...filters,
+        date: filters.date ?? businessDate ?? undefined,
+      });
+      downloadCsv(
+        `variances_${cityTab.toLowerCase()}_${businessDate ?? "all-dates"}.csv`,
+        varianceRowsToCsv(all)
+      );
+      if (truncated) {
+        alert(
+          `Export capped at ${all.length} rows. Narrow the filters (city, status or date) to get the rest.`
+        );
+      }
+    } catch (e) {
+      alert(`Export failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setExporting(false);
+    }
   }
 
   const runLabel = stats?.run
@@ -392,7 +413,16 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             </h3>
             <p className="text-xs text-text-muted mt-0.5">
               {loading ? "Loading…" : `${total} record${total === 1 ? "" : "s"}`}
-              {q && <span className="text-accent"> · results for “{q}” (filters paused)</span>}
+              {/* Always name the date in effect. A blank picker used to mean
+                  "every date ever", which quietly disagreed with the KPI tiles
+                  above; it now resolves to the latest run and says so. */}
+              {!q && businessDate && (
+                <span>
+                  {" "}· business date <b className="text-text-secondary">{businessDate}</b>
+                  {!dateF && " (latest run)"}
+                </span>
+              )}
+              {q && <span className="text-accent"> · results for “{q}” across all dates (filters paused)</span>}
               {error && <span className="text-danger"> · {error}</span>}
             </p>
           </div>
@@ -421,7 +451,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               value={dateF}
               onChange={(e) => resetPage(setDateF)(e.target.value)}
               className="input-clean cursor-pointer"
-              title="View a past reconciliation date (blank = latest)"
+              title="View a past reconciliation date (blank = the latest run)"
             />
             <select value={bucket} onChange={(e) => resetPage(setBucket)(e.target.value as Bucket | "ALL")} className="input-clean font-semibold cursor-pointer">
               <option value="ALL">All Buckets</option>
@@ -445,19 +475,44 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               <option value="pending_approval">Pending Approval</option>
               <option value="closed">Closed</option>
             </select>
-            <button onClick={exportCsv} disabled={rows.length === 0} className="btn btn-primary disabled:opacity-40">
-              <Icon name="download" size={18} />
-              Export
+            <button
+              onClick={exportCsv}
+              disabled={total === 0 || exporting}
+              title={`Download all ${total} matching row${total === 1 ? "" : "s"} as CSV`}
+              className="btn btn-primary disabled:opacity-40"
+            >
+              <Icon
+                name={exporting ? "progress_activity" : "download"}
+                size={18}
+                className={exporting ? "animate-spin" : ""}
+              />
+              {exporting ? "Exporting…" : `Export ${total || ""}`.trim()}
             </button>
           </div>
         </div>
 
-        {/* Mobile: card list (below md) */}
+        {/* Mobile: card list (below md). The whole card opens the detail dialog,
+            same as a desktop row — managers work from a phone, and without this
+            the evidence panel was unreachable for them. Inner buttons stop
+            propagation so an action never also opens the dialog. */}
         <div className="md:hidden divide-y divide-border">
           {rows.map((v) => (
-            <div key={v.id} className="p-4 space-y-2">
+            <div
+              key={v.id}
+              onClick={() => openDetail(v)}
+              className="p-4 space-y-2 cursor-pointer active:bg-surface-elevated transition-colors"
+            >
               <div className="flex items-start justify-between gap-2">
-                <span className="font-mono font-semibold text-text-primary text-sm break-all">{v.barcode}</span>
+                {/* A <div> can't take focus — this button is the keyboard route in. */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openDetail(v);
+                  }}
+                  className="font-mono font-semibold text-text-primary text-sm break-all text-left hover:text-accent"
+                >
+                  {v.barcode}
+                </button>
                 <span className={`${PRIORITY_BADGE[v.priority]} shrink-0`}>{v.priority}</span>
               </div>
               {v.product && <p className="text-sm text-text-secondary">{v.product}</p>}
@@ -481,14 +536,20 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               {v.status === "pending_approval" ? (
                 <div className="flex gap-2 mt-1">
                   <button
-                    onClick={() => approve(v.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      approve(v.id);
+                    }}
                     disabled={busyId === v.id}
                     className="btn btn-compact btn-primary flex-1 disabled:opacity-40"
                   >
                     <Icon name="check_circle" size={16} /> Approve
                   </button>
                   <button
-                    onClick={() => setRejecting({ id: v.id, product: v.product ?? "", barcode: v.barcode })}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRejecting({ id: v.id, product: v.product ?? "", barcode: v.barcode });
+                    }}
                     disabled={busyId === v.id}
                     className="btn btn-compact btn-secondary flex-1 disabled:opacity-40"
                   >
@@ -498,7 +559,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               ) : v.status === "open" || v.status === "in_progress" ? (
                 <div className="flex gap-2 mt-1">
                   <button
-                    onClick={() => setResolving({ id: v.id, product: v.product ?? "", barcode: v.barcode })}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setResolving({ id: v.id, product: v.product ?? "", barcode: v.barcode });
+                    }}
                     disabled={busyId === v.id}
                     className="btn btn-compact btn-primary flex-1 disabled:opacity-40"
                   >
@@ -506,7 +570,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                   </button>
                   {v.status === "open" && (
                     <button
-                      onClick={() => dispute(v.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        dispute(v.id);
+                      }}
                       disabled={busyId === v.id}
                       className="btn btn-compact btn-secondary flex-1 disabled:opacity-40"
                     >
@@ -546,14 +613,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             </thead>
             <tbody>
               {rows.map((v) => (
-                <tr
-                  key={v.id}
-                  onClick={() => {
-                    if (window.getSelection()?.isCollapsed === false) return;
-                    setDetail(v);
-                  }}
-                  className="cursor-pointer"
-                >
+                <tr key={v.id} onClick={() => openDetail(v)} className="cursor-pointer">
                   <td className="whitespace-nowrap text-text-secondary">{v.business_date}</td>
                   <td>{v.city}</td>
                   <td className="max-w-[200px] truncate" title={v.product ?? ""}>{v.product ?? "—"}</td>
@@ -562,7 +622,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        setDetail(v);
+                        openDetail(v);
                       }}
                       className="font-mono font-semibold text-text-primary hover:text-accent hover:underline"
                     >
