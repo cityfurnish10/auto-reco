@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Icon } from "@/components/icon";
+import { Modal } from "@/components/modal";
 
 // Closure reasons (kept as a stable enum for the analytics breakdown).
 export type ClosureReason =
@@ -60,23 +61,19 @@ export default function CloseVarianceModal({
     }
   }
 
+  // Chrome (overlay, panel, header, Escape, scroll-lock, focus trap) comes from
+  // the shared primitive. level="confirm" keeps it above the variance detail
+  // dialog, which is one of the places it gets launched from.
   return (
-    <div
-      className="fixed inset-0 z-[60] bg-primary-container/40 flex items-center justify-center p-4"
-      onClick={onCancel}
+    <Modal
+      open
+      onClose={onCancel}
+      title={title}
+      level="confirm"
+      size="md"
+      mobile="center"
+      bodyClassName="p-6"
     >
-      <section
-        className="card w-full max-w-[480px] shadow-card-hover overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-6 py-4 border-b border-border flex justify-between items-center">
-          <h2 className="font-headline text-lg text-text-primary">{title}</h2>
-          <button onClick={onCancel} className="btn-icon">
-            <Icon name="close" size={20} />
-          </button>
-        </div>
-
-        <div className="p-6">
           <div className="bg-surface-elevated p-4 rounded-control border border-border flex items-center gap-4 mb-6">
             <div className="w-12 h-12 bg-surface-card border border-border flex items-center justify-center rounded-control">
               <Icon name="inventory_2" size={22} className="text-accent" />
@@ -144,8 +141,6 @@ export default function CloseVarianceModal({
               </button>
             </div>
           </form>
-        </div>
-      </section>
-    </div>
+    </Modal>
   );
 }

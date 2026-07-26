@@ -66,16 +66,20 @@ const config: Config = {
         "text-muted": "var(--text-muted)",
         "text-disabled": "var(--text-disabled)",
 
-        // Semantic status colors (foreground + soft background pair each)
-        success: "var(--color-success)",
+        // Semantic status colors (foreground + soft background pair each).
+        // The foregrounds MUST point at the -fg vars: --color-success,
+        // --color-info and --color-neutral were never defined in globals.css,
+        // so text-success / text-info / text-neutral silently rendered as
+        // nothing wherever they were used.
+        success: "var(--color-success-fg)",
         "success-soft": "var(--color-success-bg)",
         "status-warning": "var(--color-warning-fg)",
         "warning-soft": "var(--color-warning-bg)",
         danger: "var(--color-error-fg)",
         "danger-soft": "var(--color-error-bg)",
-        info: "var(--color-info)",
+        info: "var(--color-info-fg)",
         "info-soft": "var(--color-info-bg)",
-        neutral: "var(--color-neutral)",
+        neutral: "var(--color-neutral-fg)",
         "neutral-soft": "var(--color-neutral-bg)",
       },
       borderRadius: {
