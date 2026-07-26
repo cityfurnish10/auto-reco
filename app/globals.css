@@ -21,6 +21,11 @@
   --color-accent-hover: #141422; /* ~8% darker */
   --color-accent-active: #0e0e18; /* ~12% darker */
   --color-accent-soft: rgba(26, 26, 46, 0.08);
+  /* Foreground for anything sitting ON the accent (primary buttons, the admin
+     badge, the avatar, toasts). NOT a fixed white: the dark theme's accent is a
+     light lavender, where white text measures ~2.9:1 — below WCAG AA. This
+     token flips with the theme so the pair always clears AA. */
+  --color-on-accent: #ffffff;
 
   /* Semantic status colors — foreground + soft background pair each */
   --color-success-fg: #059669;
@@ -61,6 +66,8 @@
   --color-accent-hover: #9a9df3;
   --color-accent-active: #7376dd;
   --color-accent-soft: rgba(139, 143, 240, 0.14);
+  /* #12141c on #8b8ff0 ≈ 6.6:1 (white would be 2.9:1). */
+  --color-on-accent: #12141c;
 
   --color-success-fg: #34d399;
   --color-success-bg: rgba(52, 211, 153, 0.15);
@@ -256,7 +263,7 @@ body {
 
   .btn-primary {
     background: var(--color-accent);
-    color: #ffffff;
+    color: var(--color-on-accent);
   }
   .btn-primary:hover:not(:disabled) { background: var(--color-accent-hover); }
   .btn-primary:active:not(:disabled) { background: var(--color-accent-active); }

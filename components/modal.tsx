@@ -13,7 +13,7 @@
 
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Icon } from "@/components/icon";
+import { Icon, type IconName } from "@/components/icon";
 
 export type ModalSize = "md" | "lg" | "xl";
 export type ModalLevel = "base" | "stacked" | "confirm";
@@ -75,7 +75,7 @@ export interface ModalProps {
   onClose: () => void;
   title: string;
   subtitle?: string;
-  icon?: string;
+  icon?: IconName;
   size?: ModalSize;
   level?: ModalLevel;
   /** Phones: "fullscreen" gives an edge-to-edge sheet; "center" keeps a card. */

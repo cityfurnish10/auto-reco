@@ -9,6 +9,7 @@
 
 import {
   Activity,
+  ArrowLeft,
   ArrowUpRight,
   Award,
   BadgeCheck,
@@ -45,6 +46,7 @@ import {
   LogIn,
   LogOut,
   Mail,
+  MailPlus,
   MapPin,
   Menu,
   Minus,
@@ -75,7 +77,12 @@ import {
 
 // Maps the old Material Symbol ligature names (still used as string keys in
 // data — sidebar nav items, connector rows, trend indicators) to Lucide icons.
-const ICONS: Record<string, LucideIcon> = {
+//
+// `satisfies` rather than a `Record<string, …>` annotation on purpose: it keeps
+// the keys as a literal union so `IconName` below is the exact set of names
+// that resolve. A typo used to fall through to the blank-square fallback and
+// ship silently; now it fails the build.
+const ICONS = {
   add: Plus,
   analytics: ChartColumn,
   arrow_outward: ArrowUpRight,
@@ -121,17 +128,21 @@ const ICONS: Record<string, LucideIcon> = {
   // Names referenced by the dashboards/modals — several of these were being
   // used already and silently falling through to the blank-square fallback.
   approval: BadgeCheck,
+  arrow_back: ArrowLeft,
   calendar_today: Calendar,
   category: Boxes,
   content_copy: Copy,
   database: Database,
   event_busy: CalendarX,
   filter: Filter,
+  forward_to_inbox: MailPlus,
   pending_actions: Hourglass,
   person: User,
   receipt: Receipt,
+  refresh: RefreshCw,
   shield: Shield,
   sync: RefreshCw,
+  verified: BadgeCheck,
   sync_alt: RefreshCw,
   table_chart: Table,
   task_alt: CircleCheck,
@@ -142,7 +153,11 @@ const ICONS: Record<string, LucideIcon> = {
   verified_user: ShieldCheck,
   warning: TriangleAlert,
   workspace_premium: Award,
-};
+} satisfies Record<string, LucideIcon>;
+
+// The only names that render. Anything holding an icon key in data (nav items,
+// connector rows, trend indicators) should type it as IconName.
+export type IconName = keyof typeof ICONS;
 
 export function Icon({
   name,
@@ -150,11 +165,13 @@ export function Icon({
   className,
   strokeWidth = 2,
 }: {
-  name: string;
+  name: IconName;
   size?: number;
   className?: string;
   strokeWidth?: number;
 }) {
+  // Still fall back at runtime — a value cast through `as IconName` (or arriving
+  // from the DB) can dodge the compiler.
   const Cmp = ICONS[name] ?? Square;
   // shrink-0 keeps icons from being squished inside flex rows; currentColor
   // means existing text-* color classes still tint them.

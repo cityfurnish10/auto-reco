@@ -51,7 +51,7 @@ export default function DashboardShell({
               Reconciliation Portal
             </h2>
             {user.role === "ADMIN" ? (
-              <span className="badge uppercase tracking-widest bg-accent text-white hidden sm:inline-flex">
+              <span className="badge uppercase tracking-widest bg-accent text-on-accent hidden sm:inline-flex">
                 Admin View
               </span>
             ) : (
@@ -72,7 +72,7 @@ export default function DashboardShell({
                   {user.role === "ADMIN" ? "Administrator" : "Warehouse Manager"}
                 </p>
               </div>
-              <div className="w-9 h-9 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shrink-0">
+              <div className="w-9 h-9 rounded-full bg-accent text-on-accent flex items-center justify-center text-xs font-bold shrink-0">
                 {user.name
                   .split(" ")
                   .map((p) => p[0])

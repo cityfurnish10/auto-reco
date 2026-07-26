@@ -61,6 +61,11 @@ const config: Config = {
         accent: "var(--color-accent)",
         "accent-hover": "var(--color-accent-hover)",
         "accent-active": "var(--color-accent-active)",
+        // These two were used across the app but never declared here, so
+        // `bg-accent-soft` / `border-accent-soft` generated no CSS at all and
+        // `text-white` on an accent fill failed contrast in dark mode.
+        "accent-soft": "var(--color-accent-soft)",
+        "on-accent": "var(--color-on-accent)",
         "text-primary": "var(--text-primary)",
         "text-secondary": "var(--text-secondary)",
         "text-muted": "var(--text-muted)",

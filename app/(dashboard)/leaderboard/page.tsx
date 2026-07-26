@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { useLeaderboard, type WindowKey } from "@/lib/hooks/use-leaderboard";
-import { Icon } from "@/components/icon";
+import { Icon, type IconName } from "@/components/icon";
 
-const TREND_ICON = {
+const TREND_ICON: Record<string, { icon: IconName; cls: string }> = {
   up: { icon: "trending_up", cls: "text-success" },
   down: { icon: "trending_down", cls: "text-danger" },
   flat: { icon: "trending_flat", cls: "text-text-muted" },

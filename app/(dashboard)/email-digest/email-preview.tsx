@@ -337,7 +337,7 @@ export default function EmailPreview() {
                         onClick={() => setSlot(email, s)}
                         className={
                           recip.slots[email] === s
-                            ? "px-2 py-1 text-xs font-semibold rounded bg-accent text-white uppercase"
+                            ? "px-2 py-1 text-xs font-semibold rounded bg-accent text-on-accent uppercase"
                             : "px-2 py-1 text-xs rounded border border-border text-text-muted hover:text-text-primary uppercase"
                         }
                       >
@@ -585,7 +585,7 @@ export default function EmailPreview() {
       </div>
 
       {toast && (
-        <div className="fixed inset-x-4 bottom-4 md:inset-x-auto md:right-8 md:bottom-8 card bg-accent text-white px-6 py-4 flex items-center gap-4 z-[60] shadow-card-hover">
+        <div className="fixed inset-x-4 bottom-4 md:inset-x-auto md:right-8 md:bottom-8 card bg-accent text-on-accent px-6 py-4 flex items-center gap-4 z-[60] shadow-card-hover">
           <div className="w-8 h-8 bg-success-soft text-success rounded-full flex items-center justify-center">
             <Icon name="check" size={18} />
           </div>

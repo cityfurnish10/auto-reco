@@ -118,7 +118,7 @@ export default function UsersPage() {
           <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
             <div className="card px-4 py-3 flex items-center gap-3">
               <div className="w-10 h-10 rounded-control bg-accent flex items-center justify-center shrink-0">
-                <Icon name="group" size={22} className="text-white" />
+                <Icon name="group" size={22} className="text-on-accent" />
               </div>
               <div>
                 <p className="text-xs text-text-muted">Total Users</p>
@@ -179,7 +179,7 @@ export default function UsersPage() {
                   </td>
                   <td className="text-text-secondary">{u.email}</td>
                   <td>
-                    <span className={`${u.role === "admin" ? "badge bg-accent text-white" : "badge badge-suppressed"} uppercase`}>
+                    <span className={`${u.role === "admin" ? "badge bg-accent text-on-accent" : "badge badge-suppressed"} uppercase`}>
                       {u.role}
                     </span>
                   </td>

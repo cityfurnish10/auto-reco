@@ -6,7 +6,7 @@
 
 import { useMemo } from "react";
 import { useSystemHealth } from "@/lib/hooks/use-system-health";
-import { Icon } from "@/components/icon";
+import { Icon, type IconName } from "@/components/icon";
 
 const SOURCE_LABEL: Record<string, string> = {
   ODOO: "Odoo (ERP)",
@@ -33,7 +33,7 @@ type EventKind = "reconcile" | "upload" | "email" | "ingest_fail";
 interface TimelineEvent {
   ts: string;
   kind: EventKind;
-  icon: string;
+  icon: IconName;
   title: string;
   detail: string;
   tone: "success" | "danger" | "warning" | "muted";

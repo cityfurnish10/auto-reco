@@ -287,7 +287,9 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
             />
             {uploading || processing ? (
               <div className="flex flex-col items-center">
-                <div className="w-16 h-16 border-4 border-accent-soft border-t-accent rounded-full animate-spin mb-4"></div>
+                {/* Track uses --border-color, not accent-soft: at 8% alpha the
+                    ring was invisible, so the spinner read as a solid circle. */}
+                <div className="w-16 h-16 border-4 border-border border-t-accent rounded-full animate-spin mb-4"></div>
                 <p className="text-sm font-medium text-accent">
                   {uploading ? "Uploading…" : "Reading the register (OCR) — this takes a few seconds…"}
                 </p>
@@ -435,7 +437,7 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
       </div>
 
       {toast && (
-        <div className="fixed inset-x-4 bottom-4 md:inset-x-auto md:right-8 md:bottom-8 card bg-accent text-white px-6 py-4 flex items-center gap-4 z-[60] shadow-card-hover">
+        <div className="fixed inset-x-4 bottom-4 md:inset-x-auto md:right-8 md:bottom-8 card bg-accent text-on-accent px-6 py-4 flex items-center gap-4 z-[60] shadow-card-hover">
           <div className="w-8 h-8 bg-success-soft text-success rounded-full flex items-center justify-center">
             <Icon name="check" size={18} />
           </div>
@@ -443,7 +445,7 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
             <p className="text-sm font-medium">Upload received!</p>
             <p className="text-xs opacity-70">{toast}</p>
           </div>
-          <button onClick={() => setToast(null)} className="btn-icon text-white/60! hover:text-white! ml-4">
+          <button onClick={() => setToast(null)} className="btn-icon text-on-accent! opacity-60 hover:opacity-100 ml-4">
             <Icon name="close" size={18} />
           </button>
         </div>
@@ -581,7 +583,9 @@ function DemoUploadsClient({ user }: { user: SessionUser }) {
             />
             {uploading ? (
               <div className="flex flex-col items-center">
-                <div className="w-16 h-16 border-4 border-accent-soft border-t-accent rounded-full animate-spin mb-4"></div>
+                {/* Track uses --border-color, not accent-soft: at 8% alpha the
+                    ring was invisible, so the spinner read as a solid circle. */}
+                <div className="w-16 h-16 border-4 border-border border-t-accent rounded-full animate-spin mb-4"></div>
                 <p className="text-sm font-medium text-accent">Uploading &amp; parsing…</p>
               </div>
             ) : (
@@ -720,7 +724,7 @@ function DemoUploadsClient({ user }: { user: SessionUser }) {
       </div>
 
       {toast && (
-        <div className="fixed inset-x-4 bottom-4 md:inset-x-auto md:right-8 md:bottom-8 card bg-accent text-white px-6 py-4 flex items-center gap-4 z-[60] shadow-card-hover">
+        <div className="fixed inset-x-4 bottom-4 md:inset-x-auto md:right-8 md:bottom-8 card bg-accent text-on-accent px-6 py-4 flex items-center gap-4 z-[60] shadow-card-hover">
           <div className="w-8 h-8 bg-success-soft text-success rounded-full flex items-center justify-center">
             <Icon name="check" size={18} />
           </div>
@@ -728,7 +732,7 @@ function DemoUploadsClient({ user }: { user: SessionUser }) {
             <p className="text-sm font-medium">Upload successful!</p>
             <p className="text-xs opacity-70">{toast}</p>
           </div>
-          <button onClick={() => setToast(null)} className="btn-icon text-white/60! hover:text-white! ml-4">
+          <button onClick={() => setToast(null)} className="btn-icon text-on-accent! opacity-60 hover:opacity-100 ml-4">
             <Icon name="close" size={18} />
           </button>
         </div>
