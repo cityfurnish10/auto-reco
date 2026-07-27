@@ -1,5 +1,5 @@
-// GET /api/variances/facets — the distinct variance_name and responsible values
-// present for a given scope, with counts.
+// GET /api/variances/facets — the distinct variance_name, responsible and
+// job_type (ops type) values present for a given scope, with counts.
 //
 // WHY THIS EXISTS: the digest's "Top Gap" line tells an admin that 57 losses are
 // all the same problem, and until now there was no way to isolate those 57 —
@@ -16,6 +16,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { OPS_TYPE_NONE } from "@/lib/ui/variance-format";
 
 export interface Facet {
   value: string;
@@ -50,11 +51,16 @@ export async function GET(req: NextRequest) {
   // endpoint here, so we read the two columns and tally in JS. Paginated for
   // the same reason the stats route is: un-ranged selects cap at 1000 rows and
   // a day can carry several thousand, which would silently truncate the list.
-  const rows: { variance_name: string; responsible: string | null; bucket: string }[] = [];
+  const rows: {
+    variance_name: string;
+    responsible: string | null;
+    job_type: string | null;
+    bucket: string;
+  }[] = [];
   for (let from = 0; ; from += 1000) {
     let query = supabase
       .from("variances")
-      .select("variance_name, responsible, bucket")
+      .select("variance_name, responsible, job_type, bucket")
       .range(from, from + 999);
     if (city) query = query.eq("city", city);
     if (businessDate) query = query.eq("business_date", businessDate);
@@ -69,6 +75,7 @@ export async function GET(req: NextRequest) {
   // "Barcode not in guard register · 57 (54 losses)" is the useful label.
   const names = new Map<string, { count: number; real: number }>();
   const owners = new Map<string, { count: number; real: number }>();
+  const opsTypes = new Map<string, { count: number; real: number }>();
 
   for (const r of rows) {
     const isReal = r.bucket === "REAL";
@@ -83,6 +90,16 @@ export async function GET(req: NextRequest) {
       if (isReal) o.real += 1;
       owners.set(r.responsible, o);
     }
+
+    // job_type is null on a large share of rows (nothing forces a source to
+    // send one). Those get an explicit bucket rather than being omitted — a
+    // dropdown that silently cannot reach them would hide real losses the
+    // moment anyone filtered.
+    const jt = r.job_type || OPS_TYPE_NONE;
+    const j = opsTypes.get(jt) ?? { count: 0, real: 0 };
+    j.count += 1;
+    if (isReal) j.real += 1;
+    opsTypes.set(jt, j);
   }
 
   const toList = (m: Map<string, { count: number; real: number }>) =>
@@ -95,5 +112,6 @@ export async function GET(req: NextRequest) {
     total: rows.length,
     varianceNames: toList(names),
     responsibles: toList(owners),
+    opsTypes: toList(opsTypes),
   });
 }

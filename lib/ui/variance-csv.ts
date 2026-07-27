@@ -5,6 +5,7 @@
 // the pagination.
 
 import type { VarianceDB } from "@/lib/db/schema";
+import { opsTypeLabel } from "@/lib/ui/variance-format";
 
 const COLUMNS: { header: string; get: (v: VarianceDB) => string | number | null }[] = [
   { header: "Date", get: (v) => v.business_date },
@@ -14,7 +15,10 @@ const COLUMNS: { header: string; get: (v: VarianceDB) => string | number | null 
   { header: "Barcode", get: (v) => v.barcode },
   { header: "Ticket ID", get: (v) => v.ticket_id },
   { header: "Source", get: (v) => v.variance_source },
-  { header: "Ops Type", get: (v) => v.job_type },
+  // Exported as the readable label, matching what is on screen — a CSV column
+  // reading PICKUP_AND_REFUND when the UI says "Pickup and refund" makes the
+  // two look like different fields.
+  { header: "Ops Type", get: (v) => (v.job_type ? opsTypeLabel(v.job_type) : "") },
   { header: "SO Number", get: (v) => v.so_number },
   { header: "Customer", get: (v) => v.customer },
   { header: "Variance", get: (v) => v.variance_name },

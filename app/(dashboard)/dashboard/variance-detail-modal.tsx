@@ -33,6 +33,7 @@ import {
   STATUS_BADGE,
   STATUS_LABEL,
   formatTs,
+  opsTypeLabel,
   responsibleLabel,
 } from "@/lib/ui/variance-format";
 
@@ -337,7 +338,7 @@ export default function VarianceDetailModal({
             <Field label="Ticket ID" value={v.ticket_id} />
             <Field label="SO / PO number" value={v.so_number} />
             <Field label="Customer" value={v.customer} />
-            <Field label="Ops type" value={v.job_type} />
+            <Field label="Ops type" value={v.job_type ? opsTypeLabel(v.job_type) : null} />
             <Field label="City" value={v.city} />
             <Field label="Direction" value={DIRECTION_LABEL[v.direction]} />
             <Field label="Business date" value={v.business_date} />

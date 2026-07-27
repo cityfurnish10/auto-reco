@@ -50,6 +50,19 @@ export function responsibleLabel(slug: string | null | undefined): string {
   return RESPONSIBLE_LABEL[slug] ?? slug.replace(/_/g, " ");
 }
 
+// Ops type (job_type) is stored UPPER_SNAKE by normalizeJobType — "Pickup and
+// Refund" becomes PICKUP_AND_REFUND. That is the right storage form (it folds
+// the four spellings of "pick up" the sources actually send) but it is not what
+// an ops person calls it, so render it back to sentence case.
+export const OPS_TYPE_NONE = "__NONE__";
+
+export function opsTypeLabel(raw: string | null | undefined): string {
+  if (!raw) return "—";
+  if (raw === OPS_TYPE_NONE) return "No ops type";
+  const words = raw.replace(/_+/g, " ").trim().toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 // How long a variance has been open, in the shortest form that still reads.
 // "6d" beats a timestamp in a table column: age is what a chaser triages on,
 // and an ISO date makes you do the subtraction yourself.

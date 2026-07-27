@@ -6,7 +6,8 @@
 // dateFrom, dateTo, bucket (REAL|INFO), source (Odoo|DT|Sheet|Physical|Cross —
 // maps to variance_source), priority (High|Medium|Info), status
 // (open|in_progress|closed), direction (IN|OUT|CROSS), variance (exact
-// variance_name), responsible (exact responsible slug), q (free-text search
+// variance_name), responsible (exact responsible slug), jobType (exact ops
+// type, or the __NONE__ sentinel for rows with none), q (free-text search
 // across barcode / ticket_id / so_number / product / customer), page (1-based,
 // default 1), pageSize (default 50, max 200), dates=all (opt out of the
 // default single-date scoping — see below), sort + dir (see SORTS).
@@ -42,6 +43,7 @@ const SORTS: Record<string, { cols: string[]; rank?: string; fallback?: string[]
   so: { cols: ["so_number"] },
   variance: { cols: ["variance_name", "barcode"] },
   responsible: { cols: ["responsible", "barcode"] },
+  jobType: { cols: ["job_type", "barcode"] },
   priority: { cols: ["priority_rank", "business_date"], rank: "priority_rank", fallback: ["priority"] },
   status: { cols: ["status_rank", "last_seen_at"], rank: "status_rank", fallback: ["status"] },
   // Age = how long this has been unresolved, so ASC (oldest first) is the
@@ -51,6 +53,8 @@ const SORTS: Record<string, { cols: string[]; rank?: string; fallback?: string[]
 };
 
 const DEFAULT_SORT = "date";
+
+import { OPS_TYPE_NONE } from "@/lib/ui/variance-format";
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
@@ -106,6 +110,7 @@ export async function GET(req: NextRequest) {
   const direction = sp.get("direction");
   const varianceName = sp.get("variance");
   const responsible = sp.get("responsible");
+  const jobType = sp.get("jobType");
   const q = sp.get("q")?.trim();
 
   function build(orderCols: string[]) {
@@ -139,6 +144,12 @@ export async function GET(req: NextRequest) {
     if (direction) query = query.eq("direction", direction);
     if (varianceName) query = query.eq("variance_name", varianceName);
     if (responsible) query = query.eq("responsible", responsible);
+    // Ops type. The sentinel maps to IS NULL rather than being dropped —
+    // job_type is null on a large share of rows, and a filter that cannot
+    // reach them would hide real losses.
+    if (jobType) {
+      query = jobType === OPS_TYPE_NONE ? query.is("job_type", null) : query.eq("job_type", jobType);
+    }
 
     // Free-text search — case-insensitive substring across the identifier
     // fields. Strip characters that would break PostgREST's or()/ilike grammar

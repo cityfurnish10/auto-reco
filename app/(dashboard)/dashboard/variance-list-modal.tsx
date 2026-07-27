@@ -20,13 +20,18 @@ import VarianceDetailModal from "./variance-detail-modal";
 import type { SessionUser } from "@/lib/demo-auth";
 import type { Bucket, Priority, VarianceDB, VarianceStatus } from "@/lib/db/schema";
 import type { City } from "@/lib/sample-data";
-import { patchVariance, useVariances } from "@/lib/hooks/use-dashboard-data";
+import {
+  patchVariance,
+  useVariances,
+  useVarianceFacets,
+} from "@/lib/hooks/use-dashboard-data";
 import {
   PRIORITY_BADGE,
   STATUS_BADGE,
   STATUS_LABEL,
   ageLabel,
   formatTs,
+  opsTypeLabel,
 } from "@/lib/ui/variance-format";
 
 const PAGE_SIZE = 50;
@@ -57,6 +62,7 @@ export default function VarianceListModal({
   const [bucket, setBucket] = useState<Bucket | "ALL">("ALL");
   const [status, setStatus] = useState<VarianceStatus | "ALL">("ALL");
   const [priority, setPriority] = useState<Priority | "ALL">("ALL");
+  const [opsType, setOpsType] = useState<string>("ALL");
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
@@ -79,6 +85,7 @@ export default function VarianceListModal({
     setBucket(request.bucket);
     setStatus(request.status);
     setPriority("ALL");
+    setOpsType("ALL");
     setSearchInput("");
     setQ("");
     setPage(1);
@@ -104,6 +111,7 @@ export default function VarianceListModal({
     bucket: q ? "ALL" : bucket,
     priority: q ? "ALL" : priority,
     status: q ? "ALL" : status,
+    jobType: q ? "ALL" : opsType,
     allDates: !!q,
     q: q || undefined,
     sort: sort.key,
@@ -111,6 +119,10 @@ export default function VarianceListModal({
     page,
     pageSize: PAGE_SIZE,
   });
+
+  // Ops-type options for this dialog's scope. `enabled` keeps it from firing
+  // while the dialog is closed — it is mounted by the dashboards at all times.
+  const { opsTypes } = useVarianceFacets({ city, date, enabled: !!request });
 
   const selected = rows.find((r) => r.id === selectedId) ?? snapshot;
 
@@ -149,13 +161,18 @@ export default function VarianceListModal({
   // resetting to everything.
   const narrowed =
     !!request &&
-    (bucket !== request.bucket || status !== request.status || priority !== "ALL" || !!q);
+    (bucket !== request.bucket ||
+      status !== request.status ||
+      priority !== "ALL" ||
+      opsType !== "ALL" ||
+      !!q);
 
   function resetToTile() {
     if (!request) return;
     setBucket(request.bucket);
     setStatus(request.status);
     setPriority("ALL");
+    setOpsType("ALL");
     setSearchInput("");
     setQ("");
     setPage(1);
@@ -206,9 +223,9 @@ export default function VarianceListModal({
   }
 
   const isAdmin = role === "ADMIN";
-  // checkbox + item + barcode + [city] + ticket + source + variance + priority
-  // + status + age + action
-  const colCount = showCityColumn ? 11 : 10;
+  // checkbox + item + barcode + [city] + ticket + source + ops type +
+  // variance + priority + status + age + action
+  const colCount = showCityColumn ? 12 : 11;
 
   const filters = (
     <div className="flex flex-wrap items-center gap-2">
@@ -255,6 +272,19 @@ export default function VarianceListModal({
         <option value="High">High</option>
         <option value="Medium">Medium</option>
         <option value="Info">Info</option>
+      </select>
+      <select
+        value={opsType}
+        onChange={(e) => changeFilter(() => setOpsType(e.target.value))}
+        className="input-clean cursor-pointer max-w-[200px]"
+        title="Filter to one ops type"
+      >
+        <option value="ALL">All ops types</option>
+        {opsTypes.map((f) => (
+          <option key={f.value} value={f.value}>
+            {opsTypeLabel(f.value)} ({f.real})
+          </option>
+        ))}
       </select>
     </div>
   );
@@ -445,6 +475,7 @@ export default function VarianceListModal({
                 )}
                 <SortHeader label="Ticket" sortKey="ticket" state={sort} onSort={applySort} />
                 <SortHeader label="Source" sortKey="source" state={sort} onSort={applySort} />
+                <SortHeader label="Ops Type" sortKey="jobType" state={sort} onSort={applySort} />
                 <SortHeader label="Variance" sortKey="variance" state={sort} onSort={applySort} />
                 <SortHeader
                   label="Priority"
@@ -505,6 +536,7 @@ export default function VarianceListModal({
                   <td>
                     <SourceBadge source={v.variance_source} />
                   </td>
+                  <td className="text-text-secondary text-xs">{opsTypeLabel(v.job_type)}</td>
                   <td className="max-w-[240px]" title={v.note ?? ""}>
                     <span className="text-text-primary">{v.variance_name}</span>
                   </td>

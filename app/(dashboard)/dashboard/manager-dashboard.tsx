@@ -18,6 +18,7 @@ import {
   STATUS_LABEL,
   ageLabel,
   formatTs,
+  opsTypeLabel,
   responsibleLabel,
 } from "@/lib/ui/variance-format";
 import { SortHeader, type SortState } from "@/components/sort-header";
@@ -50,6 +51,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
   const [statusF, setStatusF] = useState<VarianceStatus | "ALL" | "ACTIVE">("ACTIVE");
   const [varianceName, setVarianceName] = useState<string>("ALL");
   const [responsible, setResponsible] = useState<string>("ALL");
+  const [opsType, setOpsType] = useState<string>("ALL");
   const [sort, setSort] = useState<SortState>({ key: "date", dir: "desc" });
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
@@ -85,6 +87,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
       status: q ? "ALL" : statusF,
       variance: q ? "ALL" : varianceName,
       responsible: q ? "ALL" : responsible,
+      jobType: q ? "ALL" : opsType,
       date: q ? undefined : dateF || undefined,
       // A search must find the barcode whatever night it landed on; everything
       // else stays scoped to a single run so the table agrees with the KPIs.
@@ -95,14 +98,14 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
       page,
       pageSize: PAGE_SIZE,
     }),
-    [city, bucket, priority, statusF, varianceName, responsible, dateF, q, sort, page]
+    [city, bucket, priority, statusF, varianceName, responsible, opsType, dateF, q, sort, page]
   );
   const { rows, total, totalPages, businessDate, sortDegraded, loading, error, refetch } =
     useVariances(filters);
 
   // Options come from this city's data, so the dropdowns only offer filters
   // that will return something.
-  const { varianceNames, responsibles } = useVarianceFacets({
+  const { varianceNames, responsibles, opsTypes } = useVarianceFacets({
     city,
     date: dateF || undefined,
   });
@@ -121,6 +124,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
     statusF !== "ACTIVE" ||
     varianceName !== "ALL" ||
     responsible !== "ALL" ||
+    opsType !== "ALL" ||
     !!dateF ||
     !!q;
 
@@ -130,6 +134,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
     setStatusF("ACTIVE");
     setVarianceName("ALL");
     setResponsible("ALL");
+    setOpsType("ALL");
     setDateF("");
     setSearchInput("");
     setPage(1);
@@ -469,6 +474,22 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                 </option>
               ))}
             </select>
+            {/* Ops type. Options come from the data, and the "(none)" bucket is
+                explicit because job_type is null on a large share of rows — a
+                filter that could not reach them would hide real losses. */}
+            <select
+              value={opsType}
+              onChange={(e) => resetPage(setOpsType)(e.target.value)}
+              className="input-clean cursor-pointer max-w-[200px]"
+              title="Filter to one ops type"
+            >
+              <option value="ALL">All Ops Types</option>
+              {opsTypes.map((f) => (
+                <option key={f.value} value={f.value}>
+                  {opsTypeLabel(f.value)} ({f.real})
+                </option>
+              ))}
+            </select>
             <button
               onClick={exportCsv}
               disabled={total === 0 || exporting}
@@ -525,7 +546,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
                 <span>{v.business_date}</span>
                 <SourceBadge source={v.variance_source} />
-                {v.job_type && <span>{v.job_type}</span>}
+                {v.job_type && <span>{opsTypeLabel(v.job_type)}</span>}
                 <span className={`${STATUS_BADGE[v.status]} uppercase`}>{STATUS_LABEL[v.status]}</span>
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-text-muted">
@@ -589,7 +610,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                 <SortHeader label="Barcode" sortKey="barcode" state={sort} onSort={applySort} />
                 <SortHeader label="Ticket ID" sortKey="ticket" state={sort} onSort={applySort} />
                 <SortHeader label="Source" sortKey="source" state={sort} onSort={applySort} />
-                <th>Ops Type</th>
+                <SortHeader label="Ops Type" sortKey="jobType" state={sort} onSort={applySort} />
                 <SortHeader label="SO Number" sortKey="so" state={sort} onSort={applySort} />
                 <SortHeader label="Variance" sortKey="variance" state={sort} onSort={applySort} />
                 <SortHeader
@@ -640,7 +661,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                   </td>
                   <td className="text-text-secondary">{v.ticket_id ?? "—"}</td>
                   <td><SourceBadge source={v.variance_source} /></td>
-                  <td className="text-text-secondary text-xs">{v.job_type ?? "—"}</td>
+                  <td className="text-text-secondary text-xs">{opsTypeLabel(v.job_type)}</td>
                   <td className="text-text-secondary">{v.so_number ?? "—"}</td>
                   <td className="max-w-[220px]" title={v.note ?? ""}>
                     {v.variance_name}

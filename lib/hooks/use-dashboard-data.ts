@@ -35,6 +35,8 @@ export interface VarianceFilters {
   variance?: string | "ALL";
   /** Exact responsible slug — the team a chaser would actually go talk to. */
   responsible?: string | "ALL";
+  /** Exact ops type (job_type), or OPS_TYPE_NONE for rows that carry none. */
+  jobType?: string | "ALL";
   q?: string; // free-text search: barcode / ticket / SO / product / customer
   sort?: SortKey;
   dir?: SortDir;
@@ -54,6 +56,7 @@ export type SortKey =
   | "so"
   | "variance"
   | "responsible"
+  | "jobType"
   | "priority"
   | "status"
   | "age"
@@ -84,6 +87,7 @@ function toQuery(f: VarianceFilters): string {
   }
   if (f.variance && f.variance !== "ALL") p.set("variance", f.variance);
   if (f.responsible && f.responsible !== "ALL") p.set("responsible", f.responsible);
+  if (f.jobType && f.jobType !== "ALL") p.set("jobType", f.jobType);
   if (f.q && f.q.trim()) p.set("q", f.q.trim());
   if (f.sort) p.set("sort", f.sort);
   if (f.dir) p.set("dir", f.dir);
@@ -186,6 +190,7 @@ export function useVarianceFacets(scope: {
 }) {
   const [varianceNames, setVarianceNames] = useState<Facet[]>([]);
   const [responsibles, setResponsibles] = useState<Facet[]>([]);
+  const [opsTypes, setOpsTypes] = useState<Facet[]>([]);
   const seq = useRef(0);
   const key = `${scope.city ?? "ALL"}|${scope.date ?? ""}|${scope.enabled !== false}`;
 
@@ -203,6 +208,7 @@ export function useVarianceFacets(scope: {
         if (mine !== seq.current || !json) return;
         setVarianceNames(json.varianceNames ?? []);
         setResponsibles(json.responsibles ?? []);
+        setOpsTypes(json.opsTypes ?? []);
       })
       // A failed facet fetch must not break the table — the filters just stay
       // empty, which reads as "no options" rather than an error state.
@@ -211,7 +217,7 @@ export function useVarianceFacets(scope: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  return { varianceNames, responsibles };
+  return { varianceNames, responsibles, opsTypes };
 }
 
 // ─── Bulk actions ───────────────────────────────────────────────────────────
