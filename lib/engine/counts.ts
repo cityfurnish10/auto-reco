@@ -26,6 +26,11 @@ export function computeCountLayer(rows: SourceRow[]): CountLayer {
 
   const phys_total = phys.length;
   const sheet_total = sheet.length;
+  // Plain row count, unlike dt_done which is done-only. The four *_total
+  // figures are what the digest's movement table compares across sources, so
+  // they have to be measured the same way — mixing a done-only count with three
+  // raw counts makes the columns quietly incomparable.
+  const dt_total = dt.length;
 
   return {
     primary_source,
@@ -36,6 +41,7 @@ export function computeCountLayer(rows: SourceRow[]): CountLayer {
     odoo_diff: odoo_count - expected,
     phys_total,
     sheet_total,
+    dt_total,
     phys_sheet_match: phys_total === sheet_total,
     phys_sheet_diff: phys_total - sheet_total,
   };

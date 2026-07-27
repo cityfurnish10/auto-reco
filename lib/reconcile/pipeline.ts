@@ -99,7 +99,7 @@ export async function runReconcilePipeline(
     );
 
     // 4b. Per-city rollup for the leaderboard (movements + REAL count per city).
-    await saveCityStats(db, runId, runDate, run.perCity);
+    await saveCityStats(db, runId, runDate, run.perCity, reportedByCity);
 
     // 5. Log ingestion health per source.
     await saveIngestionLogs(db, runId, results);

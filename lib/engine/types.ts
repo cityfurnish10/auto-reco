@@ -128,6 +128,8 @@ export interface CountLayer {
   odoo_diff: number;
   phys_total: number;
   sheet_total: number;
+  /** All DT rows, unlike dt_done which counts only completed ones. */
+  dt_total: number;
   phys_sheet_match: boolean;
   phys_sheet_diff: number;
 }

@@ -246,24 +246,75 @@ export async function saveCityStats(
   db: DB,
   runId: string,
   runDate: string,
-  perCity: CityRunResult[]
+  perCity: CityRunResult[],
+  // Which connectors actually reported per city. Persisted because a zero
+  // count cannot distinguish "the source was down" from "nothing moved", and
+  // the digest has to say the right one.
+  reportedByCity?: Partial<Record<City, ReportedSources>>
 ): Promise<number> {
-  const payload = perCity.map((c) => ({
-    run_id: runId,
-    business_date: c.date || runDate,
-    city: c.city,
-    movements: c.summary.movements,
-    real_count: c.summary.real_count,
-    info_count: c.summary.info_count,
-    high_count: c.summary.high_priority,
-    pp_box_count: c.summary.pp_box_count,
-    consumable_count: c.summary.consumable_count,
-  }));
+  const payload = perCity.map((c) => {
+    const rep = reportedByCity?.[c.city];
+    return {
+      run_id: runId,
+      business_date: c.date || runDate,
+      city: c.city,
+      movements: c.summary.movements,
+      real_count: c.summary.real_count,
+      info_count: c.summary.info_count,
+      high_count: c.summary.high_priority,
+      pp_box_count: c.summary.pp_box_count,
+      consumable_count: c.summary.consumable_count,
+      // Per-source, per-direction movement counts for the digest's Movement
+      // Summary table. computeCountLayer already produced these; before 0012
+      // they were computed and discarded.
+      sheet_in: c.count_in.sheet_total,
+      sheet_out: c.count_out.sheet_total,
+      odoo_in: c.count_in.odoo_count,
+      odoo_out: c.count_out.odoo_count,
+      dt_in: c.count_in.dt_total,
+      dt_out: c.count_out.dt_total,
+      phys_in: c.count_in.phys_total,
+      phys_out: c.count_out.phys_total,
+      reported_p: rep?.P ?? false,
+      reported_s: rep?.S ?? false,
+      reported_d: rep?.D ?? false,
+      reported_o: rep?.O ?? false,
+    };
+  });
   if (payload.length === 0) return 0;
   const { error } = await db
     .from("run_city_stats")
     .upsert(payload, { onConflict: "business_date,city" });
-  if (error) throw new Error(`saveCityStats failed: ${error.message}`);
+
+  if (error) {
+    // 42703 = undefined_column: migration 0012 (per-source counts) has not been
+    // applied yet. Retry with only the pre-0012 columns rather than throwing —
+    // this runs inside the nightly pipeline, so a hard failure here would mark
+    // the WHOLE reconcile failed and produce no variances at all for the day,
+    // purely because a cosmetic email column is missing.
+    if (error.code === "42703" || /does not exist/i.test(error.message)) {
+      const legacy = payload.map((p) => ({
+        run_id: p.run_id,
+        business_date: p.business_date,
+        city: p.city,
+        movements: p.movements,
+        real_count: p.real_count,
+        info_count: p.info_count,
+        high_count: p.high_count,
+        pp_box_count: p.pp_box_count,
+        consumable_count: p.consumable_count,
+      }));
+      const retry = await db
+        .from("run_city_stats")
+        .upsert(legacy, { onConflict: "business_date,city" });
+      if (retry.error) throw new Error(`saveCityStats failed: ${retry.error.message}`);
+      console.warn(
+        "[saveCityStats] migration 0012 not applied — per-source movement counts were not stored; the digest will omit the movement table."
+      );
+      return legacy.length;
+    }
+    throw new Error(`saveCityStats failed: ${error.message}`);
+  }
   return payload.length;
 }
 
