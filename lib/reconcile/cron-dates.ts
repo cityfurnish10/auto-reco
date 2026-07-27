@@ -11,6 +11,17 @@
 //   16:00 IST on D+1  → reconcile D   (its window shut an hour earlier)
 //   16:15 IST on D+1  → email     D   (the day just reconciled)
 //
+// vercel.json holds those as UTC cron strings and CANNOT carry a comment — it
+// is strict JSON and Vercel's schema rejects unknown keys, so the mapping is
+// recorded here instead:
+//
+//   "30 10 * * *"  = 10:30 UTC = 16:00 IST   /api/cron/reconcile
+//   "45 10 * * *"  = 10:45 UTC = 16:15 IST   /api/cron/email-digest
+//
+// Vercel Hobby does not guarantee the 15-minute gap between them, which is why
+// the digest reports an incomplete run rather than silently falling back to the
+// previous day (see app/api/cron/email-digest/route.ts).
+//
 // Worked example: 25 Jul covers 25 Jul 15:00 → 26 Jul 15:00; it is reconciled
 // at 16:00 on the 26th and emailed at 16:15 on the 26th.
 //
