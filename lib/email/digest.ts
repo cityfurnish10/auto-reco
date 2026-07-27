@@ -8,6 +8,21 @@ import { VARIANCE } from "../engine/variance-names";
 import { isCityOff, OFF_LABEL } from "../engine/schedule";
 import type { City } from "../sample-data";
 
+// Per-source, per-direction movement counts for one city (migration 0012).
+// `reported` is separate from the counts on purpose: a zero cannot tell "the
+// connector was down" from "nothing moved", and the email must not guess.
+export interface CityMovementCounts {
+  sheetIn: number;
+  sheetOut: number;
+  odooIn: number;
+  odooOut: number;
+  dtIn: number;
+  dtOut: number;
+  physIn: number;
+  physOut: number;
+  reported: { P: boolean; S: boolean; D: boolean; O: boolean };
+}
+
 export interface CityDigestRow {
   city: string;
   accuracy: number | null; // 1 - real/movements, %
@@ -18,6 +33,19 @@ export interface CityDigestRow {
   info: number;
   total: number;
   high: number;
+  // Absent when migration 0012 has not been applied, or for dates reconciled
+  // before it was — the movement table is then omitted rather than showing zeros.
+  counts?: CityMovementCounts;
+}
+
+// What did NOT arrive for a city on this date. Guard status is read from
+// guard_uploads directly rather than inferred from reported_p, because that
+// distinguishes "never uploaded" from "uploaded but OCR has not finished" —
+// which are different asks of a different person.
+export interface CityGap {
+  city: string;
+  register: "missing" | "pending" | "failed" | null;
+  opsSheet: boolean; // true = the ops sheet had no rows for this city/date
 }
 
 export interface DigestData {
@@ -26,6 +54,9 @@ export interface DigestData {
   totals: { total: number; real: number; info: number; high: number };
   cities: CityDigestRow[]; // sorted REAL desc
   sources?: { source: string; ok: boolean; rows: number }[];
+  gaps?: CityGap[]; // cities missing a register and/or ops-sheet rows
+  /** True when no completed reconciliation exists for `date` — see the banner. */
+  runIncomplete?: boolean;
 }
 
 const clampPct = (x: number) => Math.round(Math.max(0, Math.min(100, x)) * 10) / 10;
@@ -144,11 +175,57 @@ export async function buildDigestFromDb(
 
   // Per-city movements / pp-box / real-count for accuracy + PP (the variance
   // table no longer carries PP-box or consumable rows — see run_city_stats).
-  const { data: stats } = await db
-    .from("run_city_stats")
-    .select("city, movements, real_count, pp_box_count")
-    .eq("business_date", businessDate);
+  // Try the 0012 columns first. If the migration has not been applied the
+  // select 42703s, so fall back to the legacy set and simply omit the movement
+  // table — an email without one beats an email that fails to build.
+  // Explicit shape: the 0012 columns are optional so the legacy fallback
+  // below type-checks against the same variable.
+  type CityStatRow = {
+    city: string;
+    movements: number | null;
+    real_count: number | null;
+    pp_box_count: number | null;
+    sheet_in?: number | null; sheet_out?: number | null;
+    odoo_in?: number | null; odoo_out?: number | null;
+    dt_in?: number | null; dt_out?: number | null;
+    phys_in?: number | null; phys_out?: number | null;
+    reported_p?: boolean | null; reported_s?: boolean | null;
+    reported_d?: boolean | null; reported_o?: boolean | null;
+  };
+  let stats: CityStatRow[] | null = null;
+  let hasCounts = true;
+  {
+    const full = await db
+      .from("run_city_stats")
+      .select(
+        "city, movements, real_count, pp_box_count, sheet_in, sheet_out, odoo_in, odoo_out, dt_in, dt_out, phys_in, phys_out, reported_p, reported_s, reported_d, reported_o"
+      )
+      .eq("business_date", businessDate);
+    if (full.error) {
+      hasCounts = false;
+      const legacy = await db
+        .from("run_city_stats")
+        .select("city, movements, real_count, pp_box_count")
+        .eq("business_date", businessDate);
+      stats = (legacy.data ?? []) as CityStatRow[];
+    } else {
+      stats = (full.data ?? []) as CityStatRow[];
+    }
+  }
   const statByCity = new Map((stats ?? []).map((s) => [s.city, s]));
+
+  // Register status per city, straight from guard_uploads — richer than
+  // reported_p, which conflates "no upload" with "uploaded but not processed".
+  const { data: uploads } = await db
+    .from("guard_uploads")
+    .select("city, status")
+    .eq("business_date", businessDate);
+  const uploadByCity = new Map<string, string[]>();
+  for (const u of uploads ?? []) {
+    const list = uploadByCity.get(u.city as string) ?? [];
+    list.push(u.status as string);
+    uploadByCity.set(u.city as string, list);
+  }
 
   const byCity = new Map<string, typeof rows>();
   for (const r of rows) {
@@ -171,9 +248,46 @@ export async function buildDigestFromDb(
       info: cr.length - realRows.length,
       total: cr.length,
       high: cr.filter((v) => v.priority === "High").length,
+      counts:
+        hasCounts && st
+          ? {
+              sheetIn: Number(st.sheet_in ?? 0),
+              sheetOut: Number(st.sheet_out ?? 0),
+              odooIn: Number(st.odoo_in ?? 0),
+              odooOut: Number(st.odoo_out ?? 0),
+              dtIn: Number(st.dt_in ?? 0),
+              dtOut: Number(st.dt_out ?? 0),
+              physIn: Number(st.phys_in ?? 0),
+              physOut: Number(st.phys_out ?? 0),
+              reported: {
+                P: !!st.reported_p,
+                S: !!st.reported_s,
+                D: !!st.reported_d,
+                O: !!st.reported_o,
+              },
+            }
+          : undefined,
     });
   }
   cities.sort((a, b) => b.open - a.open);
+
+  // Gaps: what did not arrive. Skip cities that were closed — an absent
+  // register on a weekly off is expected, not a chase item.
+  const gaps: CityGap[] = [];
+  for (const c of cities) {
+    if (isCityOff(c.city as City, businessDate)) continue;
+    const statuses = uploadByCity.get(c.city) ?? [];
+    let register: CityGap["register"] = null;
+    if (statuses.length === 0) register = "missing";
+    else if (statuses.includes("processed")) register = null;
+    else if (statuses.includes("failed")) register = "failed";
+    else register = "pending"; // pending / ocr_running / needs_review
+    // The ops sheet is missing when the connector reported nothing for the city.
+    // Only trustworthy once 0012 is applied; otherwise leave it unclaimed.
+    const st = statByCity.get(c.city);
+    const opsSheet = hasCounts && !!st ? !st.reported_s : false;
+    if (register || opsSheet) gaps.push({ city: c.city, register, opsSheet });
+  }
 
   return {
     date: businessDate,
@@ -185,6 +299,9 @@ export async function buildDigestFromDb(
       high: rows.filter((v) => v.priority === "High").length,
     },
     cities,
+    gaps,
+    // No run rows at all for the date means the reconcile never completed.
+    runIncomplete: !runId,
   };
 }
 
@@ -241,6 +358,96 @@ export function renderDigestHtml(data: DigestData, dashboardUrl?: string, notes?
         .join(" · ")}</p>`
     : "";
 
+  // ── Movement Summary: per-city IN/OUT for each of the four sources ────────
+  // Only rendered when migration 0012 has populated the counts; a table of
+  // zeros would read as "nothing moved" rather than "we don't know".
+  const withCounts = data.cities.filter((c) => c.counts);
+  const cell = (n: number, reported: boolean) =>
+    reported
+      ? `<td style="padding:7px 4px;border-bottom:1px solid #e5e7eb;text-align:center;font-variant-numeric:tabular-nums;">${n}</td>`
+      : // A dash, not a 0 — the source did not report, which is not the same as
+        // no movements. Explained in the footnote below.
+        `<td style="padding:7px 4px;border-bottom:1px solid #e5e7eb;text-align:center;color:#b91c1c;" title="source did not report">&ndash;</td>`;
+
+  const movementTable =
+    withCounts.length === 0
+      ? ""
+      : `
+        <p style="margin:26px 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;font-weight:700;">Movement Summary</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr style="background:#f3f4f6;">
+              <th rowspan="2" style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb;color:#374151;font-size:11px;">City</th>
+              <th colspan="2" style="padding:6px 4px;text-align:center;border-bottom:1px solid #e5e7eb;color:#374151;font-size:11px;">Register</th>
+              <th colspan="2" style="padding:6px 4px;text-align:center;border-bottom:1px solid #e5e7eb;color:#374151;font-size:11px;">Odoo</th>
+              <th colspan="2" style="padding:6px 4px;text-align:center;border-bottom:1px solid #e5e7eb;color:#374151;font-size:11px;">Delivery Tracker</th>
+              <th colspan="2" style="padding:6px 4px;text-align:center;border-bottom:1px solid #e5e7eb;color:#374151;font-size:11px;">Security Guards</th>
+            </tr>
+            <tr style="background:#f3f4f6;">
+              ${["Out", "In", "Out", "In", "Out", "In", "Out", "In"]
+                .map(
+                  (h) =>
+                    `<th style="padding:3px 4px;text-align:center;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:10px;font-weight:600;">${h}</th>`
+                )
+                .join("")}
+            </tr>
+          </thead>
+          <tbody>
+            ${withCounts
+              .map((c) => {
+                const k = c.counts!;
+                const r = k.reported;
+                return `<tr>
+                  <td style="padding:7px 8px;border-bottom:1px solid #e5e7eb;color:#111827;">${esc(c.city)}</td>
+                  ${cell(k.sheetOut, r.S)}${cell(k.sheetIn, r.S)}
+                  ${cell(k.odooOut, r.O)}${cell(k.odooIn, r.O)}
+                  ${cell(k.dtOut, r.D)}${cell(k.dtIn, r.D)}
+                  ${cell(k.physOut, r.P)}${cell(k.physIn, r.P)}
+                </tr>`;
+              })
+              .join("")}
+          </tbody>
+        </table>
+        <p style="margin:6px 0 0;color:#9ca3af;font-size:11px;line-height:1.5;">
+          Movements that entered reconciliation (PP boxes, spares and unreadable barcodes excluded).
+          A red dash means that source reported nothing for the city &mdash; not that nothing moved.
+          Odoo and Delivery Tracker are counted on the 15:00&ndash;15:00 business day; Register and
+          Security Guards on their written date, so morning movements can sit on either side.
+        </p>`;
+
+  // ── Missing sources: what did not arrive, and from whom ───────────────────
+  const gapBlock =
+    !data.gaps || data.gaps.length === 0
+      ? ""
+      : `
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;margin:0 0 18px;">
+          <tr><td style="padding:14px 16px;color:#991b1b;font-size:13px;line-height:1.6;">
+            <strong style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#b91c1c;margin-bottom:6px;">Not received for this date</strong>
+            ${data.gaps
+              .map((g) => {
+                const bits: string[] = [];
+                if (g.register === "missing") bits.push("guard register not uploaded");
+                if (g.register === "pending") bits.push("guard register uploaded but not yet processed");
+                if (g.register === "failed") bits.push("guard register OCR failed");
+                if (g.opsSheet) bits.push("no ops-sheet rows");
+                return `<div>&bull; <strong>${esc(g.city)}</strong> &mdash; ${esc(bits.join("; "))}</div>`;
+              })
+              .join("")}
+            <div style="margin-top:6px;color:#7f1d1d;font-size:12px;">These cities reconciled without that source, so their figures below are incomplete.</div>
+          </td></tr>
+        </table>`;
+
+  // ── Incomplete run banner ─────────────────────────────────────────────────
+  const incompleteBanner = data.runIncomplete
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;margin:0 0 18px;">
+         <tr><td style="padding:14px 16px;color:#92400e;font-size:13px;line-height:1.6;">
+           <strong style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#b45309;margin-bottom:5px;">Reconciliation did not complete</strong>
+           No finished reconciliation exists for ${esc(fmtDate(data.date))}. The figures below are whatever was
+           recorded for that date previously and may be stale or absent. Check System Health before acting on them.
+         </td></tr>
+       </table>`
+    : "";
+
   const cta = dashboardUrl
     ? `<div style="text-align:center;margin:28px 0 8px;">
          <a href="${esc(dashboardUrl)}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:13px;letter-spacing:1px;text-transform:uppercase;font-weight:700;">View Full Dashboard &rarr;</a>
@@ -281,6 +488,8 @@ export function renderDigestHtml(data: DigestData, dashboardUrl?: string, notes?
         ${noteBlock}
 
         <tr><td style="padding:24px 32px;background:#f9fafb;">
+          ${incompleteBanner}
+          ${gapBlock}
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:22px;"><tr>
             <td width="50%" style="padding:14px;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;text-align:center;">
               <div style="font-size:11px;color:#6b7280;margin-bottom:4px;">Losses to Action</div>
@@ -304,6 +513,7 @@ export function renderDigestHtml(data: DigestData, dashboardUrl?: string, notes?
             <tbody>${cityRows}</tbody>
           </table>
           <p style="margin:12px 0 0;color:#9ca3af;font-size:12px;">Cities with open items are highlighted red. Accuracy = 1 − REAL/movements. Open = REAL variances to chase. PP = count-only packing-box movements. Top Gap = the dominant variance category (Odoo lag / Reg only / DT only …).</p>
+          ${movementTable}
           ${cta}
         </td></tr>
 
@@ -326,6 +536,22 @@ export function renderDigestText(data: DigestData, notes?: string): string {
     lines.push(`NOTE FROM THE ADMIN: ${notes.trim()}`);
     lines.push("");
   }
+  if (data.runIncomplete) {
+    lines.push("!! RECONCILIATION DID NOT COMPLETE for this date — figures below may be stale.");
+    lines.push("");
+  }
+  if (data.gaps && data.gaps.length > 0) {
+    lines.push("NOT RECEIVED FOR THIS DATE:");
+    for (const g of data.gaps) {
+      const bits: string[] = [];
+      if (g.register === "missing") bits.push("guard register not uploaded");
+      if (g.register === "pending") bits.push("guard register not yet processed");
+      if (g.register === "failed") bits.push("guard register OCR failed");
+      if (g.opsSheet) bits.push("no ops-sheet rows");
+      lines.push(`  - ${g.city}: ${bits.join("; ")}`);
+    }
+    lines.push("");
+  }
   lines.push(`Losses to action (REAL) ${data.totals.real} | High ${data.totals.high}`);
   lines.push("");
   lines.push("CITY          ACC%   OPEN   PP   TOP GAP");
@@ -335,6 +561,20 @@ export function renderDigestText(data: DigestData, notes?: string): string {
     lines.push(
       `${c.city.padEnd(13)} ${acc.padStart(5)} ${String(c.open).padStart(5)} ${String(c.ppBox).padStart(4)}   ${off ? OFF_LABEL : c.topIssue ?? "-"}`
     );
+  }
+  const withCounts = data.cities.filter((c) => c.counts);
+  if (withCounts.length > 0) {
+    lines.push("");
+    lines.push("MOVEMENT SUMMARY (Out/In per source; '-' = source did not report)");
+    lines.push("CITY          REGISTER     ODOO        DELIVERY TR  GUARDS");
+    for (const c of withCounts) {
+      const k = c.counts!;
+      const p = (out: number, inn: number, ok: boolean) =>
+        (ok ? `${out}/${inn}` : "-/-").padEnd(12);
+      lines.push(
+        `${c.city.padEnd(13)} ${p(k.sheetOut, k.sheetIn, k.reported.S)}${p(k.odooOut, k.odooIn, k.reported.O)}${p(k.dtOut, k.dtIn, k.reported.D)}${p(k.physOut, k.physIn, k.reported.P)}`
+      );
+    }
   }
   lines.push("");
   lines.push("Automated report from the Cityfurnish Operations Portal.");

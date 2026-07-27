@@ -57,34 +57,31 @@ async function handle(req: NextRequest) {
     console.warn("scheduled email drain failed:", err instanceof Error ? err.message : err);
   }
 
-  // Resolve the run to report: explicit ?date=, else the day last night's
-  // reconcile closed (digestTargetDate — see lib/reconcile/cron-dates.ts).
+  // Resolve the run to report: explicit ?date=, else the business day that just
+  // closed (digestTargetDate — see lib/reconcile/cron-dates.ts).
   //
-  // The lookup is "latest reconciled business date AT OR BEFORE the target",
-  // which does two jobs at once: it picks the target when that run exists, and
-  // degrades to the most recent EARLIER day when a night was missed — while
-  // never reporting a day AHEAD of the target. That last part matters: a manual
-  // reconcile of a more recent date (or the nightly job racing the digest) must
-  // not hijack the morning mail into reporting a half-written day.
+  // Pinned with .eq(), not the old "latest run at or before the target" .lte().
+  // The digest now fires 15 minutes after the reconcile on the SAME business
+  // day, and Vercel Hobby does not guarantee that gap — so a ceiling would
+  // quietly report YESTERDAY every time tonight's reconcile was still running
+  // or had failed, with nothing in the mail to say so.
   const dateParam = req.nextUrl.searchParams.get("date");
-  let query = db
+  const targetDate = dateParam ?? digestTargetDate();
+  const { data: runs, error: runErr } = await db
     .from("reconciliation_runs")
     .select("id, business_date")
     .in("status", ["success", "partial"])
-    .order("business_date", { ascending: false })
+    .eq("business_date", targetDate)
     .order("created_at", { ascending: false })
     .limit(1);
-  query = dateParam
-    ? query.eq("business_date", dateParam)
-    : query.lte("business_date", digestTargetDate());
-  const { data: runs, error: runErr } = await query;
   if (runErr) return NextResponse.json({ error: runErr.message }, { status: 500 });
 
-  const run = runs?.[0];
-  if (!run) {
-    return NextResponse.json({ ok: false, skipped: "no reconciled run to report yet", scheduled });
-  }
-  const date = run.business_date as string;
+  // No completed run for the target day: SEND ANYWAY. Silence is the worst
+  // outcome — nobody notices an email that never arrived, whereas a banner
+  // saying the reconciliation did not finish gets acted on. buildDigestFromDb
+  // sets runIncomplete when it finds no run, and the template renders it.
+  const run = runs?.[0] ?? null;
+  const date = (run?.business_date as string) ?? targetDate;
 
   const digest = await buildDigestFromDb(db, date);
   // Recipients: the admin-curated list saved from the compose panel wins;
@@ -95,7 +92,7 @@ async function handle(req: NextRequest) {
   // Audit the send for the System Health timeline (best-effort), then snapshot
   // the delivered email into the 30-day archive (also best-effort).
   const logId = await saveEmailLog(db, {
-    runId: run.id as string,
+    runId: (run?.id as string) ?? null,
     kind: "digest",
     businessDate: date,
     status: result.sent ? "sent" : result.error ? "failed" : "skipped",
