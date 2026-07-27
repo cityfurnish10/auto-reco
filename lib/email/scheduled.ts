@@ -6,7 +6,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildDigestFromDb, sendReconciliationDigest } from "./index";
-import { saveEmailArchive } from "./email-archive";
+import { saveEmailArchive, saveEmailPdf } from "./email-archive";
+import { buildRegisterPdf } from "./register-pdf";
 import { saveEmailLog } from "../db/persist";
 import type { ScheduledEmailDB } from "../db/schema";
 
@@ -85,11 +86,16 @@ export async function drainScheduledEmails(db: SupabaseClient, nowIso: string): 
       }
 
       const digest = await buildDigestFromDb(db, row.business_date);
+      // Attach that date's ops-sheet register; never let it block the send.
+      const pdf = await buildRegisterPdf(db, row.business_date).catch(() => null);
       const result = await sendReconciliationDigest(digest, {
         to: row.recipients?.length ? row.recipients : undefined,
         cc: row.cc ?? [],
         bcc: row.bcc ?? [],
         notes: row.notes ?? undefined,
+        attachments: pdf?.bytes
+          ? [{ filename: pdf.filename, content: Buffer.from(pdf.bytes), contentType: "application/pdf" }]
+          : undefined,
       });
 
       const logId = await saveEmailLog(db, {
@@ -110,6 +116,7 @@ export async function drainScheduledEmails(db: SupabaseClient, nowIso: string): 
           subject: result.subject ?? "",
           html: result.html,
         }).catch(() => {});
+        if (pdf?.bytes) await saveEmailPdf(db, logId, pdf.bytes).catch(() => {});
       }
 
       await db

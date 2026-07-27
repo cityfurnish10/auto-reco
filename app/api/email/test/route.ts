@@ -14,7 +14,8 @@ import {
   sendReconciliationDigest,
   isEmailConfigured,
 } from "@/lib/email";
-import { saveEmailArchive } from "@/lib/email/email-archive";
+import { saveEmailArchive, saveEmailPdf } from "@/lib/email/email-archive";
+import { buildRegisterPdf } from "@/lib/email/register-pdf";
 import { saveEmailLog } from "@/lib/db/persist";
 
 export const runtime = "nodejs";
@@ -77,7 +78,15 @@ export async function POST(req: NextRequest) {
   const notes = body.notes?.trim() || undefined;
 
   const digest = await buildDigestFromDb(db, date);
-  const result = await sendReconciliationDigest(digest, { to, cc, bcc, notes });
+  // Attach that date's ops-sheet register. Best-effort: a failure here must
+  // never stop the email going out.
+  const pdf = await buildRegisterPdf(db, date).catch(() => null);
+  const result = await sendReconciliationDigest(digest, {
+    ...({ to, cc, bcc, notes }),
+    attachments: pdf?.bytes
+      ? [{ filename: pdf.filename, content: Buffer.from(pdf.bytes), contentType: "application/pdf" }]
+      : undefined,
+  });
 
   // Audit the send for the System Health timeline (best-effort), then snapshot
   // the delivered email into the 30-day archive (also best-effort).
@@ -98,6 +107,7 @@ export async function POST(req: NextRequest) {
       subject: result.subject ?? "",
       html: result.html,
     }).catch(() => {});
+    if (pdf?.bytes) await saveEmailPdf(db, logId, pdf.bytes).catch(() => {});
   }
 
   // Strip the rendered body from the response — it's archived, not API payload.

@@ -20,11 +20,20 @@ export {
   type DigestData,
 } from "./digest";
 
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType: string;
+}
+
 export interface SendOptions {
   to?: string[]; // override 'to'; empty/undefined = DIGEST_RECIPIENTS
   cc?: string[];
   bcc?: string[];
   notes?: string; // admin note rendered into the email body
+  // Passed straight to nodemailer. Gmail's practical ceiling is ~25MB; the
+  // register PDF for a full day is a few hundred KB.
+  attachments?: EmailAttachment[];
 }
 
 export interface SendResult {
@@ -39,6 +48,8 @@ export interface SendResult {
   // delivered content (see lib/email/email-archive.ts).
   subject?: string;
   html?: string;
+  /** Attachments actually delivered, so callers can archive them. */
+  attachments?: EmailAttachment[];
 }
 
 export function digestRecipients(): string[] {
@@ -101,8 +112,18 @@ export async function sendReconciliationDigest(
       subject,
       text: renderDigestText(data, opts.notes),
       html,
+      attachments: opts.attachments?.length ? opts.attachments : undefined,
     });
-    return { sent: true, recipients, cc, bcc, messageId: info.messageId, subject, html };
+    return {
+      sent: true,
+      recipients,
+      cc,
+      bcc,
+      messageId: info.messageId,
+      subject,
+      html,
+      attachments: opts.attachments,
+    };
   } catch (err) {
     return {
       sent: false,

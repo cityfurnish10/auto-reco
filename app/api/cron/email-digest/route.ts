@@ -17,7 +17,8 @@ import {
 } from "@/lib/email";
 import { storedDigestLists } from "@/lib/email/recipient-store";
 import { digestTargetDate } from "@/lib/reconcile/cron-dates";
-import { saveEmailArchive, pruneEmailArchive } from "@/lib/email/email-archive";
+import { saveEmailArchive, saveEmailPdf, pruneEmailArchive } from "@/lib/email/email-archive";
+import { buildRegisterPdf } from "@/lib/email/register-pdf";
 import { drainScheduledEmails } from "@/lib/email/scheduled";
 import { saveEmailLog } from "@/lib/db/persist";
 
@@ -87,7 +88,15 @@ async function handle(req: NextRequest) {
   // Recipients: the admin-curated list saved from the compose panel wins;
   // DIGEST_RECIPIENTS env stays the fallback for a fresh setup.
   const stored = await storedDigestLists(db).catch(() => null);
-  const result = await sendReconciliationDigest(digest, stored ?? {});
+  // Attach that date's ops-sheet register. Best-effort: a failure here must
+  // never stop the email going out.
+  const pdf = await buildRegisterPdf(db, date).catch(() => null);
+  const result = await sendReconciliationDigest(digest, {
+    ...(stored ?? {}),
+    attachments: pdf?.bytes
+      ? [{ filename: pdf.filename, content: Buffer.from(pdf.bytes), contentType: "application/pdf" }]
+      : undefined,
+  });
 
   // Audit the send for the System Health timeline (best-effort), then snapshot
   // the delivered email into the 30-day archive (also best-effort).
@@ -105,6 +114,7 @@ async function handle(req: NextRequest) {
       subject: result.subject ?? "",
       html: result.html,
     }).catch(() => {});
+    if (pdf?.bytes) await saveEmailPdf(db, logId, pdf.bytes).catch(() => {});
   }
 
   // 30-day retention: prune old email logs + their archived documents.

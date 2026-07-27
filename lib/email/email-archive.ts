@@ -12,6 +12,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const BUCKET = "email-archive";
 const keyFor = (logId: string) => `${logId}.json`;
+const pdfKeyFor = (logId: string) => `${logId}.pdf`;
 
 export interface ArchivedEmail {
   subject: string;
@@ -51,14 +52,34 @@ export async function loadEmailArchive(
 
 // Remove the archived documents for a set of pruned email_logs ids.
 // Best-effort by contract — a failed remove only leaves an orphaned file.
+// The register PDF that went out with the email, keyed off the same log id.
+export async function saveEmailPdf(
+  admin: SupabaseClient,
+  logId: string,
+  bytes: Uint8Array
+): Promise<void> {
+  await admin.storage.createBucket(BUCKET, { public: false }).catch(() => {});
+  const { error } = await admin.storage
+    .from(BUCKET)
+    .upload(pdfKeyFor(logId), Buffer.from(bytes), {
+      contentType: "application/pdf",
+      upsert: true,
+    });
+  if (error) throw new Error(`saveEmailPdf: ${error.message}`);
+}
+
 export async function pruneEmailArchive(
   admin: SupabaseClient,
   logIds: string[]
 ): Promise<void> {
   for (let i = 0; i < logIds.length; i += 100) {
+    const batch = logIds.slice(i, i + 100);
+    // Both keys — the PDF must go with its JSON, or retention leaves orphaned
+    // attachments in the bucket forever. remove() ignores keys that don't
+    // exist, so listing .pdf for logs that never had one is harmless.
     await admin.storage
       .from(BUCKET)
-      .remove(logIds.slice(i, i + 100).map(keyFor))
+      .remove([...batch.map(keyFor), ...batch.map(pdfKeyFor)])
       .catch(() => {});
   }
 }
