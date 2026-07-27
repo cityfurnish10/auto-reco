@@ -153,3 +153,31 @@ export function allPendingOrNotDone(p: SourcePresence): boolean {
     p.statuses.every((s) => s === "pending" || s === "not_done")
   );
 }
+
+// Did the OPS SHEET say the movement failed to complete?
+//
+// The sheet's "Physical Status" is the only field in the whole pipeline that
+// states an OUTCOME. The other three sources hard-code "done" because each
+// filters to completed rows upstream — DT `items.status === "2"`, Odoo
+// `sml.state = 'done'`, the guard register unconditionally — so their "done"
+// means "this source recorded a movement", NOT "the delivery succeeded". A
+// gate register entry says the unit crossed the gate and nothing more.
+//
+// That distinction is why this keys on S alone. The previous rule asked whether
+// EVERY source's status was not_done, which PHYSICAL's hard-coded "done"
+// defeated: a failed delivery the guard had logged on its way out fell through
+// to the ladder and was classified as a REAL loss.
+export function sheetSaysNotDone(view: BarcodeView): boolean {
+  return (
+    view.S.present &&
+    view.S.statuses.some((s) => s === "not_done") &&
+    !hasDone(view.S)
+  );
+}
+
+// A source that positively posted the movement as complete. Used to tell
+// "everyone agrees it didn't finish" (not a variance) from "the sheet says it
+// failed but DT/Odoo posted it done" (a real disagreement).
+export function postedDone(view: BarcodeView): boolean {
+  return hasDone(view.D) || hasDone(view.O);
+}

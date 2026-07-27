@@ -15,7 +15,7 @@ import { isCityOff } from "./schedule";
 import { computeSuppressions } from "./suppressions";
 import { isSpareJobType, normalizeJobType } from "./util";
 import { bestGuardMatch } from "./fuzzy";
-import { buildViews, mergeGuardPresence } from "./views";
+import { buildViews, mergeGuardPresence, postedDone, sheetSaysNotDone } from "./views";
 import { VARIANCE } from "./variance-names";
 import { ALL_REPORTED } from "./types";
 import type {
@@ -268,19 +268,47 @@ export function runReconciliation(
 
   const variances: VarianceRowOut[] = [];
 
-  // Failed-delivery rule (ops practice, from the field): an OUT entry whose
-  // every reported status is not_done ("Not Delivered") means the unit left
-  // and came back — it must NOT run the normal ladder (a failed delivery is
-  // rightly absent from Odoo/DT-done), but its return MUST be logged on the
-  // IN side. Missing IN leg → REAL chase item ("write them in Reg inward").
+  // Failed-delivery rule (ops practice, from the field): an OUT entry the ops
+  // sheet marks "Not Delivered" means the unit left and came back. Only
+  // COMPLETED movements are reconcilable — a movement that never finished is
+  // rightly absent from DT and Odoo, so running it through the ladder invents a
+  // loss. What must still be true is that the return was logged on the IN side.
+  //
+  // This keys on the SHEET's status alone, not on all four sources agreeing.
+  // DT, Odoo and the guard register all hard-code "done" (each filters to
+  // completed rows upstream), so their "done" means "this source recorded a
+  // movement", not "the delivery succeeded" — a gate entry says the unit
+  // crossed the gate and nothing more. The old test asked whether EVERY status
+  // was not_done, which PHYSICAL's hard-coded "done" defeated: a failed
+  // delivery the guard had logged on its way out fell through to the ladder and
+  // was classified as a REAL loss. See views.ts sheetSaysNotDone().
   for (const v of Array.from(outViews.values())) {
-    const statuses = [
-      ...v.P.statuses,
-      ...v.S.statuses,
-      ...v.D.statuses,
-      ...v.O.statuses,
-    ];
-    if (statuses.length === 0 || !statuses.every((s) => s === "not_done")) continue;
+    if (!sheetSaysNotDone(v)) continue;
+
+    // …unless DT or Odoo positively posted it done. Then the two systems
+    // disagree about whether the movement happened at all, which is the "done
+    // in one source, not done in another" case and a genuine chase item. Do NOT
+    // suppress it — let it surface under its own name.
+    if (postedDone(v)) {
+      suppressed.add(`OUT::${v.canonical}`);
+      variances.push(
+        applyBucket({
+          barcode: v.canonical,
+          city,
+          direction: "OUT",
+          variance_name: VARIANCE.SHEET_NOT_DONE_BUT_POSTED,
+          priority: "High",
+          ticket_id: v.ticketId,
+          so_number: v.soNumber,
+          customer: v.customer,
+          product: v.product,
+          job_type: v.jobType,
+          date: runDate,
+        })
+      );
+      continue;
+    }
+
     suppressed.add(`OUT::${v.canonical}`);
     if (!inViews.has(v.canonical)) {
       variances.push(

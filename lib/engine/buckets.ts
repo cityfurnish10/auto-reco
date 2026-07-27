@@ -71,6 +71,16 @@ export const VARIANCE_META: Record<string, VarianceMeta> = {
     responsible: "ops_team",
     note: "Marked Not Delivered on the way out but the return was never logged inward — confirm the unit is back and write it into the inward register.",
   },
+  [VARIANCE.SHEET_NOT_DONE_BUT_POSTED]: {
+    // The two systems flatly disagree about whether the movement happened, so
+    // one of them is wrong and somebody has to say which. This is the "done in
+    // one source, not done in another" case: unlike a plain failed delivery
+    // (where DT/Odoo are rightly silent), here they positively posted it as
+    // complete while the floor recorded it as not delivered.
+    bucket: "REAL",
+    responsible: "ops_team",
+    note: "The ops sheet records this as Not Delivered, but DT or Odoo posted the movement as done. One of the two is wrong — check whether the unit actually went out, and correct whichever system is lying.",
+  },
   [VARIANCE.ODOO_ONLY_TODAY]: {
     // Fires ONLY for customer flows (SO present, not an /INT/ internal
     // transfer) with no floor trace on this or nearby days — vendor PO receipts

@@ -264,6 +264,97 @@ describe("Reported-source gating (outage / no-guard modes)", () => {
   });
 });
 
+describe("Only COMPLETED movements reconcile (done vs not-done)", () => {
+  // The bug these cover: the failed-delivery rule used to require EVERY
+  // source's status to be not_done. DT, Odoo and the guard register all
+  // hard-code "done" (each filters to completed rows upstream), so a failed
+  // delivery the guard had logged on its way out defeated the test and was
+  // classified as a REAL loss by ladder rung 3.
+  it("gate register logged the unit leaving, but the sheet says Not Delivered → not a loss", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        // PHYSICAL always reports "done" — it means "crossed the gate", not
+        // "delivery succeeded". It must not override the sheet's outcome.
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "GATEFAIL01", status: "done", date: RUN }),
+        r({ source: "SHEET", direction: "OUT", barcode: "GATEFAIL01", status: "Not Delivered" }),
+        // The return WAS logged inward, so there is nothing to chase at all.
+        r({ source: "SHEET", direction: "IN", barcode: "GATEFAIL01", status: "Received" }),
+      ],
+      "MUMBAI"
+    );
+    const hits = res.variances.filter((x) => x.barcode === canonicalize("GATEFAIL01"));
+    // The OUT leg must be gone: it did not complete, so DT/Odoo silence is
+    // expected and there is no loss to chase.
+    expect(hits.filter((x) => x.direction === "OUT")).toHaveLength(0);
+    expect(hits.map((x) => x.variance_name)).not.toContain(VARIANCE.FAILED_DELIVERY);
+  });
+
+  it("same case but the return was never logged inward → FAILED_DELIVERY, not a phantom loss", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "GATEFAIL02", status: "done", date: RUN }),
+        r({ source: "SHEET", direction: "OUT", barcode: "GATEFAIL02", status: "Not Delivered" }),
+      ],
+      "MUMBAI"
+    );
+    const hits = res.variances.filter((x) => x.barcode === canonicalize("GATEFAIL02"));
+    expect(hits).toHaveLength(1);
+    // Previously this was GATE_OPS_NO_DT_ODOO — "the floor and ops confirmed it
+    // but DT/Odoo never posted", i.e. a loss. It is a missing return leg.
+    expect(hits[0].variance_name).toBe(VARIANCE.FAILED_DELIVERY);
+    expect(hits[0].bucket).toBe("REAL");
+  });
+
+  it("sheet says Not Delivered but Odoo posted it done → the two disagree, and that IS a variance", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "OUT", barcode: "DISAGREE01", status: "Not Delivered" }),
+        r({ source: "ODOO", direction: "OUT", barcode: "DISAGREE01", status: "done", createdOn: RUN }),
+      ],
+      "MUMBAI"
+    );
+    const hits = res.variances.filter((x) => x.barcode === canonicalize("DISAGREE01"));
+    expect(hits).toHaveLength(1);
+    expect(hits[0].variance_name).toBe(VARIANCE.SHEET_NOT_DONE_BUT_POSTED);
+    expect(hits[0].bucket).toBe("REAL");
+  });
+
+  it("same disagreement via DT rather than Odoo", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "OUT", barcode: "DISAGREE02", status: "Not Delivered" }),
+        r({ source: "DT", direction: "OUT", barcode: "DISAGREE02", status: "done", date: RUN }),
+      ],
+      "MUMBAI"
+    );
+    const hits = res.variances.filter((x) => x.barcode === canonicalize("DISAGREE02"));
+    expect(hits).toHaveLength(1);
+    expect(hits[0].variance_name).toBe(VARIANCE.SHEET_NOT_DONE_BUT_POSTED);
+  });
+
+  it("a sheet row with BOTH a done and a not-done status is treated as done (ladder runs)", () => {
+    // Two ops-sheet lines for the same unit, one delivered. Ambiguous, but a
+    // completion claim exists, so it must not be waved through as a failure.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "OUT", barcode: "MIXEDSTAT1", status: "Not Delivered" }),
+        r({ source: "SHEET", direction: "OUT", barcode: "MIXEDSTAT1", status: "Delivered" }),
+      ],
+      "MUMBAI"
+    );
+    const names = res.variances
+      .filter((x) => x.barcode === canonicalize("MIXEDSTAT1"))
+      .map((x) => x.variance_name);
+    expect(names).not.toContain(VARIANCE.FAILED_DELIVERY);
+    expect(names).not.toContain(VARIANCE.SHEET_NOT_DONE_BUT_POSTED);
+  });
+});
+
 describe("Failed delivery & PP boxes (ops-practice rules)", () => {
   it("OUT marked Not Delivered with no IN return entry → REAL chase item", () => {
     const res = runReconciliation(
