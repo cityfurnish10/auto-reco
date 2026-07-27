@@ -12,7 +12,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const BUCKET = "email-archive";
 const keyFor = (logId: string) => `${logId}.json`;
-const pdfKeyFor = (logId: string) => `${logId}.pdf`;
+// One register per city, so the key carries the city too.
+const pdfKeyFor = (logId: string, city: string) => `${logId}-${city}.pdf`;
 
 export interface ArchivedEmail {
   subject: string;
@@ -56,12 +57,13 @@ export async function loadEmailArchive(
 export async function saveEmailPdf(
   admin: SupabaseClient,
   logId: string,
+  city: string,
   bytes: Uint8Array
 ): Promise<void> {
   await admin.storage.createBucket(BUCKET, { public: false }).catch(() => {});
   const { error } = await admin.storage
     .from(BUCKET)
-    .upload(pdfKeyFor(logId), Buffer.from(bytes), {
+    .upload(pdfKeyFor(logId, city), Buffer.from(bytes), {
       contentType: "application/pdf",
       upsert: true,
     });
@@ -72,14 +74,30 @@ export async function pruneEmailArchive(
   admin: SupabaseClient,
   logIds: string[]
 ): Promise<void> {
-  for (let i = 0; i < logIds.length; i += 100) {
-    const batch = logIds.slice(i, i + 100);
-    // Both keys — the PDF must go with its JSON, or retention leaves orphaned
-    // attachments in the bucket forever. remove() ignores keys that don't
-    // exist, so listing .pdf for logs that never had one is harmless.
+  // The register PDFs are keyed {logId}-{CITY}.pdf and the city set is not
+  // known here, so list the bucket once and match by prefix. Without this the
+  // 30-day retention job would delete each JSON and leave its attachments
+  // behind forever.
+  const doomed = new Set(logIds);
+  const pdfKeys: string[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await admin.storage
+      .from(BUCKET)
+      .list("", { limit: 1000, offset });
+    if (error || !data) break;
+    for (const f of data) {
+      if (!f.name.endsWith(".pdf")) continue;
+      const logId = f.name.slice(0, 36); // uuid length
+      if (doomed.has(logId)) pdfKeys.push(f.name);
+    }
+    if (data.length < 1000) break;
+  }
+
+  const all = [...logIds.map(keyFor), ...pdfKeys];
+  for (let i = 0; i < all.length; i += 100) {
     await admin.storage
       .from(BUCKET)
-      .remove([...batch.map(keyFor), ...batch.map(pdfKeyFor)])
+      .remove(all.slice(i, i + 100))
       .catch(() => {});
   }
 }

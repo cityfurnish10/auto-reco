@@ -19,11 +19,17 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export interface RegisterPdfResult {
-  bytes: Uint8Array | null;
+export interface CityRegisterPdf {
+  city: string;
+  bytes: Uint8Array;
   filename: string;
   rowCount: number;
-  /** Why there is no PDF, when bytes is null — surfaced in the email body. */
+}
+
+export interface RegisterPdfResult {
+  /** One document per city that had ops-sheet rows. Empty when none did. */
+  pdfs: CityRegisterPdf[];
+  /** Why the list is empty — surfaced in the email body. */
   reason?: string;
 }
 
@@ -86,11 +92,13 @@ function drawHeaderRow(page: PDFPage, bold: PDFFont, y: number): void {
   });
 }
 
-export async function buildRegisterPdf(
+// One PDF per city, not one document holding all five. Each warehouse gets a
+// file it can print and work from on its own, and a city manager forwarding
+// theirs no longer hands over every other city's register with it.
+export async function buildRegisterPdfs(
   db: SupabaseClient,
   businessDate: string
 ): Promise<RegisterPdfResult> {
-  const filename = `register-${businessDate}.pdf`;
 
   // Scope to ONE run. source_rows keeps every re-check pass for a date, so a
   // plain business_date filter returns the register several times over —
@@ -104,12 +112,7 @@ export async function buildRegisterPdf(
     .limit(1);
   const runId = runs?.[0]?.id as string | undefined;
   if (!runId) {
-    return {
-      bytes: null,
-      filename,
-      rowCount: 0,
-      reason: "no completed reconciliation for this date",
-    };
+    return { pdfs: [], reason: "no completed reconciliation for this date" };
   }
 
   const rows: SheetRow[] = [];
@@ -121,20 +124,17 @@ export async function buildRegisterPdf(
       .eq("source", "SHEET")
       .order("city", { ascending: true })
       .range(from, from + 999);
-    if (error) return { bytes: null, filename, rowCount: 0, reason: error.message };
+    if (error) return { pdfs: [], reason: error.message };
     rows.push(...((data ?? []) as SheetRow[]));
     if (!data || data.length < 1000) break;
   }
 
   if (rows.length === 0) {
     // source_rows is pruned after 7 days, so a re-send of an older date finds
-    // nothing. Say that rather than attaching an empty document.
+    // nothing. Say that rather than attaching empty documents.
     return {
-      bytes: null,
-      filename,
-      rowCount: 0,
-      reason:
-        "no stored ops-sheet rows for this date (raw source rows are kept for 7 days)",
+      pdfs: [],
+      reason: "no stored ops-sheet rows for this date (raw source rows are kept for 7 days)",
     };
   }
 
@@ -145,11 +145,15 @@ export async function buildRegisterPdf(
     byCity.set(r.city, list);
   }
 
-  const pdf = await PDFDocument.create();
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const pdfs: CityRegisterPdf[] = [];
 
   for (const city of [...byCity.keys()].sort()) {
+    // A fresh document per city — fonts are embedded per document, so they are
+    // created inside the loop rather than shared.
+    const pdf = await PDFDocument.create();
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+
     const cityRows = byCity.get(city)!;
     // OUT before IN, then barcode — the order a register is read in.
     cityRows.sort(
@@ -200,7 +204,14 @@ export async function buildRegisterPdf(
       }
       y -= LINE_H;
     }
+
+    pdfs.push({
+      city,
+      bytes: await pdf.save(),
+      filename: `register-${city}-${businessDate}.pdf`,
+      rowCount: cityRows.length,
+    });
   }
 
-  return { bytes: await pdf.save(), filename, rowCount: rows.length };
+  return { pdfs };
 }
