@@ -347,21 +347,52 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         />
       )}
 
-      {/* City tabs */}
-      <div className="border-b border-border flex gap-1 overflow-x-auto scrollbar-hide">
-        {(["ALL", ...CITIES] as CityTab[]).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => resetPage(setCityTab)(tab)}
-            className={
-              cityTab === tab
-                ? "px-4 py-2.5 text-sm font-semibold text-accent border-b-2 border-accent whitespace-nowrap transition-colors duration-150"
-                : "px-4 py-2.5 text-sm text-text-secondary hover:text-accent whitespace-nowrap transition-colors duration-150"
-            }
-          >
-            {tab === "ALL" ? "ALL CITIES" : tab}
-          </button>
-        ))}
+      {/* City tabs + the business-date picker.
+          The picker lives here, not in the table toolbar below, because it does
+          not only filter the table: the same `dateF` drives the KPI tiles, the
+          count-only movements card, the city breakdown and the facet counts.
+          Sitting inside the table's header understated its reach. */}
+      <div className="border-b border-border flex items-end justify-between gap-4">
+        <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+          {(["ALL", ...CITIES] as CityTab[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => resetPage(setCityTab)(tab)}
+              className={
+                cityTab === tab
+                  ? "px-4 py-2.5 text-sm font-semibold text-accent border-b-2 border-accent whitespace-nowrap transition-colors duration-150"
+                  : "px-4 py-2.5 text-sm text-text-secondary hover:text-accent whitespace-nowrap transition-colors duration-150"
+              }
+            >
+              {tab === "ALL" ? "ALL CITIES" : tab}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 pb-2 shrink-0">
+          <label htmlFor="business-date" className="text-xs text-text-muted whitespace-nowrap hidden sm:inline">
+            Business date
+          </label>
+          <input
+            id="business-date"
+            type="date"
+            value={dateF}
+            /* resetPage, not a bare setDateF — it also clears the row selection,
+               so a selection made under one date can't reach a bulk action on
+               another. */
+            onChange={(e) => resetPage(setDateF)(e.target.value)}
+            className="input-clean cursor-pointer"
+            title="View a past reconciliation date (blank = the latest run)"
+          />
+          {dateF && (
+            <button
+              onClick={() => resetPage(setDateF)("")}
+              className="btn btn-compact btn-ghost"
+              title="Back to the latest run"
+            >
+              Latest
+            </button>
+          )}
+        </div>
       </div>
 
       {/* KPI cards — loss-only. Posting-lag / hygiene (INFO) rows are kept in the
@@ -571,13 +602,8 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 </button>
               )}
             </div>
-            <input
-              type="date"
-              value={dateF}
-              onChange={(e) => resetPage(setDateF)(e.target.value)}
-              className="input-clean cursor-pointer"
-              title="View a past reconciliation date (blank = the latest run)"
-            />
+            {/* The date picker moved to the page header — it governs the KPI
+                tiles and city breakdown too, not just this table. */}
             <select value={bucket} onChange={(e) => resetPage(setBucket)(e.target.value as Bucket | "ALL")} className="input-clean font-semibold cursor-pointer">
               <option value="ALL">All Buckets</option>
               <option value="REAL">REAL only</option>

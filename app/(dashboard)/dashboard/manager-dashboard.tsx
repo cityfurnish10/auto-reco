@@ -240,12 +240,43 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
 
   return (
     <div className="p-container-margin space-y-6">
-      <div>
-        <h2 className="font-headline text-xl text-text-primary">Warehouse Operations Dashboard</h2>
-        <p className="text-sm text-text-muted">
-          Inventory reconciliation and variance resolution for {city}.
-          {stats?.run && ` Run ${stats.run.business_date}.`}
-        </p>
+      {/* The business-date picker sits in the page header, not the table
+          toolbar: the same `dateF` drives the KPI tiles and the facet counts as
+          well as the table, so scoping it visually to the table understated
+          what it actually controls. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-headline text-xl text-text-primary">Warehouse Operations Dashboard</h2>
+          <p className="text-sm text-text-muted">
+            Inventory reconciliation and variance resolution for {city}.
+            {stats?.run && ` Run ${stats.run.business_date}.`}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <label htmlFor="business-date" className="text-xs text-text-muted whitespace-nowrap hidden sm:inline">
+            Business date
+          </label>
+          <input
+            id="business-date"
+            type="date"
+            value={dateF}
+            /* resetPage, not a bare setDateF — it also clears the row selection,
+               so a selection made under one date can't reach a bulk action on
+               another. */
+            onChange={(e) => resetPage(setDateF)(e.target.value)}
+            className="input-clean cursor-pointer"
+            title="View a past reconciliation date (blank = the latest run)"
+          />
+          {dateF && (
+            <button
+              onClick={() => resetPage(setDateF)("")}
+              className="btn btn-compact btn-ghost"
+              title="Back to the latest run"
+            >
+              Latest
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Not a parenthetical: a fallback means every figure below describes a
@@ -386,13 +417,8 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                 </button>
               )}
             </div>
-            <input
-              type="date"
-              value={dateF}
-              onChange={(e) => resetPage(setDateF)(e.target.value)}
-              className="input-clean cursor-pointer"
-              title="View a past reconciliation date (blank = the latest run)"
-            />
+            {/* The date picker moved to the page header — it governs the KPI
+                tiles too, not just this table. */}
             <select value={bucket} onChange={(e) => resetPage(setBucket)(e.target.value as Bucket | "ALL")} className="input-clean font-semibold cursor-pointer">
               <option value="ALL">All Buckets</option>
               <option value="REAL">REAL only</option>
