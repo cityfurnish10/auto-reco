@@ -1,37 +1,49 @@
-// Which business day each nightly job targets.
+// Which business day each daily job targets.
 //
-// A business day's data is NOT complete when that day ends: the ops sheet gets
-// filled through the evening, DT scans trickle in, and Odoo postings routinely
-// land the NEXT day (measured: ~half). Reconciling a day at 22:00 on the day
-// itself therefore judges half-written books. So the cadence is deliberately
-// one day behind:
+// A business day runs 15:00 → 15:00 IST: business date D covers D 15:00 until
+// D+1 15:00. That is when the floor actually closes — the guard register is
+// ruled off and handed over mid-afternoon — so a day's books are complete
+// shortly after 15:00 the following afternoon, not at midnight.
 //
-//   night of D (22:00 IST)   → reconcile D-1   (a full extra day of entries)
-//   morning of D+1 (09:00)   → email  D-1      (the day reconciled last night)
+// Both jobs therefore close the SAME day, minutes apart, on the afternoon of
+// D+1:
 //
-// Worked example: 24 Jul is reconciled on the night of the 25th, and its digest
-// is emailed on the morning of the 26th. Relative to the moment each job runs
-// that is D-1 for the reconcile and D-2 for the digest — the SAME business day,
-// which is the whole point.
+//   16:00 IST on D+1  → reconcile D   (its window shut an hour earlier)
+//   16:15 IST on D+1  → email     D   (the day just reconciled)
 //
-// Pure and IST-based (never the server's UTC calendar date), so both crons and
+// Worked example: 25 Jul covers 25 Jul 15:00 → 26 Jul 15:00; it is reconciled
+// at 16:00 on the 26th and emailed at 16:15 on the 26th.
+//
+// This replaces the old midnight-boundary cadence (22:00 reconcile of D-1,
+// 09:00 next-morning digest of D-2), where the two jobs ran on different
+// calendar days and so needed different offsets. They no longer do.
+//
+// Pure and IST-based (never the server's UTC calendar date), so the crons and
 // their tests agree on the target regardless of the hour the job fires.
 
 import { addDays } from "../engine/dates";
+import { utcToBusinessDate } from "../connectors/ist-window";
 import { utcToIstDate } from "../connectors/ist-window";
 
-// The IST calendar date at a given instant.
+// The IST calendar date at a given instant. Still calendar-based — used for
+// "today" in pickers and upper bounds, not for targeting a run.
 export function istDate(now: Date = new Date()): string {
   return utcToIstDate(now)!; // a real Date always parses
 }
 
-// The business day the nightly reconcile should close (runs 22:00 IST).
-export function reconcileTargetDate(now: Date = new Date()): string {
-  return addDays(istDate(now), -1);
+// The business day currently OPEN — the one this instant falls inside.
+// Before 15:00 IST that is still yesterday's date.
+export function currentBusinessDate(now: Date = new Date()): string {
+  return utcToBusinessDate(now)!;
 }
 
-// The business day the morning digest should report (runs 09:00 IST) — the day
-// last night's reconcile closed.
-export function digestTargetDate(now: Date = new Date()): string {
-  return addDays(istDate(now), -2);
+// The most recent business day whose 15:00 window has SHUT. This is what both
+// daily jobs target, and the only date either of them should ever close.
+export function lastClosedBusinessDate(now: Date = new Date()): string {
+  return addDays(currentBusinessDate(now), -1);
 }
+
+// Kept as named aliases so call sites read as intent rather than mechanism.
+// Both jobs deliberately resolve to the same day now.
+export const reconcileTargetDate = lastClosedBusinessDate;
+export const digestTargetDate = lastClosedBusinessDate;

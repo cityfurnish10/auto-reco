@@ -3,12 +3,14 @@
   "regions": ["bom1"],
   "crons": [
     {
+      "_comment": "16:00 IST — one hour after the 15:00 business-day boundary closes.",
       "path": "/api/cron/reconcile",
-      "schedule": "30 16 * * *"
+      "schedule": "30 10 * * *"
     },
     {
+      "_comment": "16:15 IST — 15 minutes after the reconcile. Vercel Hobby does not guarantee that gap, so the digest flags an incomplete run rather than silently reporting the previous day.",
       "path": "/api/cron/email-digest",
-      "schedule": "30 3 * * *"
+      "schedule": "45 10 * * *"
     }
   ]
 }
