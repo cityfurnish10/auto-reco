@@ -24,6 +24,9 @@ const NAV_ITEMS: {
   roles: string[];
 }[] = [
   { href: "/dashboard", label: "Dashboard", icon: "dashboard", roles: ["ADMIN", "MANAGER"] },
+  // Managers too — RLS scopes them to their own city, so no route gate needed
+  // (and it must NOT go in middleware's ADMIN_ONLY_PATHS).
+  { href: "/pending-list", label: "Pending List", icon: "pending_actions", roles: ["ADMIN", "MANAGER"] },
   { href: "/uploads", label: "Guard Upload", icon: "upload_file", roles: ["ADMIN", "MANAGER"] },
   { href: "/leaderboard", label: "Leaderboard", icon: "leaderboard", roles: ["ADMIN", "MANAGER"] },
   { href: "/users", label: "User Management", icon: "group", roles: ["ADMIN"] },

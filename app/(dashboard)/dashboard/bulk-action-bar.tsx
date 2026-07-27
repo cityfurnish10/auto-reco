@@ -17,6 +17,7 @@ import { createPortal } from "react-dom";
 import { Icon } from "@/components/icon";
 import { Modal } from "@/components/modal";
 import { errText, useToast } from "@/components/toast";
+import { REASONS, REASON_HINT, type ClosureReason } from "./close-variance-modal";
 import type { SessionUser } from "@/lib/demo-auth";
 import {
   bulkPatchVariances,
@@ -203,19 +204,31 @@ export default function BulkActionBar({
               >
                 Reason <span className="text-danger">*</span>
               </label>
-              <input
+              {/* A select over the shared REASONS, not a free-text box. The
+                  Pending List page matches on the exact reason string, so a
+                  typed "pending list" would silently never appear there. */}
+              <select
                 id="bulk-reason"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 required
                 autoFocus
-                placeholder={
-                  pending === "reject"
-                    ? "Why are these going back?"
-                    : "Recorded on every row in this batch"
-                }
-                className="input-clean w-full"
-              />
+                className="input-clean w-full cursor-pointer"
+              >
+                <option value="" disabled>
+                  Select a reason…
+                </option>
+                {REASONS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+              {reason && REASON_HINT[reason as ClosureReason] && (
+                <p className="text-xs text-text-muted mt-1.5">
+                  {REASON_HINT[reason as ClosureReason]}
+                </p>
+              )}
             </div>
 
             <div>

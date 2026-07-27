@@ -111,6 +111,7 @@ export async function GET(req: NextRequest) {
   const varianceName = sp.get("variance");
   const responsible = sp.get("responsible");
   const jobType = sp.get("jobType");
+  const closureReason = sp.get("closureReason");
   const q = sp.get("q")?.trim();
 
   function build(orderCols: string[]) {
@@ -150,6 +151,11 @@ export async function GET(req: NextRequest) {
     if (jobType) {
       query = jobType === OPS_TYPE_NONE ? query.is("job_type", null) : query.eq("job_type", jobType);
     }
+    // Closure reason. NOTE: callers filtering by reason must ALSO pass a status
+    // — `dispute` writes closure_reason while the row is still in_progress
+    // (see app/api/variances/[id]/actions.ts), so a reason-only filter would
+    // pull in flagged rows that were never actually resolved.
+    if (closureReason) query = query.eq("closure_reason", closureReason);
 
     // Free-text search — case-insensitive substring across the identifier
     // fields. Strip characters that would break PostgREST's or()/ilike grammar

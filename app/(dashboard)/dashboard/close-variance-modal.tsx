@@ -3,22 +3,17 @@
 import { useState } from "react";
 import { Icon } from "@/components/icon";
 import { Modal } from "@/components/modal";
+import { REASONS, REASON_HINT, type ClosureReason } from "@/lib/ui/closure-reasons";
 
-// Closure reasons (kept as a stable enum for the analytics breakdown).
-export type ClosureReason =
-  | "Data Entry Error"
-  | "Transit Delay"
-  | "Theft"
-  | "System Glitch"
-  | "Other";
-
-const REASONS: ClosureReason[] = [
-  "Data Entry Error",
-  "Transit Delay",
-  "Theft",
-  "System Glitch",
-  "Other",
-];
+// The reason vocabulary lives in lib/ui/closure-reasons.ts so the server routes
+// can share it (this file is "use client"). Re-exported here because every
+// existing call site imports ClosureReason from this module.
+export {
+  PENDING_LIST_REASON,
+  REASONS,
+  REASON_HINT,
+  type ClosureReason,
+} from "@/lib/ui/closure-reasons";
 
 // Generic resolution modal — used for closing, submitting-for-approval, and
 // rejecting a variance. Defaults preserve the original "close" behavior.
@@ -110,6 +105,9 @@ export default function CloseVarianceModal({
                     <Icon name="expand_more" size={20} className="text-text-muted" />
                   </div>
                 </div>
+                {reason && REASON_HINT[reason] && (
+                  <p className="text-xs text-text-muted mt-1.5">{REASON_HINT[reason]}</p>
+                )}
               </div>
             )}
 

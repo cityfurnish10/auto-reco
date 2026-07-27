@@ -12,6 +12,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { PENDING_LIST_REASON } from "@/lib/ui/closure-reasons";
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -25,6 +26,9 @@ interface CityAgg {
   inProgress: number;
   pendingApproval: number;
   closed: number;
+  // Subset of `closed` parked on the Pending List rather than finished.
+  // Broken out so the Resolved tile can stop overstating completed work.
+  pendingList: number;
   high: number;
   medium: number;
   info: number;
@@ -43,6 +47,7 @@ function emptyAgg(city: string): CityAgg {
     inProgress: 0,
     pendingApproval: 0,
     closed: 0,
+    pendingList: 0,
     high: 0,
     medium: 0,
     info: 0,
@@ -106,11 +111,17 @@ export async function GET(req: NextRequest) {
   // Paginate — PostgREST silently caps un-ranged selects at 1000 rows, which
   // made the KPI cards truncate large runs (2026-07-21: 1578 rows → the cards
   // showed the first 1000, "169 REAL", while the run actually held 555).
-  let variances: { city: string; status: string; priority: string; bucket: string }[] = [];
+  let variances: {
+    city: string;
+    status: string;
+    priority: string;
+    bucket: string;
+    closure_reason: string | null;
+  }[] = [];
   for (let from = 0; ; from += 1000) {
     const { data: page, error: varErr } = await supabase
       .from("variances")
-      .select("city, status, priority, bucket")
+      .select("city, status, priority, bucket, closure_reason")
       .eq("run_id", run.id)
       .range(from, from + 999);
     if (varErr) return NextResponse.json({ error: varErr.message }, { status: 500 });
@@ -128,7 +139,10 @@ export async function GET(req: NextRequest) {
       if (v.status === "open") target.open += 1;
       else if (v.status === "in_progress") target.inProgress += 1;
       else if (v.status === "pending_approval") target.pendingApproval += 1;
-      else if (v.status === "closed") target.closed += 1;
+      else if (v.status === "closed") {
+        target.closed += 1;
+        if (v.closure_reason === PENDING_LIST_REASON) target.pendingList += 1;
+      }
       if (v.priority === "High") target.high += 1;
       else if (v.priority === "Medium") target.medium += 1;
       else if (v.priority === "Info") target.info += 1;

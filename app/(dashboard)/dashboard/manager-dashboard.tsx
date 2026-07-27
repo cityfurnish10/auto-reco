@@ -341,6 +341,13 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
           <div className="p-2 bg-success-soft text-success rounded-control w-fit mb-4"><Icon name="task_alt" size={22} /></div>
           <p className="kpi-label group-hover:underline">Closed</p>
           <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.closed ?? 0}</h3>
+          {/* Pending-list items are stored as closed, so they land in the count
+              above. Naming them stops the tile reading as "all finished". */}
+          {(cityAgg?.pendingList ?? 0) > 0 && (
+            <span className="text-xs text-status-warning mt-1 block">
+              {cityAgg?.pendingList} on the pending list
+            </span>
+          )}
         </button>
       </div>
       {!statsLoading && (cityAgg?.infoBucket ?? 0) > 0 && (

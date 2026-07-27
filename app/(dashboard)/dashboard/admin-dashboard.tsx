@@ -6,6 +6,7 @@
 // Variance, Priority, Status. Defaults to the REAL + open "chase list".
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import type { SessionUser } from "@/lib/demo-auth";
 import { CITIES, type City } from "@/lib/sample-data";
 import type {
@@ -174,7 +175,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
       ? stats.overall
       : stats.byCity.find((c) => c.city === cityTab) ?? {
           city: cityTab, total: 0, open: 0, openReal: 0, inProgress: 0, pendingApproval: 0, closed: 0,
-          high: 0, medium: 0, info: 0, real: 0, infoBucket: 0, ppBox: 0, consumable: 0,
+          pendingList: 0, high: 0, medium: 0, info: 0, real: 0, infoBucket: 0, ppBox: 0, consumable: 0,
         };
   }, [stats, cityTab]);
 
@@ -463,6 +464,16 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.closed ?? 0}</span>
             <span className="text-xs text-text-muted mt-1">Closed on this business date</span>
           </button>
+          {/* Pending-list items are stored as closed, so they land in the count
+              above. Naming them stops the tile reading as "all finished". */}
+          {(agg?.pendingList ?? 0) > 0 && (
+            <Link
+              href="/pending-list"
+              className="text-xs text-status-warning hover:underline mt-1"
+            >
+              {agg?.pendingList} of these are on the pending list
+            </Link>
+          )}
         </div>
       </div>
       {!statsLoading && (agg?.infoBucket ?? 0) > 0 && (

@@ -37,6 +37,12 @@ export interface VarianceFilters {
   responsible?: string | "ALL";
   /** Exact ops type (job_type), or OPS_TYPE_NONE for rows that carry none. */
   jobType?: string | "ALL";
+  /**
+   * Exact closure_reason. Always pair with `status` — `dispute` writes a
+   * closure_reason while the row is still in_progress, so filtering on reason
+   * alone returns flagged rows that were never resolved.
+   */
+  closureReason?: string;
   q?: string; // free-text search: barcode / ticket / SO / product / customer
   sort?: SortKey;
   dir?: SortDir;
@@ -88,6 +94,7 @@ function toQuery(f: VarianceFilters): string {
   if (f.variance && f.variance !== "ALL") p.set("variance", f.variance);
   if (f.responsible && f.responsible !== "ALL") p.set("responsible", f.responsible);
   if (f.jobType && f.jobType !== "ALL") p.set("jobType", f.jobType);
+  if (f.closureReason) p.set("closureReason", f.closureReason);
   if (f.q && f.q.trim()) p.set("q", f.q.trim());
   if (f.sort) p.set("sort", f.sort);
   if (f.dir) p.set("dir", f.dir);
@@ -255,6 +262,8 @@ export interface CityAgg {
   inProgress: number;
   pendingApproval: number;
   closed: number;
+  /** Subset of `closed` parked on the Pending List rather than finished. */
+  pendingList: number;
   high: number;
   medium: number;
   info: number;
