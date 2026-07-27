@@ -14,6 +14,8 @@ export type ClosureReason =
   | "Theft"
   | "System Glitch"
   | "Validation Error"
+  | "Backdated issue resolved by the team"
+  | "Wrong Entry Made by team"
   | "Pending List"
   | "Other";
 
@@ -23,6 +25,8 @@ export const PENDING_LIST_REASON: ClosureReason = "Pending List";
 // where the row goes rather than just labelling why it closed.
 export const REASONS: ClosureReason[] = [
   "Pending List",
+  "Backdated issue resolved by the team",
+  "Wrong Entry Made by team",
   "Data Entry Error",
   "Validation Error",
   "Transit Delay",
@@ -37,4 +41,7 @@ export const REASONS: ClosureReason[] = [
 export const REASON_HINT: Partial<Record<ClosureReason, string>> = {
   "Pending List": "Parks this on the Pending List for follow-up instead of finishing it here.",
   "Validation Error": "The variance itself is wrong — bad data, not a real stock movement.",
+  "Backdated issue resolved by the team":
+    "The entry was made late, on an earlier date — the stock itself was never missing.",
+  "Wrong Entry Made by team": "Someone logged this against the wrong unit, ticket or direction.",
 };
