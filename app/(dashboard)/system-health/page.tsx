@@ -189,21 +189,34 @@ export default function SystemHealthPage() {
 
       {/* Ingestion schedule (static reference) */}
       <section className="card p-6">
-        <h4 className="font-headline text-lg text-text-primary mb-4">Schedule (IST)</h4>
+        <h4 className="font-headline text-lg text-text-primary mb-1">Schedule (IST)</h4>
+        <p className="text-xs text-text-muted mb-4">
+          A business day runs <b className="text-text-secondary">15:00 to 15:00</b>. Business date
+          D covers D 15:00 until D+1 15:00, and is closed on the afternoon of D+1.
+        </p>
         <ul className="space-y-3 text-sm">
           <li className="flex items-center gap-3">
             <Icon name="schedule" size={18} className="text-accent" />
-            <span className="text-text-secondary">Guard register upload deadline (ops) — <b className="text-text-primary">by 21:00</b></span>
+            <span className="text-text-secondary">Business day closes — <b className="text-text-primary">15:00</b></span>
           </li>
           <li className="flex items-center gap-3">
             <Icon name="schedule" size={18} className="text-accent" />
-            <span className="text-text-secondary">Reconciliation run — OCR + 4 sources + engine — <b className="text-text-primary">22:00</b></span>
+            <span className="text-text-secondary">Guard register + ops sheet due (ops) — <b className="text-text-primary">before 16:00</b></span>
           </li>
           <li className="flex items-center gap-3">
             <Icon name="schedule" size={18} className="text-accent" />
-            <span className="text-text-secondary">Digest email (previous night&apos;s reconcile) — <b className="text-text-primary">09:00 next morning</b></span>
+            <span className="text-text-secondary">Reconciliation run — OCR + 4 sources + engine — <b className="text-text-primary">16:00</b></span>
+          </li>
+          <li className="flex items-center gap-3">
+            <Icon name="schedule" size={18} className="text-accent" />
+            <span className="text-text-secondary">Digest email (the day just reconciled) — <b className="text-text-primary">16:15</b></span>
           </li>
         </ul>
+        <p className="text-xs text-text-muted mt-4">
+          Odoo and Delivery Tracker are windowed on the 15:00 boundary using their own
+          timestamps. The ops sheet and guard register carry a hand-typed date with no time,
+          so they are matched by date — which is why both must be in before 16:00.
+        </p>
       </section>
     </div>
   );
