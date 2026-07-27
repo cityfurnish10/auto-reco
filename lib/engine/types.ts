@@ -25,6 +25,9 @@ export interface SourceRow {
   customer?: string;
   product?: string;
   jobType?: string; // Odoo job_type: REPAIR|REPLACE|NEW_RENTAL|...
+  // Ops-sheet free-text remarks column, when the sheet has one. Read only as a
+  // spare/consumable/PP-box hint (see run.ts); never used for matching.
+  remarks?: string;
   createdOn?: string | number; // Odoo posting date (Section 4 window key)
   recordCreatedOn?: string | number; // Odoo create_date (record birth; Odoo-only flag)
   movementDate?: string | number; // Odoo fallback

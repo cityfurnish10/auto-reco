@@ -129,6 +129,11 @@ function buildColumnIndex(headerRow: unknown[]) {
     // Ops Type text (New - Rental / Pick Up / Repair / Upgrade / …) — engine
     // normalizes; REPAIR/REPLACE/NEW_RENTAL drive suppression rules.
     opsType: col("ops type", "operations type", "ops_type", "operation type"),
+    // Free-text remarks, where the floor writes what a row actually is
+    // ("spare", "consumable", "PP box"). Optional: sheets without such a
+    // column resolve to -1 and the field is simply never populated, so adding
+    // this cannot change behaviour on a sheet that lacks it.
+    remarks: col("remarks", "remark", "comment", "comments", "note", "notes"),
   };
 }
 
@@ -234,6 +239,7 @@ export const sheetsConnector: Connector = {
             customer: idx.customer !== -1 ? str(line[idx.customer]) : undefined,
             product: idx.product !== -1 ? str(line[idx.product]) : undefined,
             jobType: idx.opsType !== -1 ? str(line[idx.opsType]) : undefined,
+            remarks: idx.remarks !== -1 ? str(line[idx.remarks]) : undefined,
           });
         }
       }

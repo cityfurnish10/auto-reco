@@ -16,6 +16,24 @@ export function isSpareOrConsumable(raw: string): boolean {
   return s.includes("spare") || s.includes("consumable");
 }
 
+// A sheet row whose ITEM NAME reads "Not Found" is almost always a spare or
+// consumable: the warehouse types a description into the barcode column
+// ("WP water seal - 13", "Spin Motor - 3", "@ Packing Tape Roll") and the
+// product lookup then finds nothing. Measured on live data — of 219 such rows,
+// 217 appeared in no other system at all, and their ops types read "Spare Items
+// IN" / "Spare Parts" / "PO inward".
+//
+// NOT sufficient on its own, which is why callers must pair it with the
+// corroboration guard in run.ts: the other 2 rows were real Odoo lot serials
+// (FUCQPU26070002, "# Luna Wardrobe") whose sheet line simply had the product
+// column blank. Diverting those to the count layer would erase a genuine
+// receipt from reconciliation.
+export function looksUnresolvedItem(raw: string | undefined | null): boolean {
+  if (!raw) return false;
+  const s = raw.trim().toLowerCase();
+  return s === "not found" || s === "notfound" || s === "not-found";
+}
+
 // PP boxes (packing boxes) are logged in the ops sheet / guard register as
 // free-text counts ("PP BOX - 29", "PP Box 32\" TV - 03"), not real barcodes.
 // They must never run the per-barcode ladder — surfaced as one count-only

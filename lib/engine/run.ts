@@ -4,7 +4,13 @@
 //   conflict → count layer → bucket relabel → assemble output.
 
 import { CITIES, type City } from "../sample-data";
-import { canonicalize, isPpBox, isSpareOrConsumable, isValidBarcode } from "./barcode";
+import {
+  canonicalize,
+  isPpBox,
+  isSpareOrConsumable,
+  isValidBarcode,
+  looksUnresolvedItem,
+} from "./barcode";
 import { applyBucket } from "./buckets";
 import { computeCountLayer } from "./counts";
 import { addDays, deriveRunDate, parseDate } from "./dates";
@@ -116,9 +122,38 @@ export function runReconciliation(
   // barcode marks it spare (barcode/product text OR ops-type), the whole barcode
   // is a spare and every one of its rows goes to counts (this closes the gap
   // where, say, the DT row lacks the spare tag the ops sheet carries).
+  //
+  // A barcode any SERIALIZED system knows (DT / Odoo / the guard register) is a
+  // real tracked unit and can never be reclassified by ops-sheet text. That
+  // guard is what makes the weaker text signals below safe to use: measured on
+  // live data, 217 of 219 rows whose sheet item name read "Not Found" appeared
+  // in no other system and were genuinely spares — but the other 2 were real
+  // Odoo lot serials ("# Luna Wardrobe") whose sheet line simply had a blank
+  // product column. Without this check those receipts would vanish from
+  // reconciliation into the count layer.
+  const knownElsewhere = new Set<string>();
+  for (const r of working) {
+    if (r.source !== "SHEET") knownElsewhere.add(canonicalize(r.barcode));
+  }
+  // Ops-sheet hints: the item name or the remarks column saying this is a spare,
+  // a consumable, a PP box, or an item the product lookup could not resolve.
+  const sheetHintsSpare = (r: SourceRow): boolean =>
+    !knownElsewhere.has(canonicalize(r.barcode)) &&
+    (isSpareOrConsumable(r.product ?? "") ||
+      isSpareOrConsumable(r.remarks ?? "") ||
+      looksUnresolvedItem(r.product));
+  const sheetHintsPpBox = (r: SourceRow): boolean =>
+    !knownElsewhere.has(canonicalize(r.barcode)) &&
+    (isPpBox(r.product ?? "") || isPpBox(r.remarks ?? ""));
+
+  const ppBoxCanon = new Set<string>();
   const spareCanon = new Set<string>();
   for (const r of working) {
-    if (!isPpBox(r.barcode) && (isSpareOrConsumable(r.barcode) || isSpareJobType(r.jobType)))
+    if (isPpBox(r.barcode) || sheetHintsPpBox(r)) ppBoxCanon.add(canonicalize(r.barcode));
+  }
+  for (const r of working) {
+    if (ppBoxCanon.has(canonicalize(r.barcode))) continue; // PP box wins
+    if (isSpareOrConsumable(r.barcode) || isSpareJobType(r.jobType) || sheetHintsSpare(r))
       spareCanon.add(canonicalize(r.barcode));
   }
   const spareRows: SourceRow[] = [];
@@ -127,7 +162,7 @@ export function runReconciliation(
   for (const r of working) {
     // Placeholder checks first — these labels are long enough to pass the
     // length/alnum test but must never run the normal ladder.
-    if (isPpBox(r.barcode)) ppBoxRows.push(r);
+    if (ppBoxCanon.has(canonicalize(r.barcode))) ppBoxRows.push(r);
     else if (spareCanon.has(canonicalize(r.barcode))) spareRows.push(r);
     else if (isValidBarcode(r.barcode)) valid.push(r);
   }

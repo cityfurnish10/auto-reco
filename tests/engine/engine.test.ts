@@ -394,6 +394,63 @@ describe("Failed delivery & PP boxes (ops-practice rules)", () => {
     ).toBeUndefined();
   });
 
+  it('ops-sheet item name "Not Found" → spare/consumable, not a loss', () => {
+    // The floor types a description into the barcode column and the product
+    // lookup fails, so the item name reads "Not Found". Measured on live data:
+    // 217 of 219 such rows appeared in no other system and were real spares.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "IN", barcode: "WP water seal - 13", product: "Not Found", status: "Received" }),
+        r({ source: "SHEET", direction: "IN", barcode: "Spin Motor - 3", product: "Not Found", status: "Received" }),
+      ],
+      "MUMBAI"
+    );
+    expect(res.summary.consumable_count).toBe(2);
+    expect(res.variances.some((v) => v.barcode === canonicalize("WP water seal - 13"))).toBe(false);
+    expect(res.variances.some((v) => v.barcode === canonicalize("Spin Motor - 3"))).toBe(false);
+  });
+
+  it('"Not Found" does NOT reclassify a barcode a serialized system knows', () => {
+    // The 2 real exceptions on live data: a genuine Odoo lot serial whose sheet
+    // line simply had a blank product column. Diverting it to counts would
+    // erase a real receipt from reconciliation.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "IN", barcode: "FUCQPU26070002", product: "Not Found", status: "Received" }),
+        r({ source: "ODOO", direction: "IN", barcode: "FUCQPU26070002", product: "# Luna Wardrobe", status: "done", createdOn: RUN }),
+      ],
+      "MUMBAI"
+    );
+    // Still a real tracked unit: counted as a movement, not a consumable.
+    expect(res.summary.consumable_count).toBe(0);
+    expect(res.summary.movements).toBeGreaterThan(1);
+  });
+
+  it("PP box named in the ITEM column (not the barcode) is still a PP box", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "OUT", barcode: "OTINKD25041071", product: "# PP BOX - Refrigerator SD", status: "done" }),
+      ],
+      "MUMBAI"
+    );
+    expect(res.summary.pp_box_count).toBe(1);
+    expect(res.variances.some((v) => v.barcode === canonicalize("OTINKD25041071"))).toBe(false);
+  });
+
+  it("the remarks column can mark a row as a spare", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "IN", barcode: "ABC12345XY", product: "Bracket", remarks: "spare part", status: "Received" }),
+      ],
+      "MUMBAI"
+    );
+    expect(res.summary.consumable_count).toBe(1);
+  });
+
   it("PP box entries are counted (summary.pp_box_count), not variance rows", () => {
     const res = runReconciliation(
       [
