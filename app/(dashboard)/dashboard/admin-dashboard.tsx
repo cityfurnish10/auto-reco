@@ -38,6 +38,7 @@ import { CardListSkeleton, TableBodySkeleton } from "@/components/skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { StaleRunBanner } from "./stale-run-banner";
 import { useSelection } from "@/lib/hooks/use-selection";
+import { useStickyState } from "@/lib/hooks/use-sticky-state";
 import BulkActionBar from "./bulk-action-bar";
 import { responsibleLabel } from "@/lib/ui/variance-format";
 import {
@@ -56,7 +57,9 @@ const PAGE_SIZE = 25;
 
 export default function AdminDashboard({ user }: { user: SessionUser }) {
   const toast = useToast();
-  const [cityTab, setCityTab] = useState<CityTab>("ALL");
+  // Sticky alongside the date — remembering one but not the other leaves you
+  // back on "ALL CITIES" for the day you picked, which reads as a bug.
+  const [cityTab, setCityTab] = useStickyState<CityTab>("admin.cityTab", "ALL");
   const [bucket, setBucket] = useState<Bucket | "ALL">("REAL");
   const [source, setSource] = useState<VarianceSource | "ALL">("ALL");
   const [priority, setPriority] = useState<Priority | "ALL">("ALL");
@@ -67,7 +70,9 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
   const [sort, setSort] = useState<SortState>({ key: "date", dir: "desc" });
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
-  const [dateF, setDateF] = useState(""); // "" = latest run
+  // Sticky: survives navigating to another page and back, so a date the
+  // user deliberately picked is not silently reset to the latest run.
+  const [dateF, setDateF] = useStickyState("admin.businessDate", ""); // "" = latest run
   const [page, setPage] = useState(1);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);

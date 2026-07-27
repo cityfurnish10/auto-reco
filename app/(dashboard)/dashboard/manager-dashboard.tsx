@@ -27,6 +27,7 @@ import { CardListSkeleton, TableBodySkeleton } from "@/components/skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { StaleRunBanner } from "./stale-run-banner";
 import { useSelection } from "@/lib/hooks/use-selection";
+import { useStickyState } from "@/lib/hooks/use-sticky-state";
 import BulkActionBar from "./bulk-action-bar";
 import { SourceBadge } from "@/components/source-badge";
 import { Icon } from "@/components/icon";
@@ -55,7 +56,9 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
   const [sort, setSort] = useState<SortState>({ key: "date", dir: "desc" });
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
-  const [dateF, setDateF] = useState(""); // "" = latest run
+  // Sticky: survives navigating to another page and back, so a date the
+  // user deliberately picked is not silently reset to the latest run.
+  const [dateF, setDateF] = useStickyState("manager.businessDate", ""); // "" = latest run
   const [page, setPage] = useState(1);
   const [exporting, setExporting] = useState(false);
   const [submitting, setSubmitting] = useState<{ id: string; product: string; barcode: string } | null>(null);
