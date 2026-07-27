@@ -22,18 +22,25 @@
 
 import type { Connector, CityTaggedRow } from "./types";
 import type { Direction } from "../engine/types";
-import { istDaySpanToUtcWindow, utcToIstDate } from "./ist-window";
+import { businessDaySpanToUtcWindow, utcToBusinessDate } from "./ist-window";
 import { normalizeOdooWarehouse } from "./odoo-mapping";
 import { metabaseConfigured, runNativeSql } from "./metabase";
 
 // sml.date is the POSTING timestamp (Odoo stamps it at validation), not the
 // physical movement date. Measured on real data (2026-07-12): 237/607 DT
 // movements were posted same-day, 302 next-day, 0 the day before — so a pull
-// restricted to the run day's IST window misses half of Odoo and floods the
-// engine with false "Not in Odoo" variances. Pull [R-1 .. R+1] instead; the
-// engine's odoo-window (§4) then filters by posting date, and its "Odoo-only"
-// rung only fires for same-day postings (so R+1's own movements pulled here
-// as match-targets never surface as false Odoo-only rows for R).
+// restricted to a single day misses half of Odoo and floods the engine with
+// false "Not in Odoo" variances. Pull [R-1 .. R+1] instead; the engine's
+// odoo-window (§4) then filters by posting date, and its "Odoo-only" rung only
+// fires for same-day postings (so R+1's own movements pulled here as
+// match-targets never surface as false Odoo-only rows for R).
+//
+// NOTE: that same-day/next-day split was measured under the old MIDNIGHT day
+// definition. Odoo is the one source with a real event timestamp, so it now
+// runs on the 15:00 business day — which folds a chunk of what used to look
+// like "next-day posting" into the same business date. The ±1 window is left
+// as-is deliberately: it is a safety margin, and narrowing it is a separate
+// exercise that needs its own measurement.
 const POSTING_DAYS_BEFORE = 1;
 const POSTING_DAYS_AFTER = 1;
 
@@ -100,7 +107,7 @@ export const odooConnector: Connector = {
     const dbId = Number(process.env.METABASE_ODOO_DB_ID);
     if (!dbId) throw new Error("METABASE_ODOO_DB_ID not set.");
 
-    const { startUtc, endUtcExclusive } = istDaySpanToUtcWindow(
+    const { startUtc, endUtcExclusive } = businessDaySpanToUtcWindow(
       runDate,
       POSTING_DAYS_BEFORE,
       POSTING_DAYS_AFTER
@@ -122,11 +129,14 @@ export const odooConnector: Connector = {
         status: "done", // query already filters state = 'done'
         // `date` = the IST business date (uniform across all connectors).
         date: runDate,
-        // `createdOn` = the IST calendar date this row was POSTED in Odoo
+        // `createdOn` = the BUSINESS date this row was POSTED in Odoo
         // (sml.date). The engine's §4 odoo-window keys off createdOn — it must
         // be the posting date, NOT create_date (which is order creation, often
         // weeks before the movement; feeding that in decimated Odoo coverage).
-        createdOn: utcToIstDate(r.date as string | null),
+        // Business date, not calendar: this has to agree with the pull window
+        // above, or a posting made after 15:00 would be pulled for one day and
+        // then attributed to another.
+        createdOn: utcToBusinessDate(r.date as string | null),
         // `recordCreatedOn` = the IST calendar date this stock_move_line RECORD
         // was created in Odoo (create_date, NOT sml.date). Used ONLY by the
         // engine's "Odoo-only" flag to tell a genuine same-day movement the
@@ -134,7 +144,7 @@ export const odooConnector: Connector = {
         // late batch-post of an earlier movement (record older → INFO). It is
         // NEVER the odoo-window key — that stays the posting date above, so pull
         // coverage is unchanged (create_date runs 0–2 days ahead of posting).
-        recordCreatedOn: utcToIstDate(r.record_created as string | null),
+        recordCreatedOn: utcToBusinessDate(r.record_created as string | null),
         movementDate: str(r.date),
         soNumber: str(r.so_number),
         ticketId: str(r.ticket_id),

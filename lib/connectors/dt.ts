@@ -50,6 +50,15 @@ export const dtConnector: Connector = {
     if (!uri) throw new Error("DT not configured (set DT_MONGODB_URI).");
 
     const dbName = process.env.DT_MONGODB_DB ?? "cityfurnish";
+    // CALENDAR-day window on purpose, even though the business day is now
+    // 15:00–15:00 IST (see lib/connectors/ist-window.ts).
+    //
+    // Measured July 2026: 6,659 of 6,753 scheduledDate values sit at exactly
+    // 10:00 IST. It is a date marker pinned to a fixed hour, not a real event
+    // timestamp — so a 15:00 split would put every DT row (10:00 < 15:00) into
+    // the PREVIOUS business day and shift the entire source back a day.
+    // Odoo's sml.date is a genuine validation timestamp and is windowed; this
+    // one cannot be. Re-measure before changing it.
     const { startUtc, endUtcExclusive } = istDayToUtcWindow(runDate);
 
     const client = new MongoClient(uri);
