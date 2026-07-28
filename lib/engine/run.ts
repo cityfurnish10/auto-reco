@@ -21,7 +21,13 @@ import { isCityOff } from "./schedule";
 import { computeSuppressions } from "./suppressions";
 import { isSpareJobType, normalizeJobType } from "./util";
 import { bestGuardMatch } from "./fuzzy";
-import { buildViews, mergeGuardPresence, postedDone, sheetSaysNotDone } from "./views";
+import {
+  buildViews,
+  mergeGuardPresence,
+  postedDone,
+  presenceOf,
+  sheetSaysNotDone,
+} from "./views";
 import { VARIANCE } from "./variance-names";
 import { ALL_REPORTED } from "./types";
 import type {
@@ -43,6 +49,9 @@ function baseRow(v: BarcodeView) {
     product: v.product,
     job_type: v.jobType,
     date: v.date,
+    // Read here, at emit time — presenceOf's header explains why a snapshot
+    // taken during buildViews would be wrong for OCR-merged units.
+    present: presenceOf(v),
   };
 }
 
@@ -301,7 +310,10 @@ export function runReconciliation(
   enrichOdooOnly(inViews);
   enrichOdooOnly(outViews);
 
-  const variances: VarianceRowOut[] = [];
+  // Rows accumulate WITHOUT `reported` — it is uniform across the run and is
+  // stamped once below, after every path (including the direction-conflict
+  // push and the bulk-SO rewrite) has finished contributing.
+  const variances: Omit<VarianceRowOut, "reported">[] = [];
 
   // Failed-delivery rule (ops practice, from the field): an OUT entry the ops
   // sheet marks "Not Delivered" means the unit left and came back. Only
@@ -339,6 +351,7 @@ export function runReconciliation(
           product: v.product,
           job_type: v.jobType,
           date: runDate,
+          present: presenceOf(v),
         })
       );
       continue;
@@ -359,6 +372,7 @@ export function runReconciliation(
           product: v.product,
           job_type: v.jobType,
           date: runDate,
+          present: presenceOf(v),
         })
       );
     }
@@ -440,6 +454,10 @@ export function runReconciliation(
       };
       for (const i of idxs.slice(1)) {
         const row = variances[i];
+        // Every field of the row is listed explicitly here rather than spread,
+        // and that is deliberate: applyBucket's parameter type makes an omitted
+        // field a build error, so this rebuild cannot silently drop one. Do not
+        // convert it to `...row` — the explicit list IS the safety net.
         variances[i] = applyBucket({
           barcode: row.barcode,
           city: row.city,
@@ -452,6 +470,9 @@ export function runReconciliation(
           product: row.product,
           job_type: row.job_type,
           date: row.date,
+          // Carried through, not re-derived: the view is out of scope here and
+          // the row already holds the emit-time truth for this barcode.
+          present: row.present,
           note: `Part of a ${idxs.length}-unit bulk posting on SO ${row.so_number} — represented by a single chase item.`,
         });
       }
@@ -472,13 +493,24 @@ export function runReconciliation(
   );
   variances.push(...conflicts);
 
+  // Stamp which SOURCES reported for this city+run onto every row. Per-row
+  // presence ("did this source see the unit") was set at emit time; this is the
+  // coverage mask ("did this source report at all"), and the UI needs both — a
+  // source that was DOWN must render as "no data", never as a cross blaming it
+  // for an absence it never had the chance to fill.
+  //
+  // Deliberately after the direction-conflict push and the bulk-SO rewrite, so
+  // it covers every row including the paths that bypass applyBucket; and before
+  // the real/info split below, which holds references into this array.
+  const stamped: VarianceRowOut[] = variances.map((v) => ({ ...v, reported }));
+
   // Section 9 — count layer per direction.
   const count_in = computeCountLayer(byDir("IN"));
   const count_out = computeCountLayer(byDir("OUT"));
 
   // Summary.
-  const real_variances = variances.filter((v) => v.bucket === "REAL");
-  const info_variances = variances.filter((v) => v.bucket === "INFO");
+  const real_variances = stamped.filter((v) => v.bucket === "REAL");
+  const info_variances = stamped.filter((v) => v.bucket === "INFO");
   // Reconciliation universe size = distinct barcodes THIS day actually moved
   // per direction (the leaderboard accuracy denominator). Views whose only
   // evidence is an adjacent-day Odoo posting are match-targets, not today's
@@ -490,14 +522,14 @@ export function runReconciliation(
     Array.from(inViews.values()).filter(isMovement).length +
     Array.from(outViews.values()).filter(isMovement).length;
   const by_variance: Record<string, number> = {};
-  for (const v of variances) {
+  for (const v of stamped) {
     by_variance[v.variance_name] = (by_variance[v.variance_name] ?? 0) + 1;
   }
 
   return {
     city,
     date: runDate,
-    variances,
+    variances: stamped,
     real_variances,
     info_variances,
     count_in,

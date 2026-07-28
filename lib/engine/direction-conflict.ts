@@ -5,7 +5,7 @@
 // otherwise emit a Direction Conflict (High, direction CROSS).
 
 import { isNewRental, isRepairEquivalent, normalizeSO } from "./util";
-import { hasDone } from "./views";
+import { hasDone, orFlags, presenceOf } from "./views";
 import { VARIANCE } from "./variance-names";
 import type { BarcodeView, VarianceRowOut } from "./types";
 
@@ -13,8 +13,9 @@ export function detectDirectionConflicts(
   inViews: Map<string, BarcodeView>,
   outViews: Map<string, BarcodeView>,
   suppressed: Set<string>
-): VarianceRowOut[] {
-  const out: VarianceRowOut[] = [];
+  // `reported` is stamped once by runReconciliation over the finished list.
+): Omit<VarianceRowOut, "reported">[] {
+  const out: Omit<VarianceRowOut, "reported">[] = [];
 
   // Index OUT views by normalized SO.
   const outBySo = new Map<string, BarcodeView>();
@@ -68,6 +69,17 @@ export function detectDirectionConflicts(
       product: inView.product ?? outView.product,
       job_type: inView.jobType ?? outView.jobType,
       date: inView.date || outView.date,
+      // The UNION of both legs, not the IN leg alone. This row asserts that one
+      // unit both arrived and left today, so the evidence for that claim is
+      // everything either leg saw. Reading only the IN leg would print "no
+      // delivery-app record" for a unit whose OUT leg is the very reason the
+      // row exists. It is consistent with how the identifying fields above
+      // already merge (`inView.X ?? outView.X` — either leg counts).
+      //
+      // Lossy by design: it cannot say WHICH leg the gate logged. A CROSS row
+      // is a single "confirm this replacement" ask, not two chase items, and
+      // eight more columns for one variance name is not worth the schema.
+      present: orFlags(presenceOf(inView), presenceOf(outView)),
       note: `Same unit (SO ${so}) both received and dispatched today — confirm it is a genuine same-day replacement and not a double-count.`,
     });
   }

@@ -60,6 +60,18 @@ export interface ReportedSources {
 
 export const ALL_REPORTED: ReportedSources = { P: true, S: true, D: true, O: true };
 
+// Which sources CONFIRMED one particular unit. Structurally identical to
+// ReportedSources and deliberately named apart: this answers "did this source
+// see the unit", ReportedSources answers "did this source report at all". The
+// UI needs both — a source that was down must render as "no data", not as a
+// cross that blames it for an absence it never had the chance to fill.
+export interface SourceFlags {
+  P: boolean; // PHYSICAL / guard register
+  S: boolean; // SHEET / ops register
+  D: boolean; // DT / delivery app
+  O: boolean; // ODOO
+}
+
 export interface BarcodeView {
   canonical: string;
   direction: Direction;
@@ -117,6 +129,15 @@ export interface VarianceRowOut {
   job_type: string | null;
   date: string;
   note: string;
+  // Which sources confirmed this unit. REQUIRED, not optional, on purpose:
+  // that is what makes `tsc --noEmit` fail at every row-construction site
+  // until each supplies it — including the bulk-SO rewrite in run.ts, which
+  // rebuilds the row field by field and would otherwise drop it in silence.
+  present: SourceFlags;
+  // Which sources reported for this city+run at all. Uniform across a run, so
+  // it is stamped once in runReconciliation rather than threaded through every
+  // construction site.
+  reported: SourceFlags;
 }
 
 export interface CountLayer {

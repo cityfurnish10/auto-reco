@@ -1173,3 +1173,86 @@ describe("Odoo next-day late entry (1-day buffer)", () => {
     expect(res.variances.find((x) => x.barcode === canonicalize("OK-1"))).toBeUndefined();
   });
 });
+
+describe("Per-source presence flags (migration 0013)", () => {
+  // This invariant is what licenses the all-false sentinel: a view only exists
+  // because some source produced a row for it, so the engine can never emit a
+  // row with nothing present. If this ever fails, "all four false = written
+  // before 0013" is unsound and the migration comment is a lie.
+  it("every emitted row has at least one source present, across all sample cities", () => {
+    const byCity = buildSampleRowsByCity(RUN);
+    let checked = 0;
+    for (const [city, rows] of Object.entries(byCity)) {
+      const res = runReconciliation(rows, city as never);
+      for (const v of res.variances) {
+        expect(
+          v.present.P || v.present.S || v.present.D || v.present.O,
+          `${city} ${v.barcode} ${v.variance_name} had no source present`
+        ).toBe(true);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it("flags match the ladder's presence pattern", () => {
+    const gateOnly = runReconciliation(
+      [...anchor(), r({ source: "PHYSICAL", direction: "OUT", barcode: "P-ONLY", status: "done" })],
+      "MUMBAI"
+    ).variances.find((x) => x.barcode === canonicalize("P-ONLY"));
+    expect(gateOnly?.variance_name).toBe(VARIANCE.GATE_ONLY);
+    expect(gateOnly?.present).toEqual({ P: true, S: false, D: false, O: false });
+
+    const floorDt = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "PSD-1", status: "done" }),
+        r({ source: "SHEET", direction: "OUT", barcode: "PSD-1", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "PSD-1", status: "done" }),
+      ],
+      "MUMBAI"
+    ).variances.find((x) => x.barcode === canonicalize("PSD-1"));
+    expect(floorDt?.variance_name).toBe(VARIANCE.FLOOR_DT_NOT_ODOO);
+    expect(floorDt?.present).toEqual({ P: true, S: true, D: true, O: false });
+  });
+
+  // The highest-value case. mergeGuardPresence mutates target.P AFTER the views
+  // are built, so a flag snapshotted during buildViews would report "no gate
+  // record" for exactly the unit the OCR merge just fixed.
+  it("presence is read after the OCR-orphan merge, not during view construction", () => {
+    // Same fixture as the OCR-merge suite's case (a): typed sources carry the
+    // correct barcode, the guard's spelling is mangled beyond the canonicalize
+    // fold set, and only the ticket links them.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "OUT", barcode: "COUCHAAAAA", status: "done", ticketId: "654321" }),
+        r({ source: "DT", direction: "OUT", barcode: "COUCHAAAAA", status: "done", date: RUN }),
+        r({ source: "ODOO", direction: "OUT", barcode: "COUCHAAAAA", status: "done", createdOn: RUN }),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "C0UCHXYZ99", status: "done", ticketId: "654321" }),
+      ],
+      "MUMBAI"
+    );
+    expect(res.warnings.some((w) => w.startsWith("OCR merge"))).toBe(true);
+    // The merged unit reconciles cleanly, so it raises no row of its own — the
+    // proof the merge landed is that the guard-only orphan raised none either.
+    expect(res.variances.find((x) => x.barcode === canonicalize("C0UCHXYZ99"))).toBeUndefined();
+    // Any row that does survive on the merged canonical must show the gate as
+    // present; a build-time snapshot of P would report false here.
+    for (const v of res.variances.filter((x) => x.barcode === canonicalize("COUCHAAAAA"))) {
+      expect(v.present.P, "guard presence must survive the OCR merge").toBe(true);
+    }
+  });
+
+  it("stamps `reported` on every row, including paths that bypass applyBucket", () => {
+    const byCity = buildSampleRowsByCity(RUN);
+    const rows = byCity.MUMBAI ?? [];
+    const res = runReconciliation(rows, "MUMBAI", { P: false, S: true, D: true, O: true });
+    expect(res.variances.length).toBeGreaterThan(0);
+    for (const v of res.variances) {
+      expect(v.reported, `${v.variance_name} lost the reported stamp`).toEqual({
+        P: false, S: true, D: true, O: true,
+      });
+    }
+  });
+});

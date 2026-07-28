@@ -7,6 +7,7 @@ import { normalizeJobType, normalizeStatus } from "./util";
 import type {
   BarcodeView,
   Direction,
+  SourceFlags,
   SourceKind,
   SourcePresence,
   SourceRow,
@@ -130,6 +131,27 @@ export function mergeGuardPresence(target: BarcodeView, orphan: BarcodeView): vo
   if (!target.soNumber && orphan.soNumber) target.soNumber = orphan.soNumber;
   if (!target.customer && orphan.customer) target.customer = orphan.customer;
   if (!target.product && orphan.product) target.product = orphan.product;
+}
+
+// Snapshot which sources confirmed this unit, for persistence on the row.
+//
+// Call this AT EMIT TIME, never during buildViews. mergeGuardPresence() above
+// MUTATES target.P after the views are built — the OCR-orphan fold in run.ts
+// runs between buildViews and the ladder. A flag captured earlier would say
+// "no gate record" for exactly the units the merge just fixed, reintroducing
+// in the badge the false negative the merge exists to remove.
+export function presenceOf(view: BarcodeView): SourceFlags {
+  return {
+    P: view.P.present,
+    S: view.S.present,
+    D: view.D.present,
+    O: view.O.present,
+  };
+}
+
+// Union of two legs' flags, for a CROSS row spanning an IN and an OUT view.
+export function orFlags(a: SourceFlags, b: SourceFlags): SourceFlags {
+  return { P: a.P || b.P, S: a.S || b.S, D: a.D || b.D, O: a.O || b.O };
 }
 
 // True if the same canonical had more than one distinct raw spelling across

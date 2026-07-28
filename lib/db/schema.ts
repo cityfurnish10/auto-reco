@@ -115,6 +115,19 @@ export interface VarianceDB {
   submit_note: string | null;
   rejection_note: string | null;
 
+  // Per-source presence (0013). Optional because migrations here are applied by
+  // hand: rows written before it keep all-false, and the columns are absent
+  // from the response entirely until it is applied. All four present_* false
+  // means "not recorded for this date" — never render four crosses.
+  present_p?: boolean;
+  present_s?: boolean;
+  present_d?: boolean;
+  present_o?: boolean;
+  reported_p?: boolean;
+  reported_s?: boolean;
+  reported_d?: boolean;
+  reported_o?: boolean;
+
   created_at: string;
   updated_at: string;
 }

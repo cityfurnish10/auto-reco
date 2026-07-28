@@ -161,12 +161,22 @@ function metaFor(name: string): VarianceMeta {
 }
 
 // Apply metadata + REAL/INFO relabel to a freshly-classified row.
+//
+// `reported` is omitted from the input and the output: it is which SOURCES ran
+// for the whole city, identical for every row of a run, so requiring it here
+// would be five copies of one value. runReconciliation stamps it once over the
+// finished list instead — and because CityRunResult.variances is the full
+// VarianceRowOut[], the only way to satisfy that type is to have stamped it.
+// The compiler enforces the stamp happened.
+//
+// `present` is the opposite case — per row — so it stays required, which is
+// what makes every construction site a build error until it supplies one.
 export function applyBucket(
-  row: Omit<VarianceRowOut, "bucket" | "responsible" | "note"> & {
+  row: Omit<VarianceRowOut, "bucket" | "responsible" | "note" | "reported"> & {
     note?: string;
     responsible?: string;
   }
-): VarianceRowOut {
+): Omit<VarianceRowOut, "reported"> {
   const meta = metaFor(row.variance_name);
   const naturalPriority: Priority = row.priority;
 

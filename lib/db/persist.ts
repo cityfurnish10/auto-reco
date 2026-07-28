@@ -134,16 +134,63 @@ export async function upsertVariances(
       job_type: v.job_type,
       date: v.date,
       last_seen_at: now,
+      // Migration 0013. present_* = which sources confirmed THIS unit;
+      // reported_* = which sources reported for the city at all. Both are
+      // needed: a source that was down must render as "no data", not as a
+      // cross blaming it for an absence it never had the chance to fill.
+      present_p: v.present.P,
+      present_s: v.present.S,
+      present_d: v.present.D,
+      present_o: v.present.O,
+      reported_p: v.reported.P,
+      reported_s: v.reported.S,
+      reported_d: v.reported.D,
+      reported_o: v.reported.O,
     }))
   );
   if (payload.length === 0) return 0;
-  const { error } = await db
-    .from("variances")
-    .upsert(payload, {
-      onConflict: "business_date,city,direction,barcode,variance_name",
-    });
-  if (error) throw new Error(`upsertVariances failed: ${error.message}`);
+  const onConflict = "business_date,city,direction,barcode,variance_name";
+  const { error } = await db.from("variances").upsert(payload, { onConflict });
+  if (error) {
+    // Migration 0013 not applied yet: retry WITHOUT those eight columns rather
+    // than throwing. This matters more than the same guard on saveCityStats —
+    // upsertVariances is on the nightly critical path (lib/reconcile/pipeline.ts),
+    // and a throw here is caught by the pipeline's outer handler, marks the run
+    // failed, and leaves the whole day with NO variances, purely because eight
+    // display booleans had nowhere to go.
+    //
+    // PostgREST reports an unknown column either as 42703 (undefined_column) or
+    // as PGRST204 "Could not find the 'x' column ... in the schema cache", so
+    // the message test covers both spellings.
+    if (error.code === "42703" || /does not exist|could not find/i.test(error.message)) {
+      const legacy = payload.map((p) => {
+        const copy: Record<string, unknown> = { ...p };
+        for (const k of PRESENCE_KEYS) delete copy[k];
+        return copy;
+      });
+      const retry = await db.from("variances").upsert(legacy, { onConflict });
+      if (retry.error) throw new Error(`upsertVariances failed: ${retry.error.message}`);
+      warnNo0013();
+      return legacy.length;
+    }
+    throw new Error(`upsertVariances failed: ${error.message}`);
+  }
   return payload.length;
+}
+
+const PRESENCE_KEYS = [
+  "present_p", "present_s", "present_d", "present_o",
+  "reported_p", "reported_s", "reported_d", "reported_o",
+] as const;
+
+// Once per process, not once per city — five cities a night would be noise.
+let warned0013 = false;
+function warnNo0013(): void {
+  if (warned0013) return;
+  warned0013 = true;
+  console.warn(
+    "[upsertVariances] migration 0013 not applied — per-source presence flags were not stored. Source badges will read 'not recorded' for these dates until it is applied and the dates are re-run."
+  );
 }
 
 // Stale-open resolution — the "next-day re-check" pass. On a RE-RUN of a date,
