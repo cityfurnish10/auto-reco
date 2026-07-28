@@ -61,6 +61,8 @@ export async function GET(req: NextRequest) {
     let query = supabase
       .from("variances")
       .select("variance_name, responsible, job_type, bucket")
+      // Deterministic order — unordered .range() pages can repeat/skip rows.
+      .order("id", { ascending: true })
       .range(from, from + 999);
     if (city) query = query.eq("city", city);
     if (businessDate) query = query.eq("business_date", businessDate);

@@ -15,7 +15,7 @@ import {
   isEmailConfigured,
 } from "@/lib/email";
 import { saveEmailArchive, saveEmailPdf } from "@/lib/email/email-archive";
-import { buildRegisterPdfs } from "@/lib/email/register-pdf";
+import { buildRegisterPdfs, registerAttachments } from "@/lib/email/register-pdf";
 import { saveEmailLog } from "@/lib/db/persist";
 
 export const runtime = "nodejs";
@@ -54,6 +54,9 @@ export async function POST(req: NextRequest) {
     const { data } = await db
       .from("reconciliation_runs")
       .select("business_date")
+      // Match the cron and buildDigestFromDb: a `running` or `failed` run must
+      // not make a manual send report a different day than the nightly digest.
+      .in("status", ["success", "partial"])
       .order("business_date", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -83,13 +86,7 @@ export async function POST(req: NextRequest) {
   const registers = await buildRegisterPdfs(db, date).catch(() => null);
   const result = await sendReconciliationDigest(digest, {
     ...({ to, cc, bcc, notes }),
-    attachments: registers?.pdfs.length
-          ? registers.pdfs.map((r) => ({
-              filename: r.filename,
-              content: Buffer.from(r.bytes),
-              contentType: "application/pdf",
-            }))
-          : undefined,
+    ...registerAttachments(registers),
   });
 
   // Audit the send for the System Health timeline (best-effort), then snapshot

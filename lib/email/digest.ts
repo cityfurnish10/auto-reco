@@ -166,7 +166,12 @@ export async function buildDigestFromDb(
       .select("city,bucket,priority,status,variance_name")
       .eq("business_date", businessDate);
     if (runId) q = q.eq("run_id", runId);
-    const { data, error } = await q.range(from, from + 999);
+    // Deterministic order — .range() without a unique sort key lets Postgres
+    // return a different physical order per request, duplicating or dropping
+    // rows across page boundaries (same lesson as app/api/variances/route.ts).
+    const { data, error } = await q
+      .order("id", { ascending: true })
+      .range(from, from + 999);
     if (error) throw new Error(`buildDigestFromDb: ${error.message}`);
     rows = rows.concat(data ?? []);
     if (!data || data.length < 1000) break;
@@ -313,15 +318,29 @@ function fmtDate(d: string): string {
   return `${day} ${months[m - 1]} ${y}`;
 }
 
+// Quotes are escaped too: esc() already feeds an attribute (href="${esc(...)}"
+// below), so a value containing a quote would break out of it. Harmless for
+// today's constant URL, not harmless once DB text (customer, product, SO) is
+// interpolated into a title="..." tooltip.
 const esc = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
 export function digestSubject(data: DigestData): string {
   return `Cityfurnish Reconciliation — ${fmtDate(data.date)} — ${data.totals.real} to action`;
 }
 
 // Email-client-safe HTML: tables + inline styles only (no fl+grid, no <style>).
-export function renderDigestHtml(data: DigestData, dashboardUrl?: string, notes?: string): string {
+export function renderDigestHtml(
+  data: DigestData,
+  dashboardUrl?: string,
+  notes?: string,
+  attachmentNote?: string
+): string {
   const dateLabel = fmtDate(data.date);
   // Brand as a text wordmark, not an image. A hosted logo is unreliable in email:
   // Gmail strips inline/base64, and an /apple-icon.png on a protected Vercel
@@ -519,6 +538,7 @@ export function renderDigestHtml(data: DigestData, dashboardUrl?: string, notes?
 
         <tr><td style="padding:20px 32px;border-top:1px solid #e5e7eb;background:#f9fafb;text-align:center;">
           ${sourceLine}
+          ${attachmentNote ? `<p style="margin:0 0 6px;color:#9ca3af;font-size:12px;">No city registers attached &mdash; ${esc(attachmentNote)}.</p>` : ""}
           <p style="margin:0;color:#9ca3af;font-size:12px;">Automated report from the Cityfurnish Operations Portal. Reply to this address to reach the Reconciliation team.</p>
           <p style="margin:6px 0 0;color:#d1d5db;font-size:11px;">© ${new Date().getFullYear()} Cityfurnish Logistics · Internal use only.</p>
         </td></tr>
@@ -528,7 +548,11 @@ export function renderDigestHtml(data: DigestData, dashboardUrl?: string, notes?
 </body></html>`;
 }
 
-export function renderDigestText(data: DigestData, notes?: string): string {
+export function renderDigestText(
+  data: DigestData,
+  notes?: string,
+  attachmentNote?: string
+): string {
   const lines: string[] = [];
   lines.push(`CITYFURNISH — Warehouse Reconciliation — ${fmtDate(data.date)}`);
   lines.push("");
@@ -577,6 +601,7 @@ export function renderDigestText(data: DigestData, notes?: string): string {
     }
   }
   lines.push("");
+  if (attachmentNote) lines.push(`No city registers attached — ${attachmentNote}.`);
   lines.push("Automated report from the Cityfurnish Operations Portal.");
   return lines.join("\n");
 }

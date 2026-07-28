@@ -7,7 +7,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildDigestFromDb, sendReconciliationDigest } from "./index";
 import { saveEmailArchive, saveEmailPdf } from "./email-archive";
-import { buildRegisterPdfs } from "./register-pdf";
+import { buildRegisterPdfs, registerAttachments } from "./register-pdf";
 import { saveEmailLog } from "../db/persist";
 import type { ScheduledEmailDB } from "../db/schema";
 
@@ -93,13 +93,7 @@ export async function drainScheduledEmails(db: SupabaseClient, nowIso: string): 
         cc: row.cc ?? [],
         bcc: row.bcc ?? [],
         notes: row.notes ?? undefined,
-        attachments: registers?.pdfs.length
-          ? registers.pdfs.map((r) => ({
-              filename: r.filename,
-              content: Buffer.from(r.bytes),
-              contentType: "application/pdf",
-            }))
-          : undefined,
+        ...registerAttachments(registers),
       });
 
       const logId = await saveEmailLog(db, {

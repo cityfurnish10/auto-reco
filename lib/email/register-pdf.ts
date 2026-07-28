@@ -29,8 +29,33 @@ export interface CityRegisterPdf {
 export interface RegisterPdfResult {
   /** One document per city that had ops-sheet rows. Empty when none did. */
   pdfs: CityRegisterPdf[];
-  /** Why the list is empty — surfaced in the email body. */
+  /** Why the list is empty — surfaced in the email body via registerAttachments. */
   reason?: string;
+}
+
+/**
+ * Turn a register result into nodemailer attachments plus the one-line note
+ * explaining an absence.
+ *
+ * Exists because all three send paths (cron digest, admin test, scheduled
+ * drain) had the identical six-line map inline and all three dropped `reason`
+ * on the floor — so a recipient wondering where the attachment went had
+ * nothing to read, despite the field being documented as surfaced in the body.
+ */
+export function registerAttachments(res: RegisterPdfResult | null): {
+  attachments?: { filename: string; content: Buffer; contentType: string }[];
+  attachmentNote?: string;
+} {
+  if (res?.pdfs.length) {
+    return {
+      attachments: res.pdfs.map((r) => ({
+        filename: r.filename,
+        content: Buffer.from(r.bytes),
+        contentType: "application/pdf",
+      })),
+    };
+  }
+  return res?.reason ? { attachmentNote: res.reason } : {};
 }
 
 interface SheetRow {
@@ -122,7 +147,10 @@ export async function buildRegisterPdfs(
       .select("city,direction,barcode,product,so_number,ticket_id,customer,job_type,status")
       .eq("run_id", runId)
       .eq("source", "SHEET")
+      // City groups the pages; id makes the order unique — city alone leaves
+      // ties Postgres may break differently per page, repeating/skipping rows.
       .order("city", { ascending: true })
+      .order("id", { ascending: true })
       .range(from, from + 999);
     if (error) return { pdfs: [], reason: error.message };
     rows.push(...((data ?? []) as SheetRow[]));

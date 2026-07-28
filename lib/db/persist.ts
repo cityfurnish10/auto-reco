@@ -32,6 +32,8 @@ export async function loadRecentFloorBarcodes(
       .select("city, barcode")
       .in("source", ["PHYSICAL", "SHEET", "DT"])
       .in("business_date", dates)
+      // Deterministic order — unordered .range() pages can repeat/skip rows.
+      .order("id", { ascending: true })
       .range(from, from + 999);
     if (error) throw new Error(`loadRecentFloorBarcodes failed: ${error.message}`);
     for (const r of data ?? []) {
@@ -196,6 +198,9 @@ export async function resolveStaleOpenVariances(
         .eq("business_date", runDate)
         .eq("city", cr.city)
         .eq("status", "open")
+        // Deterministic order — a row missed across an unordered page boundary
+        // here is a stale open variance that never gets resolved.
+        .order("id", { ascending: true })
         .range(from, from + 999);
       if (error) throw new Error(`resolveStaleOpenVariances select failed: ${error.message}`);
       data = data.concat(page ?? []);

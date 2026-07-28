@@ -34,6 +34,10 @@ export interface SendOptions {
   // Passed straight to nodemailer. Gmail's practical ceiling is ~25MB; the
   // register PDF for a full day is a few hundred KB.
   attachments?: EmailAttachment[];
+  // Why no register is attached, when none is (see registerAttachments()).
+  // Rendered as a muted footer line so a recipient expecting the register
+  // learns it was pruned rather than assuming the email is broken.
+  attachmentNote?: string;
 }
 
 export interface SendResult {
@@ -101,7 +105,7 @@ export async function sendReconciliationDigest(
   // Render once — the same strings go to the wire and back to the caller for
   // archiving, so the archive is byte-identical to the delivered email.
   const subject = digestSubject(data);
-  const html = renderDigestHtml(data, dashboardUrl(), opts.notes);
+  const html = renderDigestHtml(data, dashboardUrl(), opts.notes, opts.attachmentNote);
 
   try {
     const info = await transport.sendMail({
@@ -110,7 +114,7 @@ export async function sendReconciliationDigest(
       cc: cc.length ? cc.join(", ") : undefined,
       bcc: bcc.length ? bcc.join(", ") : undefined,
       subject,
-      text: renderDigestText(data, opts.notes),
+      text: renderDigestText(data, opts.notes, opts.attachmentNote),
       html,
       attachments: opts.attachments?.length ? opts.attachments : undefined,
     });

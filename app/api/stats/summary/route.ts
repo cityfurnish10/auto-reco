@@ -123,6 +123,8 @@ export async function GET(req: NextRequest) {
       .from("variances")
       .select("city, status, priority, bucket, closure_reason")
       .eq("run_id", run.id)
+      // Deterministic order — unordered .range() pages can repeat/skip rows.
+      .order("id", { ascending: true })
       .range(from, from + 999);
     if (varErr) return NextResponse.json({ error: varErr.message }, { status: 500 });
     variances = variances.concat(page ?? []);

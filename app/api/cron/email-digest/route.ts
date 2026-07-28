@@ -18,7 +18,7 @@ import {
 import { storedDigestLists } from "@/lib/email/recipient-store";
 import { digestTargetDate } from "@/lib/reconcile/cron-dates";
 import { saveEmailArchive, saveEmailPdf, pruneEmailArchive } from "@/lib/email/email-archive";
-import { buildRegisterPdfs } from "@/lib/email/register-pdf";
+import { buildRegisterPdfs, registerAttachments } from "@/lib/email/register-pdf";
 import { drainScheduledEmails } from "@/lib/email/scheduled";
 import { saveEmailLog } from "@/lib/db/persist";
 
@@ -84,7 +84,23 @@ async function handle(req: NextRequest) {
   const run = runs?.[0] ?? null;
   const date = (run?.business_date as string) ?? targetDate;
 
-  const digest = await buildDigestFromDb(db, date);
+  // Same reasoning as the missing-run case above: a query hiccup here must not
+  // turn into silence. buildDigestFromDb throws on a PostgREST error, and an
+  // uncaught throw returns 500 BEFORE saveEmailLog runs — so the day would end
+  // with no email AND no record that one was attempted. Fall back to a minimal
+  // digest carrying the incomplete banner, and let the send proceed.
+  let digest = await buildDigestFromDb(db, date).catch(() => null);
+  let buildFailed = false;
+  if (!digest) {
+    buildFailed = true;
+    digest = {
+      date,
+      generatedAt: new Date().toISOString(),
+      totals: { total: 0, real: 0, info: 0, high: 0 },
+      cities: [],
+      runIncomplete: true,
+    };
+  }
   // Recipients: the admin-curated list saved from the compose panel wins;
   // DIGEST_RECIPIENTS env stays the fallback for a fresh setup.
   const stored = await storedDigestLists(db).catch(() => null);
@@ -93,13 +109,7 @@ async function handle(req: NextRequest) {
   const registers = await buildRegisterPdfs(db, date).catch(() => null);
   const result = await sendReconciliationDigest(digest, {
     ...(stored ?? {}),
-    attachments: registers?.pdfs.length
-          ? registers.pdfs.map((r) => ({
-              filename: r.filename,
-              content: Buffer.from(r.bytes),
-              contentType: "application/pdf",
-            }))
-          : undefined,
+    ...registerAttachments(registers),
   });
 
   // Audit the send for the System Health timeline (best-effort), then snapshot
@@ -111,7 +121,10 @@ async function handle(req: NextRequest) {
     status: result.sent ? "sent" : result.error ? "failed" : "skipped",
     recipients: result.recipients ?? [],
     messageId: result.messageId ?? null,
-    error: result.error ?? result.skipped ?? null,
+    error:
+      result.error ??
+      result.skipped ??
+      (buildFailed ? "digest build failed — sent incomplete-run banner only" : null),
   }).catch(() => null);
   if (logId && result.sent && result.html) {
     await saveEmailArchive(db, logId, {
