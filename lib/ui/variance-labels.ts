@@ -61,6 +61,11 @@ export interface VarianceLabel {
 export interface LabelContext {
   direction?: "IN" | "OUT" | "CROSS" | null;
   jobType?: string | null;
+  /**
+   * The row's STORED bucket. Supply it wherever it is available: the engine can
+   * downgrade a row after classifying it, and the name alone does not say so.
+   */
+  bucket?: "REAL" | "INFO" | null;
 }
 
 interface LabelRule {
@@ -344,11 +349,35 @@ export const VARIANCE_LABELS: Record<VarianceName, LabelRule> = {
   [VARIANCE.ADJACENT_DAY]: { base: LATE_PAPERWORK },
 };
 
+/**
+ * A row the engine downgraded after classifying it.
+ *
+ * resolveStaleOpenVariances (lib/db/persist.ts) rewrites a stale open row to
+ * bucket INFO on the next-day re-check when the gap has cleared — a late entry
+ * folded in. The NAME does not change, so the label map alone would keep
+ * calling it "Direction Conflict" and put a resolved item at the top of the
+ * owner's chase list. Measured on 2026-07-26: 3 of 79 tier-1 items were
+ * already resolved this way.
+ */
+const CLEARED_ON_RECHECK: VarianceLabel = {
+  display: "Cleared on Re-check",
+  tier: 3,
+  risk: "This gap closed on its own — the missing entry was made a day late and has now been found.",
+  action: "None.",
+};
+
 /** The owner-facing label for a stored variance name. Never throws. */
 export function labelFor(name: string, ctx: LabelContext = {}): VarianceLabel {
   const rule = (VARIANCE_LABELS as Record<string, LabelRule | undefined>)[name];
   if (!rule) return UNLABELLED;
-  return rule.refine?.(ctx) ?? rule.base;
+  const label = rule.refine?.(ctx) ?? rule.base;
+
+  // "Chase this today" and the engine's own "not a loss" cannot both be true.
+  // Where they disagree, the engine wins: it has seen a later run's evidence
+  // that the label map, which reads only the name, cannot.
+  if (ctx.bucket === "INFO" && label.tier === 1) return CLEARED_ON_RECHECK;
+
+  return label;
 }
 
 export function tierOf(name: string, ctx: LabelContext = {}): Tier {

@@ -169,3 +169,38 @@ describe("variance labels — vocabulary", () => {
     }
   });
 });
+
+describe("variance labels — the engine's downgrade wins", () => {
+  // resolveStaleOpenVariances rewrites a stale open row to bucket INFO on the
+  // next-day re-check when the gap has cleared. The NAME does not change, so
+  // without this the label map would keep calling a resolved item a loss.
+  // Measured on 2026-07-26: 3 of 79 tier-1 items were already resolved.
+  it("never calls a stored-INFO row stock-at-risk", () => {
+    for (const n of NAMES) {
+      for (const ctx of CONTEXTS) {
+        const asFound = labelFor(n, ctx);
+        if (asFound.tier !== 1) continue;
+        const downgraded = labelFor(n, { ...ctx, bucket: "INFO" });
+        expect(downgraded.tier, `${n} stayed tier 1 despite bucket INFO`).not.toBe(1);
+        expect(downgraded.display).toBe("Cleared on Re-check");
+        expect(downgraded.action).toBe("None.");
+      }
+    }
+  });
+
+  it("leaves a stored-REAL row exactly as the name maps it", () => {
+    for (const n of NAMES) {
+      for (const ctx of CONTEXTS) {
+        expect(labelFor(n, { ...ctx, bucket: "REAL" })).toEqual(labelFor(n, ctx));
+      }
+    }
+  });
+
+  it("does not disturb tier 2 or 3 rows, which are INFO by nature", () => {
+    // Register Gap etc. are INFO-bucket by design and must stay tier 2 —
+    // a blanket "INFO means tier 3" would empty the amber tier.
+    const regGap = labelFor(VARIANCE.OPS_ODOO_NO_GATE, { bucket: "INFO" });
+    expect(regGap.display).toBe("Register Gap");
+    expect(regGap.tier).toBe(2);
+  });
+});
