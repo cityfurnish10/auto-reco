@@ -110,7 +110,11 @@ export const VARIANCE_META: Record<string, VarianceMeta> = {
   },
   [VARIANCE.GATE_OPS_ODOO_NO_DT]: {
     bucket: "INFO",
-    responsible: "odoo_team",
+    // The missing thing is the DT scan, so this belongs to the delivery team —
+    // it was assigned to odoo_team, which sent the chase to the one team whose
+    // record is already present. OPS_ODOO_NO_DT below is the near-identical
+    // case and has always said delivery_team.
+    responsible: "delivery_team",
     note: "Gate register + ops sheet + Odoo all confirm the movement; only the DT scan is pending. No stock action — DT will catch up.",
   },
   [VARIANCE.OPS_DT_ODOO_PENDING]: {
