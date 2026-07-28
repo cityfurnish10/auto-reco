@@ -14,6 +14,7 @@ import {
   buildDigestFromDb,
   sendReconciliationDigest,
   isEmailConfigured,
+  type DigestData,
 } from "@/lib/email";
 import { storedDigestLists } from "@/lib/email/recipient-store";
 import { digestTargetDate } from "@/lib/reconcile/cron-dates";
@@ -89,18 +90,17 @@ async function handle(req: NextRequest) {
   // uncaught throw returns 500 BEFORE saveEmailLog runs — so the day would end
   // with no email AND no record that one was attempted. Fall back to a minimal
   // digest carrying the incomplete banner, and let the send proceed.
-  let digest = await buildDigestFromDb(db, date).catch(() => null);
-  let buildFailed = false;
-  if (!digest) {
-    buildFailed = true;
-    digest = {
-      date,
-      generatedAt: new Date().toISOString(),
-      totals: { total: 0, real: 0, info: 0, high: 0 },
-      cities: [],
-      runIncomplete: true,
-    };
-  }
+  const built = await buildDigestFromDb(db, date).catch(() => null);
+  const buildFailed = built === null;
+  const digest: DigestData = built ?? {
+    date,
+    generatedAt: new Date().toISOString(),
+    totals: { movements: 0, tier1: 0, tier2: 0, tier3: 0, open: 0 },
+    cities: [],
+    actions: [],
+    informational: [],
+    runIncomplete: true,
+  };
   // Recipients: the admin-curated list saved from the compose panel wins;
   // DIGEST_RECIPIENTS env stays the fallback for a fresh setup.
   const stored = await storedDigestLists(db).catch(() => null);

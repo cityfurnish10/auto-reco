@@ -14,11 +14,10 @@ import {
 } from "./digest";
 
 export { isEmailConfigured } from "./transport";
-export {
-  buildDigestFromRun,
-  buildDigestFromDb,
-  type DigestData,
-} from "./digest";
+// buildDigestFromRun is gone: it was the only thing that ever populated
+// DigestData.sources, it had no callers outside this re-export, and the footer
+// line it fed could therefore never render. Every send path builds from the DB.
+export { buildDigestFromDb, type DigestData } from "./digest";
 
 export interface EmailAttachment {
   filename: string;
@@ -114,7 +113,7 @@ export async function sendReconciliationDigest(
       cc: cc.length ? cc.join(", ") : undefined,
       bcc: bcc.length ? bcc.join(", ") : undefined,
       subject,
-      text: renderDigestText(data, opts.notes, opts.attachmentNote),
+      text: renderDigestText(data, dashboardUrl(), opts.notes, opts.attachmentNote),
       html,
       attachments: opts.attachments?.length ? opts.attachments : undefined,
     });

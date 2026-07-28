@@ -1,0 +1,227 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`digest — model snapshot > richDay 1`] = `
+[
+  {
+    "blocks": [
+      {
+        "kind": "para",
+        "text": "26 July 2026 closed at 3pm today. 78 units moved without a full trail — those could mean missing stock. 305 more need a record fixed.",
+      },
+      {
+        "kind": "para",
+        "text": "995 open in total on the dashboard: 78 need a decision today, 305 are records to correct, 612 need nothing.",
+        "tone": "muted",
+      },
+    ],
+    "id": "opening",
+  },
+  {
+    "blocks": [
+      {
+        "columns": [
+          {
+            "label": "City",
+          },
+          {
+            "align": "right",
+            "label": "Units moved",
+          },
+          {
+            "align": "right",
+            "label": "At risk",
+          },
+          {
+            "align": "right",
+            "label": "To fix",
+          },
+          {
+            "label": "Guard register",
+          },
+        ],
+        "kind": "table",
+        "rows": [
+          [
+            {
+              "text": "Delhi",
+            },
+            {
+              "align": "right",
+              "text": "1,204",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "34",
+              "tone": "danger",
+            },
+            {
+              "align": "right",
+              "text": "96",
+              "tone": "warn",
+            },
+            {
+              "text": "Received",
+              "tone": "muted",
+            },
+          ],
+          [
+            {
+              "text": "Bangalore",
+            },
+            {
+              "align": "right",
+              "text": "861",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "22",
+              "tone": "danger",
+            },
+            {
+              "align": "right",
+              "text": "71",
+              "tone": "warn",
+            },
+            {
+              "text": "Not received",
+              "tone": "danger",
+            },
+          ],
+          [
+            {
+              "text": "Mumbai",
+            },
+            {
+              "align": "right",
+              "text": "742",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "12",
+              "tone": "danger",
+            },
+            {
+              "align": "right",
+              "text": "58",
+              "tone": "warn",
+            },
+            {
+              "text": "Not read yet",
+              "tone": "warn",
+            },
+          ],
+          [
+            {
+              "text": "Pune",
+            },
+            {
+              "align": "right",
+              "text": "520",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "6",
+              "tone": "danger",
+            },
+            {
+              "align": "right",
+              "text": "44",
+              "tone": "warn",
+            },
+            {
+              "text": "Received",
+              "tone": "muted",
+            },
+          ],
+          [
+            {
+              "text": "Hyderabad",
+            },
+            {
+              "align": "right",
+              "text": "498",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "4",
+              "tone": "danger",
+            },
+            {
+              "align": "right",
+              "text": "36",
+              "tone": "warn",
+            },
+            {
+              "text": "Reading failed",
+              "tone": "danger",
+            },
+          ],
+        ],
+      },
+    ],
+    "id": "cities",
+    "title": "By city",
+  },
+  {
+    "blocks": [
+      {
+        "items": [
+          {
+            "sub": "Warehouse team",
+            "text": "System-Only Entry — 56 units (Delhi 31, Bangalore 25). Confirm the unit moved, or cancel the Odoo entry.",
+            "tone": "danger",
+          },
+          {
+            "sub": "Warehouse team",
+            "text": "Off-System Movement — 11 units (Delhi 7, Mumbai 4). Trace the unit, then record it on the sheet, the app and Odoo.",
+            "tone": "danger",
+          },
+          {
+            "sub": "Ops team",
+            "text": "Unclosed Return — 6 units (Pune 4). Find the unit and write it into the inward register.",
+            "tone": "danger",
+          },
+        ],
+        "kind": "list",
+      },
+      {
+        "kind": "para",
+        "text": "+3 more kinds of item — see the dashboard.",
+        "tone": "muted",
+      },
+    ],
+    "id": "actions",
+    "title": "Do this today",
+  },
+  {
+    "blocks": [
+      {
+        "kind": "para",
+        "text": "Also logged, no action needed: 123 odoo posting delay, 114 barcode read error, 26 late paperwork.",
+        "tone": "muted",
+      },
+      {
+        "kind": "para",
+        "text": "Bangalore, Hyderabad: the guard register did not arrive, so their numbers come from three records, not four.",
+        "tone": "warn",
+      },
+    ],
+    "id": "footer",
+  },
+  {
+    "blocks": [
+      {
+        "href": "https://auto-reco.vercel.app/dashboard",
+        "kind": "cta",
+        "label": "See every unit, city by city",
+      },
+    ],
+    "id": "link",
+  },
+]
+`;
