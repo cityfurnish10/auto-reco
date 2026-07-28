@@ -25,6 +25,16 @@
 -- before this migration was applied. Render that as "not recorded for this
 -- date" — never as four crosses.
 --
+-- ONE THING THAT LOOKS WRONG AND IS NOT: an all-false row can carry a CURRENT
+-- run_id. resolveStaleOpenVariances (lib/db/persist.ts) downgrades a stale open
+-- row to INFO on the next-day re-check and moves run_id to the new run, but it
+-- does not re-derive presence — the engine did not emit that row this run, so
+-- there is nothing to derive from. A row upserted by any post-0013 run keeps
+-- its real flags through that downgrade, so the sentinel stays accurate; only
+-- rows never upserted since the migration read as all-false. Observed on the
+-- 2026-07-26 backfill: 658 rows populated, 55 downgraded-but-never-re-upserted
+-- rows still all-false.
+--
 -- Safe to re-run. Additive only; nothing existing changes.
 
 ALTER TABLE public.variances
