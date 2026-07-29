@@ -73,6 +73,8 @@ import {
   Users,
   X,
   type LucideIcon,
+  MessageSquareText,
+  Sparkles,
 } from "lucide-react";
 
 // Maps the old Material Symbol ligature names (still used as string keys in
@@ -153,6 +155,8 @@ const ICONS = {
   verified_user: ShieldCheck,
   warning: TriangleAlert,
   workspace_premium: Award,
+  chat: MessageSquareText,
+  assistant: Sparkles,
 } satisfies Record<string, LucideIcon>;
 
 // The only names that render. Anything holding an icon key in data (nav items,

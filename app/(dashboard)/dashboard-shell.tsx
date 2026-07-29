@@ -11,6 +11,7 @@ import Sidebar from "./sidebar";
 import ThemeToggle from "./theme-toggle";
 import ApprovalsBell from "./approvals-bell";
 import HelpButton from "./help-button";
+import { ChatLauncher } from "./chat-panel";
 import { Icon } from "@/components/icon";
 import { ToastProvider } from "@/components/toast";
 
@@ -85,6 +86,7 @@ export default function DashboardShell({
             )}
           </div>
           <div className="flex items-center gap-2">
+            <ChatLauncher role={user.role} />
             <HelpButton role={user.role} />
             <ThemeToggle />
             {user.role === "ADMIN" && <ApprovalsBell />}
