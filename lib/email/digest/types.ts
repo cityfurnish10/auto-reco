@@ -81,4 +81,14 @@ export interface DigestData {
   watch?: WatchItem[];
   /** True when no completed reconciliation exists for `date`. */
   runIncomplete?: boolean;
+  /**
+   * Natural keys of the flagged (tier 1 + 2) rows, for the follow-up snapshot.
+   *
+   * NOT rendered — it never reaches buildSections, so the anti-drift and
+   * word-budget tests are untouched. It exists because the follow-up must match
+   * on the UNIT that was flagged, not on counts: a superseded row is deleted and
+   * replaced with a fresh identity, so a count-only comparison would report a
+   * still-broken unit as newly flagged.
+   */
+  flaggedKeys?: string[];
 }

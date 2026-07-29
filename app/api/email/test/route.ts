@@ -101,6 +101,8 @@ export async function POST(req: NextRequest) {
     notes: notes ?? null,
     sentBy: me.id,
     messageId: result.messageId ?? null,
+    // Frozen at the wire; the follow-up's X can come from nowhere else.
+    totals: result.totals ?? null,
     error: result.error ?? result.skipped ?? null,
   }).catch(() => null);
   if (logId && result.sent && result.html) {

@@ -106,6 +106,8 @@ export async function drainScheduledEmails(db: SupabaseClient, nowIso: string): 
         notes: row.notes ?? null,
         sentBy: row.scheduled_by ?? null,
         messageId: result.messageId ?? null,
+    // Frozen at the wire; the follow-up's X can come from nowhere else.
+    totals: result.totals ?? null,
         error: result.error ?? result.skipped ?? null,
       }).catch(() => null);
       // Snapshot the delivered email into the 30-day archive (best-effort).

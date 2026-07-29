@@ -6,6 +6,7 @@
 // not fail the reconcile run — callers get a typed result instead.
 
 import { getSmtpConfig, getTransport, isEmailConfigured } from "./transport";
+import { digestTotalsSnapshot, type TotalsSnapshot } from "./followup/snapshot";
 import {
   digestSubject,
   renderDigestHtml,
@@ -53,6 +54,14 @@ export interface SendResult {
   html?: string;
   /** Attachments actually delivered, so callers can archive them. */
   attachments?: EmailAttachment[];
+  /**
+   * The figures this email printed, frozen at the wire.
+   *
+   * Present only on a successful send, and only for a digest — the follow-up's
+   * X is "what the recipient is looking at", which cannot be recomputed once
+   * the re-check pass overwrites the date's counts. See migration 0016.
+   */
+  totals?: TotalsSnapshot;
 }
 
 export function digestRecipients(): string[] {
@@ -126,6 +135,11 @@ export async function sendReconciliationDigest(
       subject,
       html,
       attachments: opts.attachments,
+      // Computed AFTER sendMail resolves, with the wire moment as its
+      // timestamp: same discipline as rendering once and reusing for wire and
+      // archive. A snapshot for an email that never went out would be a lie the
+      // follow-up would later quote.
+      totals: digestTotalsSnapshot(data, new Date().toISOString()),
     };
   } catch (err) {
     return {

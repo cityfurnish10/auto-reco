@@ -396,7 +396,7 @@ export async function saveEmailLog(
   db: DB,
   entry: {
     runId?: string | null;
-    kind: "digest" | "test" | "scheduled";
+    kind: "digest" | "test" | "scheduled" | "follow_up";
     businessDate?: string | null;
     status: "sent" | "skipped" | "failed";
     recipients: string[];
@@ -406,25 +406,52 @@ export async function saveEmailLog(
     sentBy?: string | null;
     messageId?: string | null;
     error?: string | null;
+    /**
+     * The figures the email printed, from SendResult.totals.
+     *
+     * REQUIRED, not optional, and that is the point: the follow-up's X can only
+     * ever come from here, so a fourth send path must fail to compile until its
+     * author decides what to store. Pass null deliberately for a send that
+     * carried no figures.
+     */
+    totals: unknown;
   }
 ): Promise<string | null> {
-  const { data, error } = await db
-    .from("email_logs")
-    .insert({
-      run_id: entry.runId ?? null,
-      kind: entry.kind,
-      business_date: entry.businessDate ?? null,
-      status: entry.status,
-      recipients: entry.recipients ?? [],
-      cc: entry.cc ?? [],
-      bcc: entry.bcc ?? [],
-      notes: entry.notes ?? null,
-      sent_by: entry.sentBy ?? null,
-      message_id: entry.messageId ?? null,
-      error: entry.error ?? null,
-    })
-    .select("id")
-    .single();
+  const row = () => ({
+    run_id: entry.runId ?? null,
+    kind: entry.kind,
+    business_date: entry.businessDate ?? null,
+    status: entry.status,
+    recipients: entry.recipients ?? [],
+    cc: entry.cc ?? [],
+    bcc: entry.bcc ?? [],
+    notes: entry.notes ?? null,
+    sent_by: entry.sentBy ?? null,
+    message_id: entry.messageId ?? null,
+    error: entry.error ?? null,
+  });
+
+  let { data, error } = await db.from("email_logs")
+    .insert({ ...row(), totals: entry.totals ?? null })
+    .select("id").single();
+
+  if (error) {
+    // Migration 0016 not applied yet: retry without the snapshot column rather
+    // than throwing. This runs AFTER the email is already on the wire, so a
+    // throw here loses the audit row and the follow-up enqueue for a message
+    // the recipient has already read.
+    //
+    // 42703 = undefined_column; PostgREST reports an unknown column as
+    // PGRST204 "Could not find the 'x' column ... in the schema cache".
+    if (
+      error.code === "42703" ||
+      error.code === "PGRST204" ||
+      /does not exist|could not find/i.test(error.message)
+    ) {
+      warnNo0016();
+      ({ data, error } = await db.from("email_logs").insert(row()).select("id").single());
+    }
+  }
   if (error) throw new Error(`saveEmailLog failed: ${error.message}`);
   return data?.id ?? null;
 }
@@ -542,6 +569,15 @@ export async function upsertMovementEvents(
     written += chunk.length;
   }
   return written;
+}
+
+let warned0016 = false;
+function warnNo0016(): void {
+  if (warned0016) return;
+  warned0016 = true;
+  console.warn(
+    "[saveEmailLog] migration 0016 not applied — the figures each email printed were not stored. Follow-up emails cannot be sent for these dates; apply supabase/migrations/0016_followup_emails.sql."
+  );
 }
 
 let warned0015 = false;

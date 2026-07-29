@@ -122,6 +122,8 @@ async function handle(req: NextRequest) {
     status: result.sent ? "sent" : result.error ? "failed" : "skipped",
     recipients: result.recipients ?? [],
     messageId: result.messageId ?? null,
+    // Frozen at the wire; the follow-up's X can come from nowhere else.
+    totals: result.totals ?? null,
     error:
       result.error ??
       result.skipped ??
