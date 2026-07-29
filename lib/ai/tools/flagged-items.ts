@@ -10,7 +10,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { addDays } from "../../engine/dates";
-import { VARIANCE_LABELS, labelFor } from "../../ui/variance-labels";
+import { TIER, VARIANCE_LABELS, labelFor } from "../../ui/variance-labels";
 import { describeFlag, describeOrder, type ToolStatus } from "../grounding";
 import type { ToolContext } from "./context";
 
@@ -214,13 +214,16 @@ export async function countFlaggedItems(
   const matching =
     severity === "all" ? rows : rows.filter((r) => tierOfRow(r) === TIER_OF_SEVERITY[severity]);
 
-  const bySeverity = { stockAtRisk: 0, recordsToFix: 0, noActionNeeded: 0 };
-  for (const r of rows) {
-    const t = tierOfRow(r);
-    if (t === 1) bySeverity.stockAtRisk++;
-    else if (t === 2) bySeverity.recordsToFix++;
-    else bySeverity.noActionNeeded++;
-  }
+  // Keyed by the owner-facing heading, not a camelCase field name. A model
+  // reading `noActionNeeded` will quote it back verbatim — observed on live
+  // data — and internal jargon in the answer defeats the whole point of
+  // translating the payload in the first place.
+  const bySeverity: Record<string, number> = {
+    [TIER[1].heading]: 0,
+    [TIER[2].heading]: 0,
+    [TIER[3].heading]: 0,
+  };
+  for (const r of rows) bySeverity[TIER[tierOfRow(r)].heading]++;
 
   const groupBy = args.groupBy ?? "none";
   let breakdown: { key: string; count: number }[] | undefined;

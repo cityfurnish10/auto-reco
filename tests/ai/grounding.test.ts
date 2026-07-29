@@ -154,3 +154,19 @@ describe("banned vocabulary", () => {
     }
   });
 });
+
+describe("tool payloads carry no internal field names", () => {
+  // A model quotes whatever key it is handed. Observed live: the severity split
+  // was keyed `noActionNeeded` and the answer read "All of them are marked as
+  // noActionNeeded" — not a banned word, but exactly the jargon that translating
+  // the payload was meant to remove.
+  it("keys the severity split by its owner-facing heading", async () => {
+    const { TIER } = await import("../../lib/ui/variance-labels");
+    for (const t of [1, 2, 3] as const) {
+      expect(TIER[t].heading).toMatch(/^[A-Z]/);
+      expect(TIER[t].heading).toContain(" "); // a phrase, not an identifier
+      expect(TIER[t].heading).not.toMatch(/[a-z][A-Z]/); // no camelCase
+      expect(TIER[t].heading).not.toMatch(/_/);
+    }
+  });
+});
