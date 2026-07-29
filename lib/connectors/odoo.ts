@@ -56,6 +56,10 @@ SELECT
     sml.create_date                                 AS record_created,
     sml.reference                                   AS ticket_id,
     so.name                                         AS so_number,
+    -- The "Reference#" column in the Odoo UI, which is NOT sml.reference
+    -- (that is the picking ref, BAN/OUT/58612). Order transfers carry
+    -- 'OT-<date>-<n>' here; see the filter below.
+    so.reference_no                                 AS reference_no,
     sl.name                                         AS barcode,
     pt.name ->> 'en_US'                             AS product,
     rp.name                                         AS customer,
@@ -88,6 +92,15 @@ function toDirection(movementType: unknown): Direction | null {
   return null;
 }
 
+/**
+ * An Odoo order transfer — a unit reassigned between orders inside Odoo, with
+ * no physical movement. The UI shows this as "Reference#"; the column is
+ * sale_order.reference_no, not sml.reference.
+ */
+export function isOrderTransfer(referenceNo: unknown): boolean {
+  return /^OT-/i.test(String(referenceNo ?? "").trim());
+}
+
 // Trim so identifiers/text match across sources (Sheets/Guard already trim).
 function str(v: unknown): string | undefined {
   if (v == null) return undefined;
@@ -115,11 +128,34 @@ export const odooConnector: Connector = {
     const table = await runNativeSql(dbId, buildQuery(startUtc, endUtcExclusive));
 
     const rows: CityTaggedRow[] = [];
+    let orderTransfers = 0;
     for (const r of table.rows) {
       const city = normalizeOdooWarehouse(r.warehouse_code);
       const barcode = str(r.barcode);
       const direction = toDirection(r.direction);
       if (!city || !barcode || !direction) continue; // unknown warehouse/barcode/direction — skip
+
+      // ORDER TRANSFERS — Odoo-only, never a stock gap.
+      //
+      // An order transfer moves a unit between orders inside Odoo. It is a
+      // paperwork event: no truck leaves, so the gate register, the ops sheet
+      // and the Delivery Tracker correctly have nothing. Reconciled normally it
+      // becomes an "Odoo-only" chase item and sends someone hunting a unit that
+      // never moved.
+      //
+      // Identified by sale_order.reference_no starting 'OT-' — the UI's
+      // "Reference#", a different field from sml.reference. Verified against
+      // SO ON-RET-BAN-85606 (reference_no OT-20260726-695913, barcode
+      // FUMYWS25020034), which surfaced as a tier-1 System-Only Entry on
+      // 2026-07-26. Measured: 152 of 16,300 done In/Out lines over 30 days.
+      //
+      // Dropped here rather than in SQL so the count is observable, and dropped
+      // at the connector rather than suppressed in the engine because there is
+      // nothing to reconcile — the row should never have been a movement.
+      if (isOrderTransfer(r.reference_no)) {
+        orderTransfers++;
+        continue;
+      }
 
       rows.push({
         source: "ODOO",
@@ -156,6 +192,14 @@ export const odooConnector: Connector = {
         // NEW_RENTAL vocabulary yet — passed through verbatim until confirmed.
         jobType: str(r.job_type),
       });
+    }
+    if (orderTransfers > 0) {
+      // Visible in the run log rather than silently dropped: if this number
+      // ever jumps, someone has started using order transfers for something
+      // that IS a physical movement, and the engine would stop seeing it.
+      console.info(
+        `[odoo] skipped ${orderTransfers} order-transfer line(s) for ${runDate} (Reference# starts OT-) — reassignments inside Odoo, no physical movement.`
+      );
     }
     return rows;
   },

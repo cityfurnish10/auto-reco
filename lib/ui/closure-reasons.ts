@@ -17,6 +17,7 @@ export type ClosureReason =
   | "Late entry by team"
   | "Backdated issue resolved by the team"
   | "Wrong Entry Made by team"
+  | "Order Transfer"
   | "Pending List"
   | "Other";
 
@@ -29,6 +30,7 @@ export const REASONS: ClosureReason[] = [
   "Late entry by team",
   "Backdated issue resolved by the team",
   "Wrong Entry Made by team",
+  "Order Transfer",
   "Data Entry Error",
   "Validation Error",
   "Transit Delay",
@@ -48,4 +50,6 @@ export const REASON_HINT: Partial<Record<ClosureReason, string>> = {
   "Backdated issue resolved by the team":
     "Logged afterwards against an earlier date — the stock itself was never missing.",
   "Wrong Entry Made by team": "Someone logged this against the wrong unit, ticket or direction.",
+  "Order Transfer":
+    "Moved between orders inside Odoo — no truck, so the floor correctly has no record. New order transfers are filtered out automatically; this is for ones already raised.",
 };
