@@ -106,6 +106,7 @@ type Row = {
   bucket: string | null;
   status: string;
   responsible: string | null;
+  note?: string | null;
   barcode?: string;
   so_number?: string | null;
   ticket_id?: string | null;
@@ -150,6 +151,7 @@ const tierOfRow = (r: Row) =>
     direction: (r.direction as "IN" | "OUT" | "CROSS" | null) ?? null,
     jobType: r.job_type,
     bucket: (r.bucket as "REAL" | "INFO" | null) ?? null,
+    note: r.note ?? null,
   }).tier;
 
 function guardCity(args: Args, ctx: ToolContext): string | null {
@@ -200,7 +202,7 @@ export async function countFlaggedItems(
   for (let from = 0; from < supersetTotal; from += 1000) {
     const page = await applyFilters(
       sb,
-      "city, business_date, variance_name, direction, job_type, bucket, status, responsible",
+      "city, business_date, variance_name, direction, job_type, bucket, status, responsible, note",
       args,
       win
     )
@@ -275,7 +277,7 @@ export async function listFlaggedItems(
   const res = await applyFilters(
     sb,
     "business_date, city, barcode, direction, variance_name, bucket, job_type, status," +
-      " responsible, so_number, ticket_id, product, first_seen_at",
+      " responsible, note, so_number, ticket_id, product, first_seen_at",
     args,
     win
   )

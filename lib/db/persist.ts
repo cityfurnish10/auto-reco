@@ -6,6 +6,7 @@ import type { City } from "../sample-data";
 import type { CityRunResult, ReportedSources, SourceRow } from "../engine/types";
 import type { MultiCityRun } from "../engine/run";
 import { varianceSource } from "../engine/variance-source";
+import { RESOLVED_LATE_NOTE } from "../engine/resolution";
 import { canonicalize } from "../engine/barcode";
 import { addDays } from "../engine/dates";
 import type { ConnectorResult } from "../connectors/types";
@@ -280,7 +281,7 @@ export async function resolveStaleOpenVariances(
           dampened: true,
           run_id: runId,
           last_seen_at: now,
-          note: "Entry was made late — this gap had cleared on the next-day re-check. No action needed.",
+          note: RESOLVED_LATE_NOTE,
         })
         .in("id", resolvedIds);
       if (updErr) throw new Error(`resolveStaleOpenVariances update failed: ${updErr.message}`);

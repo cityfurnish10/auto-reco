@@ -131,11 +131,13 @@ export function describeFlag(row: {
   bucket?: string | null;
   status?: string | null;
   responsible?: string | null;
+  note?: string | null;
 }): FlaggedItem {
   const label = labelFor(row.variance_name, {
     direction: (row.direction as "IN" | "OUT" | "CROSS" | null) ?? null,
     jobType: row.job_type ?? null,
     bucket: (row.bucket as "REAL" | "INFO" | null) ?? null,
+    note: row.note ?? null,
   });
   return {
     problem: label.display,

@@ -25,6 +25,7 @@
 import { VARIANCE, type VarianceName } from "../engine/variance-names";
 import { VARIANCE_META } from "../engine/buckets";
 import { isNewRental, isRepairEquivalent } from "../engine/util";
+import { isResolvedLate } from "../engine/resolution";
 import { RESPONSIBLE_LABEL } from "./variance-format";
 
 export type Tier = 1 | 2 | 3;
@@ -66,6 +67,11 @@ export interface LabelContext {
    * downgrade a row after classifying it, and the name alone does not say so.
    */
   bucket?: "REAL" | "INFO" | null;
+  /**
+   * The row's stored note. Supply it wherever available: for the five natural
+   * INFO names a cleared gap leaves no trace in any other column.
+   */
+  note?: string | null;
 }
 
 interface LabelRule {
@@ -353,7 +359,7 @@ export const VARIANCE_LABELS: Record<VarianceName, LabelRule> = {
  * A row the engine downgraded after classifying it.
  *
  * resolveStaleOpenVariances (lib/db/persist.ts) rewrites a stale open row to
- * bucket INFO on the next-day re-check when the gap has cleared — a late entry
+ * bucket INFO on the re-check pass when the gap has cleared — a late entry
  * folded in. The NAME does not change, so the label map alone would keep
  * calling it "Direction Conflict" and put a resolved item at the top of the
  * owner's chase list. Measured on 2026-07-26: 3 of 79 tier-1 items were
@@ -373,9 +379,25 @@ export function labelFor(name: string, ctx: LabelContext = {}): VarianceLabel {
   const label = rule.refine?.(ctx) ?? rule.base;
 
   // "Chase this today" and the engine's own "not a loss" cannot both be true.
-  // Where they disagree, the engine wins: it has seen a later run's evidence
-  // that the label map, which reads only the name, cannot.
-  if (ctx.bucket === "INFO" && label.tier === 1) return CLEARED_ON_RECHECK;
+  // Where they disagree the engine wins: it has seen a later run's evidence
+  // that the label map, reading only the name, cannot.
+  //
+  // Two signals, because one alone is wrong in opposite directions:
+  //
+  //   * A DOWNGRADE — the name's natural bucket is REAL but the row is stored
+  //     INFO, so something reclassified it. Testing `bucket === "INFO"` alone
+  //     would relabel every naturally-INFO row as cleared, which empties the
+  //     entire amber tier: five of the six tier-2 names are natural INFO.
+  //
+  //   * The RESOLVED-LATE NOTE — the only trace left on those five, whose
+  //     bucket does not change when the gap clears.
+  //
+  // Tier 3 is excluded from both: it is already "no action".
+  if (label.tier <= 2) {
+    const naturallyReal = VARIANCE_META[name]?.bucket === "REAL";
+    if (isResolvedLate(ctx.note)) return CLEARED_ON_RECHECK;
+    if (naturallyReal && ctx.bucket === "INFO") return CLEARED_ON_RECHECK;
+  }
 
   return label;
 }

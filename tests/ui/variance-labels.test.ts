@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { VARIANCE } from "../../lib/engine/variance-names";
+import { RESOLVED_LATE_NOTE, isResolvedLate } from "../../lib/engine/resolution";
 import { VARIANCE_META } from "../../lib/engine/buckets";
 import {
   ACTIONABLE_NAMES,
@@ -202,5 +203,63 @@ describe("variance labels — the engine's downgrade wins", () => {
     const regGap = labelFor(VARIANCE.OPS_ODOO_NO_GATE, { bucket: "INFO" });
     expect(regGap.display).toBe("Register Gap");
     expect(regGap.tier).toBe(2);
+  });
+});
+
+describe("a cleared gap is recognised by two different signals", () => {
+  // The engine resolves a row by no longer emitting it; resolveStaleOpenVariances
+  // then rewrites it in place. HOW that is visible depends on the name:
+  //
+  //   natural REAL  -> the stored bucket flips to INFO
+  //   natural INFO  -> the bucket cannot change, so only the note says so
+  //
+  // Testing the bucket alone relabels every naturally-INFO row as cleared,
+  // which empties the whole amber tier. Five of the six tier-2 names are
+  // natural INFO, so that is not a corner case, it is the majority.
+  const REAL_TIER2 = VARIANCE.PICKUP_ODOO_OPEN;   // "Odoo Entry Missing"
+  const INFO_TIER2 = VARIANCE.OPS_ODOO_NO_GATE;   // "Register Gap"
+
+  it("clears a REAL-named tier-2 row when the bucket was downgraded", () => {
+    expect(labelFor(REAL_TIER2, { direction: "OUT" }).tier).toBe(2);
+    const cleared = labelFor(REAL_TIER2, { direction: "OUT", bucket: "INFO" });
+    expect(cleared.display).toBe("Cleared on Re-check");
+    expect(cleared.tier).toBe(3);
+  });
+
+  it("does NOT clear a naturally-INFO row just because it is INFO", () => {
+    // The regression this whole design turns on.
+    const asFound = labelFor(INFO_TIER2, { direction: "OUT", bucket: "INFO" });
+    expect(asFound.display).toBe("Register Gap");
+    expect(asFound.tier).toBe(2);
+  });
+
+  it("clears a naturally-INFO row when the engine left its resolved-late note", () => {
+    const cleared = labelFor(INFO_TIER2, {
+      direction: "OUT",
+      bucket: "INFO",
+      note: RESOLVED_LATE_NOTE,
+    });
+    expect(cleared.display).toBe("Cleared on Re-check");
+    expect(cleared.tier).toBe(3);
+  });
+
+  it("ignores any other note, including a near-miss", () => {
+    for (const note of [null, undefined, "", "Entry was made late", "no action needed"]) {
+      expect(labelFor(INFO_TIER2, { direction: "OUT", bucket: "INFO", note }).tier, String(note)).toBe(2);
+    }
+  });
+
+  it("never promotes a tier-3 row — it is already 'no action'", () => {
+    const t3 = labelFor(VARIANCE.DUPLICATE, { bucket: "INFO", note: RESOLVED_LATE_NOTE });
+    expect(t3.tier).toBe(3);
+    expect(t3.display).toBe("Barcode Read Error");
+  });
+
+  it("keeps the note constant in one place, so writer and reader cannot drift", () => {
+    // persist.ts writes it, variance-labels reads it. Two copies of this string
+    // would silently stop matching the first time someone reworded the note.
+    expect(RESOLVED_LATE_NOTE).toContain("cleared");
+    expect(isResolvedLate(RESOLVED_LATE_NOTE)).toBe(true);
+    expect(isResolvedLate("something else")).toBe(false);
   });
 });

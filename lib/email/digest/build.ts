@@ -32,6 +32,9 @@ interface VarianceRow {
   bucket: string | null;
   // Identity, for the follow-up snapshot only. Never rendered.
   barcode: string;
+  // The resolved-late marker. Five of the six tier-2 names are natural INFO, so
+  // for them this is the ONLY column that changes when a gap clears.
+  note: string | null;
 }
 
 type CityStatRow = {
@@ -52,6 +55,7 @@ const labelOfRow = (r: VarianceRow) =>
     direction: (r.direction as "IN" | "OUT" | "CROSS" | null) ?? null,
     jobType: r.job_type,
     bucket: (r.bucket as "REAL" | "INFO" | null) ?? null,
+    note: r.note,
   });
 
 const tierOfRow = (r: VarianceRow): Tier => labelOfRow(r).tier;
@@ -84,7 +88,7 @@ async function readVariances(
   for (let from = 0; ; from += 1000) {
     let q = db
       .from("variances")
-      .select("city,status,variance_name,direction,job_type,bucket,barcode")
+      .select("city,status,variance_name,direction,job_type,bucket,barcode,note")
       .eq("business_date", businessDate);
     if (runId) q = q.eq("run_id", runId);
     // Deterministic order — unordered .range() pages can repeat or skip rows.
@@ -131,7 +135,7 @@ async function buildWatchList(
   for (let from = 0; ; from += 1000) {
     const { data, error } = await db
       .from("variances")
-      .select("city,status,variance_name,direction,job_type,bucket,barcode,business_date")
+      .select("city,status,variance_name,direction,job_type,bucket,barcode,note,business_date")
       .in("run_id", runIds)
       .order("id", { ascending: true })
       .range(from, from + 999);
