@@ -30,6 +30,13 @@ export interface SourceEvidence {
   bySource: Record<EvidenceSource, SourceRowDB[]>;
   /** Rows that source ingested for the whole run — 0 ⇒ it never reported. */
   coverage: Record<EvidenceSource, number>;
+  /**
+   * True when the API had to fall back to matching the RAW barcode because
+   * migration 0014 has not been applied. Evidence is then under-reported for
+   * any source that spelled the barcode differently, so the UI must say so
+   * rather than presenting an absence as fact.
+   */
+  canonicalDegraded: boolean;
   loading: boolean;
   error: string | null;
 }
@@ -56,6 +63,7 @@ export function useSourceRows(opts: {
   const { runId, barcode, city, enabled } = opts;
   const [bySource, setBySource] = useState(emptyBySource);
   const [coverage, setCoverage] = useState(zeroCoverage);
+  const [canonicalDegraded, setCanonicalDegraded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const seq = useRef(0); // a newer request supersedes this one
@@ -65,6 +73,7 @@ export function useSourceRows(opts: {
     if (!enabled || !runId || !barcode || !city) {
       setBySource(emptyBySource());
       setCoverage(zeroCoverage());
+      setCanonicalDegraded(false);
       setLoading(false);
       setError(null);
       return;
@@ -100,6 +109,9 @@ export function useSourceRows(opts: {
         });
         setBySource(grouped);
         setCoverage(cov);
+        setCanonicalDegraded(
+          (rowsRes as { degraded?: string }).degraded === "barcode_canonical"
+        );
       })
       .catch((e: unknown) => {
         if (seq.current !== mine) return;
@@ -107,6 +119,7 @@ export function useSourceRows(opts: {
         setError(e instanceof Error ? e.message : String(e));
         setBySource(emptyBySource());
         setCoverage(zeroCoverage());
+        setCanonicalDegraded(false);
       })
       .finally(() => {
         if (seq.current === mine) setLoading(false);
@@ -116,5 +129,5 @@ export function useSourceRows(opts: {
   }, [runId, barcode, city, enabled]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  return { bySource, coverage, loading, error };
+  return { bySource, coverage, canonicalDegraded, loading, error };
 }

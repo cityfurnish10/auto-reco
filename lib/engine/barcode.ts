@@ -3,7 +3,15 @@
 const PLACEHOLDERS = new Set(["n/a", "na", "-", "--", ""]);
 
 // OCR/handwriting confusions to fold — do NOT widen this table (Section 5).
-const FOLD: Record<string, string> = {
+//
+// Exported so a test can pin its shape. Migration 0014 reproduces this table in
+// SQL (canonicalize_barcode) to give source_rows a canonical column, and the two
+// must agree exactly: variances.barcode is canonicalized at WRITE time, so
+// widening the fold would leave historical rows on the old canonical while new
+// source rows use the new one, and the join between them would break silently
+// for past dates. Repairing that is not a simple UPDATE either — two old
+// canonicals collapsing into one violates the variances unique key.
+export const FOLD: Record<string, string> = {
   I: "1",
   O: "0",
   S: "5",

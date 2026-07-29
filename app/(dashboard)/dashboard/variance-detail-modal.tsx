@@ -107,7 +107,7 @@ export default function VarianceDetailModal({
   const [confirming, setConfirming] = useState<"close" | "reject" | "submit" | null>(null);
   const toast = useToast();
 
-  const { bySource, coverage, loading: evidenceLoading } = useSourceRows({
+  const { bySource, coverage, canonicalDegraded, loading: evidenceLoading } = useSourceRows({
     runId: v?.run_id ?? null,
     barcode: v?.barcode ?? null,
     city: v?.city ?? null,
@@ -123,6 +123,25 @@ export default function VarianceDetailModal({
   // run — that's the 7-day prune window, not four missing records.
   const nothingRetained =
     !evidenceLoading && EVIDENCE_SOURCES.every((s) => coverage[s] === 0 && bySource[s].length === 0);
+
+  // What the ENGINE recorded at reconcile time (migration 0013), as opposed to
+  // what a raw-row lookup can find now. When the engine says a source confirmed
+  // the unit but no raw row comes back, the row is missing for a mechanical
+  // reason — the 7-day prune, run_id skew, the OCR-orphan fold, or a barcode
+  // spelling the lookup cannot reach. It is never evidence that the source had
+  // no record, so it must not be badged as one.
+  const PRESENT_FIELD: Record<EvidenceSource, keyof typeof v> = {
+    PHYSICAL: "present_p",
+    SHEET: "present_s",
+    DT: "present_d",
+    ODOO: "present_o",
+  };
+  // All four false is the "written before 0013" sentinel — the row carries no
+  // per-source knowledge at all, so these flags say nothing and must be ignored
+  // rather than read as four denials.
+  const presenceKnown = EVIDENCE_SOURCES.some((s) => v[PRESENT_FIELD[s]] === true);
+  const confirmedAtReconcile = (s: EvidenceSource) =>
+    presenceKnown && v[PRESENT_FIELD[s]] === true;
 
   async function act(action: "approve" | "dispute", label: string) {
     setBusy(true);
@@ -281,6 +300,8 @@ export default function VarianceDetailModal({
                           <Skeleton className="h-4 w-16" />
                         ) : rows.length > 0 ? (
                           <span className="badge badge-done">{rows.length} record{rows.length > 1 ? "s" : ""}</span>
+                        ) : confirmedAtReconcile(s) ? (
+                          <span className="badge badge-info">Recorded &mdash; row not shown</span>
                         ) : ingested ? (
                           <span className="badge badge-medium">No record</span>
                         ) : (
@@ -300,9 +321,11 @@ export default function VarianceDetailModal({
                         </div>
                       ) : (
                         <p className="text-xs text-text-muted mt-2">
-                          {ingested
-                            ? "This system was working for the run but has no row for this barcode."
-                            : "This system did not report at all for this run — its silence is not evidence."}
+                          {confirmedAtReconcile(s)
+                            ? "This system confirmed the unit when the day was reconciled. The underlying raw row is not in this run's stored feed."
+                            : ingested
+                              ? "This system was working for the run but has no row for this barcode."
+                              : "This system did not report at all for this run — its silence is not evidence."}
                         </p>
                       )}
                     </div>
@@ -313,6 +336,12 @@ export default function VarianceDetailModal({
                 Raw ingested records for this run. An absent record means nothing was ingested — it
                 is not proof the unit did not move.
               </p>
+              {canonicalDegraded && (
+                <p className="text-[11px] text-status-warning mt-1">
+                  Matching on the raw barcode spelling — records where a system spelled the barcode
+                  differently are not shown. Apply migration 0014 to see them.
+                </p>
+              )}
             </>
           )}
         </section>
