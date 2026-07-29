@@ -8,98 +8,17 @@ import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { Icon } from "@/components/icon";
 
-type Help = { title: string; blurb: string; points: string[] };
+// Content lives in lib/help/portal-help.ts so the chat assistant can serve the
+// same answers — a "use client" module cannot be imported by a route handler,
+// and the assistant must describe the portal from this text rather than from
+// its own guess at how the portal works.
+import {
+  DASHBOARD_ADMIN,
+  DASHBOARD_MANAGER,
+  HELP_BY_ROUTE as HELP,
+  type HelpEntry as Help,
+} from "@/lib/help/portal-help";
 
-const HELP: Record<string, Help> = {
-  "/uploads": {
-    title: "Guard Register Upload",
-    blurb:
-      "Upload the day's handwritten IN/OUT gate register (PDF). It is OCR'd immediately and its rows become the PHYSICAL source for reconciliation.",
-    points: [
-      "Choose the city and drop the scanned register PDF — OCR runs within seconds and stores each barcode, ticket, SO number, and direction.",
-      "A clean scan matters: write barcodes and tickets one digit per box, and keep INWARD and OUTWARD on their labelled pages.",
-      "Each PDF is also mirrored to the city's Google Drive folder for record-keeping.",
-      "The nightly reconcile then matches these rows against the ops sheet, Delivery Tracker, and Odoo.",
-    ],
-  },
-  "/leaderboard": {
-    title: "City Leaderboard",
-    blurb:
-      "Ranks the five warehouses by reconciliation accuracy — how few REAL variances they have relative to total movements.",
-    points: [
-      "Accuracy = 1 − REAL variances / movements, measured as found in each run.",
-      "Switch between the latest run, last 7 days, last 30 days, and overall.",
-      "A higher rank means cleaner cross-source agreement — fewer gaps to chase.",
-    ],
-  },
-  "/users": {
-    title: "User Management",
-    blurb:
-      "Create and manage who can sign in — admins (all cities) and city managers (a single warehouse).",
-    points: [
-      "Add a user with a role, a city for managers, and a temporary password.",
-      "A manager only ever sees and acts on their own city's data (enforced by row-level security).",
-      "Deactivate a user to revoke access without losing their history.",
-    ],
-  },
-  "/system-health": {
-    title: "System Health",
-    blurb:
-      "The operational timeline — when registers were uploaded, when each reconcile ran, and when digests were emailed.",
-    points: [
-      "Confirms the nightly pipeline fired end to end: OCR → reconcile → email.",
-      "Shows connector status per run (guard, sheet, Delivery Tracker, Odoo) and any warnings.",
-      "Use it to spot a missed upload, a failed source pull, or a digest that didn't send.",
-    ],
-  },
-  "/analytics": {
-    title: "Analytics",
-    blurb:
-      "Trends over time — daily accuracy and variance volumes per city, drawn from every stored run.",
-    points: [
-      "Bar and line charts of accuracy across the last 7 and 30 days.",
-      "Compare cities and spot which warehouses are improving or slipping.",
-      "Complements the leaderboard's point-in-time ranking with the longer trend.",
-    ],
-  },
-  "/email-digest": {
-    title: "Email Digest",
-    blurb:
-      "Compose, preview, and send the daily reconciliation digest — the same report that goes out automatically each morning.",
-    points: [
-      "Pick recipients (To / Cc / Bcc) from your team and add an optional note that appears in the email — the list is saved and also drives the daily 9 AM digest.",
-      "Send Now, or Schedule it to go out 1–3 days later — optionally only once all REAL variances are closed.",
-      "Follow-up send: pick a past day, see how many of its losses are closed vs still open, add a note, and re-send that day's report — rebuilt from the latest data — to the same recipients.",
-      "Sent emails keeps a 30-day archive — pick a date and click any email to view exactly what was delivered.",
-      "The preview is the exact email that will be delivered.",
-    ],
-  },
-};
-
-const DASHBOARD_ADMIN: Help = {
-  title: "Reconciliation Dashboard",
-  blurb:
-    "Every barcode from the latest run, compared across all four sources — the guard register, ops sheet, Delivery Tracker, and Odoo.",
-  points: [
-    "The counts show only losses (REAL) — genuine cross-source gaps to chase. Posting-lag / hygiene entries (INFO) are kept in the DB for audit but hidden from the counts; switch the bucket filter to INFO to view them.",
-    "Cities show an OFF badge on their weekly holiday (Thursday for Mumbai, Hyderabad and Pune) — a missing register / ops sheet / DT that day is expected, not a gap.",
-    "Filter by city tab, bucket, source, priority, status, or date; search any barcode / ticket / SO number.",
-    "Approve or Reject the variances city managers submit — the bell shows how many are awaiting you.",
-    "Export the current view to CSV.",
-  ],
-};
-
-const DASHBOARD_MANAGER: Help = {
-  title: "Your Warehouse Dashboard",
-  blurb:
-    "Reconciliation variances for your city from the latest run — where the guard register, ops sheet, Delivery Tracker, and Odoo disagree about a barcode.",
-  points: [
-    "The counts show only losses to investigate. Posting-lag / hygiene entries are kept for audit but hidden from the counts; switch the bucket filter to INFO to view them.",
-    "Resolved one? Submit it for Approval with a reason; an admin reviews and closes it.",
-    "A rejected item returns as Open with the admin's note — fix it and resubmit.",
-    "Filter, search, and export your city's variances to CSV.",
-  ],
-};
 
 const FALLBACK: Help = {
   title: "Reconciliation Portal",
