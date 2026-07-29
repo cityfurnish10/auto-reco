@@ -34,6 +34,8 @@ import type {
   BarcodeView,
   CityRunResult,
   Direction,
+  MovementEvent,
+  Priority,
   ReportedSources,
   SourceRow,
   VarianceRowOut,
@@ -526,6 +528,92 @@ export function runReconciliation(
     by_variance[v.variance_name] = (by_variance[v.variance_name] ?? 0) + 1;
   }
 
+  // Section 15 — the movement ledger (migration 0015).
+  //
+  // `variances` records only problems, so a unit that moved cleanly leaves no
+  // trace anywhere except the `movements` integer just above. This emits one
+  // row per view regardless of outcome, which is what makes a barcode's history
+  // answerable beyond the 7-day source_rows window.
+  //
+  // Placed HERE, at the end of the run, for three reasons that each rule out an
+  // earlier site:
+  //   * presenceOf(v) must be read after mergeGuardPresence has mutated P
+  //     during the OCR-orphan fold — earlier, and a merged unit reports "no
+  //     gate record", the exact false negative the merge exists to remove;
+  //   * `stamped` is only final after the bulk-SO rewrite and the
+  //     direction-conflict push, so an earlier build would record variance
+  //     names that no longer exist (ODOO_ONLY_TODAY rather than ODOO_ONLY);
+  //   * isMovement is defined immediately above and must not be duplicated —
+  //     it is the leaderboard's accuracy denominator.
+  const hitsByKey = new Map<string, VarianceRowOut[]>();
+  for (const v of stamped) {
+    // A CROSS row asserts one unit both arrived AND left today, so it belongs
+    // to both legs; the evidence for the claim is the union of the two.
+    const dirs: Direction[] = v.direction === "CROSS" ? ["IN", "OUT"] : [v.direction];
+    for (const d of dirs) {
+      const k = `${d}::${v.barcode}`;
+      hitsByKey.set(k, [...(hitsByKey.get(k) ?? []), v]);
+    }
+  }
+
+  const PRIORITY_ORDER: Priority[] = ["High", "Medium", "Info"];
+  const worstPriority = (hits: VarianceRowOut[]): Priority | null => {
+    for (const p of PRIORITY_ORDER) if (hits.some((h) => h.priority === p)) return p;
+    return null;
+  };
+
+  const movement_events: MovementEvent[] = [];
+  const collectEvents = (views: Map<string, BarcodeView>, direction: Direction) => {
+    for (const v of views.values()) {
+      const k = `${direction}::${v.canonical}`;
+      const hits = hitsByKey.get(k) ?? [];
+      // A hit wins over suppression: the failed-delivery pass adds an OUT key to
+      // `suppressed` AND pushes a variance, so testing suppression first would
+      // mislabel a real finding as silence.
+      const outcome: MovementEvent["outcome"] =
+        hits.length > 0
+          ? hits.some((h) => h.bucket === "REAL")
+            ? "REAL"
+            : "INFO"
+          : silentOcr.has(k) || suppressed.has(k)
+            ? "SUPPRESSED"
+            : "CLEAN";
+      movement_events.push({
+        barcode: v.canonical,
+        city,
+        direction,
+        // The city's DERIVED run date, which is what upsertVariances writes as
+        // business_date. If these ever diverge the ledger and the variances key
+        // on different dates and stop joining.
+        date: v.date || runDate,
+        present: presenceOf(v),
+        reported,
+        odooSameDay: v.odooSameDay,
+        odooNextDay: v.odooNextDay,
+        odooCreatedToday: v.odooCreatedToday,
+        isMovement: isMovement(v),
+        jobType: v.jobType,
+        soNumber: v.soNumber,
+        ticketId: v.ticketId,
+        customer: v.customer,
+        product: v.product,
+        outcome,
+        varianceNames: hits.map((h) => h.variance_name),
+        worstPriority: worstPriority(hits),
+        suppressedReason:
+          outcome !== "SUPPRESSED"
+            ? null
+            : silentOcr.has(k)
+              ? "silent_ocr"
+              : dtAllPending.has(k)
+                ? "dt_all_pending"
+                : "other",
+      });
+    }
+  };
+  collectEvents(inViews, "IN");
+  collectEvents(outViews, "OUT");
+
   return {
     city,
     date: runDate,
@@ -534,6 +622,7 @@ export function runReconciliation(
     info_variances,
     count_in,
     count_out,
+    movement_events,
     summary: {
       total: variances.length,
       real_count: real_variances.length,

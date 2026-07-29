@@ -155,6 +155,42 @@ export interface CountLayer {
   phys_sheet_diff: number;
 }
 
+/**
+ * One movement of one unit, whatever the outcome — the row `variances` cannot
+ * carry because it only records problems.
+ *
+ * `present` MUST be read at emit time, not while views are being built:
+ * mergeGuardPresence mutates target.P during the OCR-orphan fold, so an early
+ * snapshot reports "no gate record" for exactly the units the merge repaired.
+ */
+export interface MovementEvent {
+  barcode: string; // canonical
+  city: City;
+  direction: Direction;
+  date: string;
+  present: SourceFlags;
+  reported: SourceFlags;
+  odooSameDay: boolean;
+  odooNextDay: boolean;
+  odooCreatedToday: boolean;
+  /** run.ts's isMovement: P || S || D || odooSameDay. */
+  isMovement: boolean;
+  jobType: string | null;
+  soNumber: string | null;
+  ticketId: string | null;
+  customer: string | null;
+  product: string | null;
+  outcome: "CLEAN" | "INFO" | "REAL" | "SUPPRESSED";
+  varianceNames: string[];
+  worstPriority: Priority | null;
+  suppressedReason:
+    | "dt_all_pending"
+    | "silent_ocr"
+    | "failed_delivery_return"
+    | "other"
+    | null;
+}
+
 export interface CityRunResult {
   city: City;
   date: string;
@@ -163,6 +199,12 @@ export interface CityRunResult {
   info_variances: VarianceRowOut[];
   count_in: CountLayer;
   count_out: CountLayer;
+  /**
+   * Every movement this run saw, clean or not (migration 0015). REQUIRED, not
+   * optional: the compiler is what guarantees a new construction site cannot
+   * quietly omit it, the same way VarianceRowOut.present is required.
+   */
+  movement_events: MovementEvent[];
   summary: {
     total: number;
     real_count: number;

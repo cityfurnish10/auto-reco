@@ -19,6 +19,7 @@ import {
   saveSourceRows,
   loadRecentFloorBarcodes,
   upsertVariances,
+  upsertMovementEvents,
   resolveStaleOpenVariances,
   saveCityStats,
   saveIngestionLogs,
@@ -35,6 +36,7 @@ export interface ReconcileResult {
   sources?: { source: string; ok: boolean; rows: number; message?: string }[];
   sourceRowsStored?: number;
   variancesUpserted?: number;
+  movementsLedgered?: number;
   stale?: { superseded: number; resolvedLate: number };
   combined?: MultiCityRun["combined"];
   guardOcr?: unknown;
@@ -88,6 +90,18 @@ export async function runReconcilePipeline(
     // 4. Upsert variances (dedup key; human closures/approvals preserved).
     const variancesUpserted = await upsertVariances(db, runId, run.perCity);
 
+    // 4a. The movement ledger (migration 0015) — every movement this run saw,
+    // clean or not. Best-effort in two layers: upsertMovementEvents already
+    // swallows an unapplied migration, and this catch covers anything else. It
+    // must never take the run down, but it must also run EVERY night — a day
+    // missed here can never be reconstructed once source_rows is pruned.
+    const movementsLedgered = await upsertMovementEvents(db, runId, run.perCity).catch(
+      (e) => {
+        console.warn("upsertMovementEvents failed:", e instanceof Error ? e.message : e);
+        return 0;
+      }
+    );
+
     // 4a. Next-day re-check: on a re-run, resolve/downgrade open rows whose gap
     //     has since cleared (a late entry folded in). Best-effort — a failure
     //     here must not fail an otherwise-good run.
@@ -125,6 +139,7 @@ export async function runReconcilePipeline(
       })),
       sourceRowsStored,
       variancesUpserted,
+      movementsLedgered,
       stale,
       combined: run.combined,
       guardOcr,

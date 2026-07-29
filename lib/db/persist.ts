@@ -462,3 +462,93 @@ export async function prune(db: DB): Promise<void> {
   const { error } = await db.rpc("prune_expired");
   if (error) throw new Error(`prune failed: ${error.message}`);
 }
+
+// ---------------------------------------------------------------------------
+// The movement ledger (migration 0015).
+//
+// One row per canonical barcode per direction per business date, CLEAN or not.
+// `variances` records only problems, so without this a unit that moved cleanly
+// leaves no trace once source_rows is pruned at 7 days — and 2,733 of 4,899
+// barcodes measured on live data have a problem on exactly one day, so their
+// history is otherwise a single dot.
+//
+// Upserts on the natural key like variances, NOT a plain insert like
+// source_rows, which keeps every re-check pass (4,106 stored rows for a date
+// whose run pulled 896).
+export async function upsertMovementEvents(
+  db: SupabaseClient,
+  runId: string,
+  perCity: CityRunResult[],
+  opts: { backfilled?: boolean } = {}
+): Promise<number> {
+  const payload = perCity.flatMap((c) =>
+    c.movement_events.map((e) => ({
+      run_id: runId,
+      business_date: e.date,
+      city: e.city,
+      direction: e.direction,
+      barcode: e.barcode,
+      present_p: e.present.P,
+      present_s: e.present.S,
+      present_d: e.present.D,
+      present_o: e.present.O,
+      reported_p: e.reported.P,
+      reported_s: e.reported.S,
+      reported_d: e.reported.D,
+      reported_o: e.reported.O,
+      odoo_same_day: e.odooSameDay,
+      odoo_next_day: e.odooNextDay,
+      odoo_created_today: e.odooCreatedToday,
+      is_movement: e.isMovement,
+      job_type: e.jobType,
+      so_number: e.soNumber,
+      ticket_id: e.ticketId,
+      customer: e.customer,
+      product: e.product,
+      outcome: e.outcome,
+      variance_names: e.varianceNames,
+      worst_priority: e.worstPriority,
+      suppressed_reason: e.suppressedReason,
+      backfilled: opts.backfilled ?? false,
+      // first_seen_at deliberately omitted so a re-run never resets it — same
+      // reason upsertVariances omits it.
+      last_seen_at: new Date().toISOString(),
+    }))
+  );
+  if (payload.length === 0) return 0;
+
+  const onConflict = "business_date,city,direction,barcode";
+  let written = 0;
+  // Chunked like saveSourceRows. ~1,100 events a night, so normally two calls.
+  for (let i = 0; i < payload.length; i += 1000) {
+    const chunk = payload.slice(i, i + 1000);
+    const { error } = await db.from("movement_events").upsert(chunk, { onConflict });
+    if (error) {
+      // A missing TABLE is not a missing COLUMN: PostgREST reports it as
+      // PGRST205 ("Could not find the table ... in the schema cache") and
+      // Postgres as 42P01 (undefined_table). The 0013 guard next to this one
+      // tests 42703/PGRST204 and would NOT catch either, so copying it verbatim
+      // would let an unapplied 0015 throw on the nightly critical path.
+      if (
+        error.code === "42P01" ||
+        error.code === "PGRST205" ||
+        /does not exist|could not find/i.test(error.message)
+      ) {
+        warnNo0015();
+        return 0;
+      }
+      throw new Error(`upsertMovementEvents failed: ${error.message}`);
+    }
+    written += chunk.length;
+  }
+  return written;
+}
+
+let warned0015 = false;
+function warnNo0015(): void {
+  if (warned0015) return;
+  warned0015 = true;
+  console.warn(
+    "[upsertMovementEvents] migration 0015 not applied — the movement ledger was not written. Clean movements for these dates cannot be recovered later; apply supabase/migrations/0015_movement_events.sql."
+  );
+}
