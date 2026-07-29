@@ -10,7 +10,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runReconcilePipeline } from "@/lib/reconcile/pipeline";
-import { reconcileTargetDate } from "@/lib/reconcile/cron-dates";
+import { reconcileTargetDate, recheckTargetDate } from "@/lib/reconcile/cron-dates";
 import { addDays } from "@/lib/engine/dates";
 
 export const runtime = "nodejs";
@@ -28,12 +28,23 @@ function authorized(req: NextRequest): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-// The nightly run closes YESTERDAY, not today — a day's books aren't complete
-// when the day ends (ops sheet filled through the evening, DT scans trickling
-// in, ~half of Odoo postings landing the next day), so reconciling at 22:00 on
-// the day itself judges half-written data. See lib/reconcile/cron-dates.ts for
-// the full cadence; the digest for this run goes out the following morning at
-// 09:00 IST via /api/cron/email-digest.
+// The run closes the business day that SHUT an hour ago, not today — a day's
+// books aren't complete while it is still open (ops sheet filled through the
+// evening, DT scans trickling in, ~half of Odoo postings landing next day).
+// See lib/reconcile/cron-dates.ts for the full cadence; the digest for this run
+// goes out 15 minutes later, at 16:45 IST, via /api/cron/email-digest.
+
+// Leave this much of the 60s ceiling unused before starting the re-check pass.
+//
+// Measured on live run rows: a single pass is p50 36s, p90 53s, and two passes
+// therefore do not reliably fit. Three of nine recent days show only ONE cron
+// run, and one row from 2026-07-20 is still stranded at status='running' — the
+// signature of a platform kill, which loses the response AND leaves that row
+// stranded forever (prune_expired only sweeps 'failed').
+//
+// This guard does not make the second pass fit. It converts an invisible kill
+// into a visible, honest skip.
+const RECHECK_BUDGET_MS = 40_000;
 
 async function handle(req: NextRequest) {
   if (!authorized(req)) {
@@ -54,23 +65,48 @@ async function handle(req: NextRequest) {
   const db = createAdminClient();
 
   // The whole pipeline lives in lib/reconcile/pipeline.ts (shared with the
-  // admin-triggered /api/reconcile route). The management digest is NOT sent
-  // here — it goes out next morning at 09:00 IST via /api/cron/email-digest.
+  // admin-triggered /api/reconcile route). The digest is NOT sent here — it
+  // goes out 15 minutes later via /api/cron/email-digest.
+  const startedAt = Date.now();
   const result = await runReconcilePipeline(db, { runDate, trigger });
 
-  // Second-pass re-check: on the scheduled nightly run (GET, no explicit
-  // ?date=), also re-reconcile the day BEFORE the primary target, so entries
-  // made even later — chiefly Odoo postings — fold in and stale REAL rows
-  // resolve (see resolveStaleOpenVariances). Best-effort: a failure here never
-  // fails the primary response, and the next night (or the manual "Run for
-  // date" button) retries. Skipped for explicit ?date= / POST so a targeted
+  // Second-pass re-check: on the scheduled run (GET, no explicit ?date=), also
+  // re-reconcile TWO days before the primary target, so entries made even later
+  // — chiefly Odoo postings — fold in and stale open rows resolve (see
+  // resolveStaleOpenVariances). Skipped for explicit ?date= / POST so a targeted
   // run stays single.
+  //
+  // WHY -2 AND NOT -1. The follow-up email for date D reports how much of D was
+  // closed, and it must send AFTER D has been re-run. D's digest goes out on
+  // D+1; the follow-up goes out on D+3. With this at -1, date D was re-run on
+  // D+2 and nothing touched it on D+3.
+  //
+  // A THIRD pass was the obvious alternative and does not fit: a pass is p50
+  // 36s against a 60s ceiling, and even two are already unreliable. Moving the
+  // one pass costs nothing, and a wider window folds in strictly MORE late
+  // postings than -1 did. What is given up is a day of freshness — a date's
+  // automatic cleanup now lands on D+3 rather than D+2.
+  //
+  // OCR is skipped on this pass: a register still pending three days later has
+  // failed repeatedly, and 10 uploads x 55s of Azure polling inside a 60s
+  // function is a tail risk with no upside. Skipping is fail-safe — the guard
+  // source is then simply absent, fullCoverage is false, and the resolved-late
+  // branch does not fire at all.
   let recheck: unknown;
   if (req.method === "GET" && !req.nextUrl.searchParams.get("date")) {
-    recheck = await runReconcilePipeline(db, {
-      runDate: addDays(runDate, -1),
-      trigger: "cron",
-    }).catch((e) => ({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+    const elapsed = Date.now() - startedAt;
+    if (elapsed > RECHECK_BUDGET_MS) {
+      recheck = { ok: false, skipped: "budget", elapsedMs: elapsed };
+    } else {
+      // recheckTargetDate(), not local arithmetic: the follow-up email looks
+      // for a re-run of exactly this date, so the two must be one expression.
+      // They were briefly two, and disagreed by a day.
+      recheck = await runReconcilePipeline(db, {
+        runDate: recheckTargetDate(),
+        trigger: "cron",
+        skipOcr: true,
+      }).catch((e) => ({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+    }
   }
 
   return NextResponse.json({ ...result, recheck }, { status: result.ok ? 200 : 500 });

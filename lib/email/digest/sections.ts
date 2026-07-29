@@ -55,7 +55,7 @@ function cityBreakdown(item: ActionItem): string {
 
 function openingLine(d: DigestData): string {
   const { tier1, tier2 } = d.totals;
-  // "closed at 3pm today" is load-bearing: the digest goes out at 16:15 IST,
+  // "closed at 3pm today" is load-bearing: the digest goes out at 16:45 IST,
   // an hour after the business day shut, so "today" is literally actionable —
   // and it pre-empts "why am I reading about yesterday".
   const head = `${fmtDate(d.date)} closed at 3pm today.`;

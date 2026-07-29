@@ -6,9 +6,12 @@
 // handwritten register, and that is where a locale surprise or an unnoticed
 // whitespace character would show up.
 //
-// Skipped unless a service key is present, so `npm test` stays offline and free.
-// Run it against live after applying 0014:
-//   npx vitest run tests/db/canonical-parity.test.ts
+// OPT-IN. It pages every retained source_rows row (68k+ and growing) over ~90
+// seconds, which is far too slow to sit in the default suite — left there it
+// simply trains people to skip tests. Run it deliberately, after applying 0014
+// or after any change to FOLD in lib/engine/barcode.ts:
+//
+//   PARITY_LIVE=1 npx vitest run tests/db/canonical-parity.test.ts
 
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
@@ -34,7 +37,7 @@ loadEnv();
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const live = !!(url && key);
+const live = !!(url && key) && process.env.PARITY_LIVE === "1";
 
 const db: SupabaseClient = live
   ? createClient(url!, key!, { auth: { autoRefreshToken: false, persistSession: false } })
@@ -64,8 +67,14 @@ const applied = await migrationApplied();
 
 describe.skipIf(!applied)("migration 0014 — SQL canonicalize matches the engine", () => {
 
-  async function allRows(): Promise<{ id: string; source: string; barcode: string; barcode_canonical: string }[]> {
-    const out: { id: string; source: string; barcode: string; barcode_canonical: string }[] = [];
+  type Row = { id: string; source: string; barcode: string; barcode_canonical: string };
+  // Paged once and shared. Each pass is ~68 sequential round trips; fetching
+  // twice took the file to 178s and blew its own timeout inside the full suite.
+  let cached: Row[] | null = null;
+
+  async function allRows(): Promise<Row[]> {
+    if (cached) return cached;
+    const out: Row[] = [];
     for (let from = 0; ; from += 1000) {
       const { data, error } = await db
         .from("source_rows")
@@ -74,9 +83,10 @@ describe.skipIf(!applied)("migration 0014 — SQL canonicalize matches the engin
         .order("id", { ascending: true })
         .range(from, from + 999);
       if (error) throw new Error(`${error.code ?? ""} ${error.message}`.trim());
-      out.push(...(data ?? []));
+      out.push(...((data ?? []) as Row[]));
       if (!data || data.length < 1000) break;
     }
+    cached = out;
     return out;
   }
 
@@ -102,7 +112,7 @@ describe.skipIf(!applied)("migration 0014 — SQL canonicalize matches the engin
       );
     }
     expect(bad).toHaveLength(0);
-  }, 120_000);
+  }, 240_000);
 
   it("actually folds a meaningful share — a no-op expression must not pass", async () => {
     // Measured 2026-07-29: 54% of sampled rows differ from their canonical
@@ -114,7 +124,7 @@ describe.skipIf(!applied)("migration 0014 — SQL canonicalize matches the engin
     const share = folded / rows.length;
     expect(share, `only ${folded}/${rows.length} rows folded`).toBeGreaterThan(0.3);
     expect(share).toBeLessThan(0.8);
-  }, 120_000);
+  }, 240_000);
 
   it("gives the same answer as the engine for the two live failure cases", async () => {
     const { data, error } = await db.rpc("canonicalize_barcode", { raw: "FUIOL223020032" });

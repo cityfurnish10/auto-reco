@@ -45,7 +45,19 @@ export interface ReconcileResult {
 
 export async function runReconcilePipeline(
   db: SupabaseClient,
-  opts: { runDate: string; trigger: "cron" | "manual"; triggeredBy?: string | null }
+  opts: {
+    runDate: string;
+    trigger: "cron" | "manual";
+    triggeredBy?: string | null;
+    /**
+     * Skip step 0 (guard-register OCR). Set by the re-check pass: a register
+     * still pending days later has failed repeatedly, and 10 uploads x the 55s
+     * Azure timeout inside a 60s function is a tail risk with no upside.
+     * Fail-safe — the guard source is then absent, so fullCoverage is false and
+     * the resolved-late branch does not fire.
+     */
+    skipOcr?: boolean;
+  }
 ): Promise<ReconcileResult> {
   const { runDate, trigger } = opts;
   const runId = await createRun(db, {
@@ -58,10 +70,12 @@ export async function runReconcilePipeline(
     // 0. OCR any guard registers uploaded for this date that haven't been
     //    processed yet, so the PHYSICAL connector below sees them. Best-effort —
     //    a stuck OCR must never block the reconcile.
-    const guardOcr = await processPendingGuardUploads(db, {
-      businessDate: runDate,
-      limit: 10,
-    }).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+    const guardOcr = opts.skipOcr
+      ? { skipped: "re-check pass" }
+      : await processPendingGuardUploads(db, {
+          businessDate: runDate,
+          limit: 10,
+        }).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
 
     // 1. Pull all 4 sources (tolerant of individual failures).
     const { rowsByCity, results, presentSources, reportedByCity } = await pullAll(runDate);

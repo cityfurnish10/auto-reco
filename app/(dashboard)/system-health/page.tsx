@@ -205,11 +205,11 @@ export default function SystemHealthPage() {
           </li>
           <li className="flex items-center gap-3">
             <Icon name="schedule" size={18} className="text-accent" />
-            <span className="text-text-secondary">Reconciliation run — OCR + 4 sources + engine — <b className="text-text-primary">16:00</b></span>
+            <span className="text-text-secondary">Reconciliation run — OCR + 4 sources + engine — <b className="text-text-primary">16:30</b></span>
           </li>
           <li className="flex items-center gap-3">
             <Icon name="schedule" size={18} className="text-accent" />
-            <span className="text-text-secondary">Digest email (the day just reconciled) — <b className="text-text-primary">16:15</b></span>
+            <span className="text-text-secondary">Digest email (the day just reconciled) — <b className="text-text-primary">16:45</b></span>
           </li>
         </ul>
         <p className="text-xs text-text-muted mt-4">

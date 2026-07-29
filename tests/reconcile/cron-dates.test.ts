@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   currentBusinessDate,
   digestTargetDate,
+  followupTargetDate,
   istDate,
   lastClosedBusinessDate,
   reconcileTargetDate,
+  recheckTargetDate,
 } from "../../lib/reconcile/cron-dates";
+import { addDays } from "../../lib/engine/dates";
 import {
   businessDayToUtcWindow,
   businessDaySpanToUtcWindow,
@@ -45,21 +48,21 @@ describe("business day — 15:00 → 15:00 IST", () => {
   });
 
   it("the worked example: 25 Jul is reconciled AND emailed on the 26th afternoon", () => {
-    expect(reconcileTargetDate(atIst("2026-07-26", 16, 0))).toBe("2026-07-25");
-    expect(digestTargetDate(atIst("2026-07-26", 16, 15))).toBe("2026-07-25");
+    expect(reconcileTargetDate(atIst("2026-07-26", 16, 30))).toBe("2026-07-25");
+    expect(digestTargetDate(atIst("2026-07-26", 16, 45))).toBe("2026-07-25");
   });
 
   it("both daily jobs always name the same business day", () => {
     for (const day of ["2026-07-23", "2026-08-01", "2026-12-31", "2027-03-01"]) {
       const next = addOneDay(day);
-      expect(reconcileTargetDate(atIst(next, 16, 0))).toBe(day);
-      expect(digestTargetDate(atIst(next, 16, 15))).toBe(day);
+      expect(reconcileTargetDate(atIst(next, 16, 30))).toBe(day);
+      expect(digestTargetDate(atIst(next, 16, 45))).toBe(day);
     }
   });
 
   it("crosses month and year boundaries", () => {
     expect(reconcileTargetDate(atIst("2026-08-01", 16))).toBe("2026-07-31");
-    expect(digestTargetDate(atIst("2027-01-01", 16, 15))).toBe("2026-12-31");
+    expect(digestTargetDate(atIst("2027-01-01", 16, 45))).toBe("2026-12-31");
   });
 
   it("lastClosedBusinessDate is always exactly one day behind the open one", () => {
@@ -106,5 +109,62 @@ describe("business-day UTC windows", () => {
     expect(utcToBusinessDate(null)).toBeUndefined();
     expect(utcToBusinessDate("")).toBeUndefined();
     expect(utcToBusinessDate("not-a-date")).toBeUndefined();
+  });
+});
+
+
+describe("the re-check pass and the follow-up it feeds", () => {
+  // D's digest goes out on D+1; the follow-up on D+3. So D must be re-run on
+  // D+3, which is `primary - 2` on that afternoon. A third pipeline pass was
+  // the alternative and does not fit the 60s ceiling (measured p50 36s a pass).
+  it("re-runs the date whose follow-up is due the same afternoon", () => {
+    // 26 Jul: reconciled 27th, emailed 27th, followed up on the 29th.
+    expect(reconcileTargetDate(atIst("2026-07-27", 16, 30))).toBe("2026-07-26");
+    expect(recheckTargetDate(atIst("2026-07-29", 16, 30))).toBe("2026-07-26");
+    expect(followupTargetDate(atIst("2026-07-29", 16, 45))).toBe("2026-07-26");
+  });
+
+  it("keeps the re-check and the follow-up on the same date, always", () => {
+    // These are one expression for a reason: they briefly were two and
+    // disagreed by a day, which would have left the follow-up waiting for a
+    // re-run that had already happened on a different date.
+    for (const d of ["2026-07-29", "2026-03-01", "2027-01-01", "2028-03-01"]) {
+      for (const h of [15, 16, 17, 23]) {
+        expect(followupTargetDate(atIst(d, h))).toBe(recheckTargetDate(atIst(d, h)));
+      }
+    }
+  });
+
+  it("is exactly two days behind the day being reconciled", () => {
+    for (const d of ["2026-07-29", "2026-01-02", "2026-03-02", "2028-03-01"]) {
+      const primary = reconcileTargetDate(atIst(d, 16, 30));
+      expect(recheckTargetDate(atIst(d, 16, 30))).toBe(addDays(primary, -2));
+    }
+  });
+});
+
+describe("Hobby cron jitter cannot move the target date", () => {
+  // Vercel Hobby does not fire punctually. Every target must be stable across
+  // the whole plausible window, or a late fire silently reconciles the wrong
+  // day. 16:30 IST scheduled; an hour-plus of slippage still lands after the
+  // 15:00 boundary, which is what makes the cadence safe.
+  it("resolves the same dates from 16:30 through 23:59 IST", () => {
+    const base = "2026-07-29";
+    const want = {
+      primary: reconcileTargetDate(atIst(base, 16, 30)),
+      recheck: recheckTargetDate(atIst(base, 16, 30)),
+    };
+    for (const [h, m] of [[16, 30], [16, 45], [17, 14], [18, 0], [21, 0], [23, 59]]) {
+      expect(reconcileTargetDate(atIst(base, h, m)), `${h}:${m}`).toBe(want.primary);
+      expect(digestTargetDate(atIst(base, h, m)), `${h}:${m}`).toBe(want.primary);
+      expect(recheckTargetDate(atIst(base, h, m)), `${h}:${m}`).toBe(want.recheck);
+    }
+  });
+
+  it("would flip if the cadence were ever moved before 15:00 IST", () => {
+    // The guard rail: 14:59 belongs to the PREVIOUS business day. Anyone
+    // tempted to move the crons earlier has to confront this test.
+    expect(reconcileTargetDate(atIst("2026-07-29", 14, 59))).toBe("2026-07-27");
+    expect(reconcileTargetDate(atIst("2026-07-29", 15, 1))).toBe("2026-07-28");
   });
 });

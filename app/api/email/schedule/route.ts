@@ -59,13 +59,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No reconciled run found yet — run a reconcile first." }, { status: 404 });
   }
 
-  // send_at: explicit ISO, else businessDate + delayDays at 16:15 IST (10:45 UTC),
+  // send_at: explicit ISO, else businessDate + delayDays at 16:45 IST (11:15 UTC),
   // matching the daily digest cron. delayDays defaults to 1 because a business
   // day is now closed the FOLLOWING afternoon, not two mornings later.
   let sendAt = body.sendAt?.trim();
   if (!sendAt) {
     const delayDays = Number.isFinite(body.delayDays) ? Math.max(0, Math.min(30, Number(body.delayDays))) : 1;
-    const d = new Date(`${businessDate}T10:45:00.000Z`); // 16:15 IST
+    const d = new Date(`${businessDate}T11:15:00.000Z`); // 16:45 IST, matching the digest cron
     d.setUTCDate(d.getUTCDate() + delayDays);
     sendAt = d.toISOString();
   }

@@ -1,5 +1,6 @@
-// Scheduled digest email — sent every morning at 09:00 IST (see vercel.json),
-// reporting the business day that last night's 22:00 IST reconcile closed:
+// Scheduled digest email — sent at 16:45 IST (see lib/reconcile/cron-dates.ts
+// for the UTC mapping), reporting the business day the 16:30 reconcile just
+// closed, fifteen minutes earlier:
 // the day before yesterday relative to the send morning (24 Jul is reconciled
 // on the night of the 25th and emailed on the morning of the 26th). The one-day
 // lag is deliberate — see lib/reconcile/cron-dates.ts.

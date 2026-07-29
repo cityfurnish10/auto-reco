@@ -411,7 +411,7 @@ export default function EmailPreview() {
             {scheduleOpen && (
               <div className="rounded-control border border-border p-3 space-y-3 bg-surface-elevated">
                 <p className="text-xs text-text-muted">
-                  The daily 16:15 IST cron will send this digest for <b>{data?.date}</b> after the delay below.
+                  The daily 16:45 IST cron will send this digest for <b>{data?.date}</b> after the delay below.
                 </p>
                 <label className="flex items-center justify-between text-sm text-text-secondary">
                   Send after

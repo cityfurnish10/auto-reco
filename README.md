@@ -6,7 +6,7 @@ independent sources**, compares them barcode-by-barcode, and raises **variances*
 for managers to chase — with a leaderboard, analytics, a daily digest email, and
 system-health monitoring on top.
 
-- **Live:** deployed on Vercel · business day runs **15:00→15:00 IST** · reconciles at **16:00 IST** · digest emailed **16:15 IST** the same afternoon
+- **Live:** deployed on Vercel · business day runs **15:00→15:00 IST** · reconciles at **16:30 IST** · digest emailed **16:45 IST** the same afternoon
 - **Repo:** `github.com/cityfurnish10/auto-reco`
 
 ---
@@ -87,9 +87,9 @@ and emails a management digest.
         admin + managers                                    System Health (admin)
 ```
 
-**Crons** (`vercel.json`; schedules are UTC, shown here in IST): **16:00 IST**
+**Crons** (`vercel.json`; schedules are UTC, shown here in IST): **16:30 IST**
 `/api/cron/reconcile` OCRs any pending guard uploads, pulls the 4 sources, runs
-the engine, persists, and prunes — reconciling the day being closed. **16:15 IST
+the engine, persists, and prunes — reconciling the day being closed. **16:45 IST
 next morning** `/api/cron/email-digest` emails the digest for the latest
 reconciled day. Both are protected by a `CRON_SECRET` bearer token. (Guard OCR
 runs inline in the reconcile; `/api/cron/ocr` still exists for manual/earlier
@@ -214,7 +214,7 @@ accounts + sample data) so the UI is explorable offline.
 
 1. **Vercel** — connect the GitHub repo; set all env vars (server-side, encrypted).
 2. **Apply migrations** — run each `supabase/migrations/*.sql` in the Supabase SQL editor in order.
-3. **Crons** — `vercel.json` registers `/api/cron/reconcile` (16:00 IST) and `/api/cron/email-digest` (16:15 IST, same afternoon). Vercel sends the `CRON_SECRET` bearer automatically. Schedules are in **UTC** (`30 10 * * *` = 16:00 IST, `45 10 * * *` = 16:15 IST). Vercel Hobby allows 2 cron jobs.
+3. **Crons** — `vercel.json` registers `/api/cron/reconcile` (16:30 IST) and `/api/cron/email-digest` (16:45 IST, same afternoon). Vercel sends the `CRON_SECRET` bearer automatically. Schedules are in **UTC** (`0 11 * * *` = 16:30 IST, `15 11 * * *` = 16:45 IST). Vercel Hobby allows 2 cron jobs.
 4. **Seed** — trigger a first reconcile (`POST /api/cron/reconcile?date=YYYY-MM-DD`) or run `scripts/backfill-city-stats.mjs`.
 
 ---
@@ -248,7 +248,7 @@ by OCR, so legibility matters:
 - **Never leave the barcode blank.** Write **one character per box**, upright and clear.
 - **Distinguish look-alikes:** `0≠O`, `1≠I`, `5≠S`, `2≠Z`, `6≠G` (the engine folds these, but clear writing beats a guess).
 - Log **PP boxes / consumables as counts** in the totals section.
-- **Upload** a clean single PDF (all pages, flat scan, ≤20 MB) via **Uploads → your city** **before the 16:00 IST reconcile** (the business day closes at 15:00); it's OCR'd automatically as part of the run.
+- **Upload** a clean single PDF (all pages, flat scan, ≤20 MB) via **Uploads → your city** **before the 16:30 IST reconcile** (the business day closes at 15:00); it's OCR'd automatically as part of the run.
 
 ---
 
