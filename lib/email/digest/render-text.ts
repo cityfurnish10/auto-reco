@@ -45,8 +45,8 @@ function blockLines(b: Block): string[] {
   }
 }
 
-export function renderText(sections: Section[], date: string): string {
-  const out: string[] = [`CITYFURNISH — Daily stock check — ${date}`, ""];
+export function renderText(sections: Section[], date: string, kicker: string): string {
+  const out: string[] = [`CITYFURNISH — ${kicker} — ${date}`, ""];
   for (const s of sections) {
     if (s.title) out.push(s.title.toUpperCase(), "");
     for (const b of s.blocks) {

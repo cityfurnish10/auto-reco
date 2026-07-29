@@ -2,14 +2,14 @@
 // single-file lib/email/digest.ts, so every import site resolves here with no
 // edit: lib/email/index.ts, the preview route, the archive route.
 
-import { buildSections, type SectionOpts } from "./sections";
+import { buildSections, DIGEST_KICKER, type SectionOpts } from "./sections";
 import { renderHtml } from "./render-html";
 import { renderText } from "./render-text";
 import type { DigestData } from "./types";
 
 export { buildDigestFromDb } from "./build";
 export { digestSubject } from "./subject";
-export { buildSections, WORD_BUDGET } from "./sections";
+export { buildSections, WORD_BUDGET, DIGEST_KICKER } from "./sections";
 export { visibleStrings } from "./model";
 export type { DigestData, CityDigestRow, CityMovementCounts, ActionItem, WatchItem, RegisterState } from "./types";
 export type { Section, Block } from "./model";
@@ -27,7 +27,7 @@ export function renderDigestHtml(
   attachmentNote?: string
 ): string {
   const opts: SectionOpts = { dashboardUrl, notes, attachmentNote };
-  return renderHtml(buildSections(data, opts), dateLabel(data.date));
+  return renderHtml(buildSections(data, opts), dateLabel(data.date), DIGEST_KICKER);
 }
 
 // Takes dashboardUrl for the same reason the HTML renderer does. The old
@@ -40,5 +40,5 @@ export function renderDigestText(
   attachmentNote?: string
 ): string {
   const opts: SectionOpts = { dashboardUrl, notes, attachmentNote };
-  return renderText(buildSections(data, opts), dateLabel(data.date));
+  return renderText(buildSections(data, opts), dateLabel(data.date), DIGEST_KICKER);
 }

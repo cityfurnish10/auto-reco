@@ -143,7 +143,7 @@ export type ScheduledEmailStatus =
 
 export interface ScheduledEmailDB {
   id: string;
-  kind: "digest";
+  kind: "digest" | "follow_up";
   business_date: string;
   send_at: string;
   status: ScheduledEmailStatus;
@@ -156,6 +156,12 @@ export interface ScheduledEmailDB {
   last_error: string | null;
   scheduled_by: string | null;
   email_log_id: string | null;
+  /**
+   * kind='follow_up' only: the email_logs row whose `totals` snapshot supplies
+   * X. Pinned at enqueue rather than looked up at send time — an admin can
+   * re-send a day, and the follow-up must quote the send it was queued against.
+   */
+  source_email_log_id?: string | null;
   created_at: string;
   updated_at: string;
 }

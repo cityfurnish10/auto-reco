@@ -22,6 +22,7 @@ import { digestTargetDate } from "@/lib/reconcile/cron-dates";
 import { saveEmailArchive, saveEmailPdf, pruneEmailArchive } from "@/lib/email/email-archive";
 import { buildRegisterPdfs, registerAttachments } from "@/lib/email/register-pdf";
 import { drainScheduledEmails } from "@/lib/email/scheduled";
+import { enqueueFollowUp, shouldEnqueueFollowUp } from "@/lib/email/followup/queue";
 import { saveEmailLog } from "@/lib/db/persist";
 
 export const runtime = "nodejs";
@@ -51,11 +52,16 @@ async function handle(req: NextRequest) {
 
   const db = createAdminClient();
 
-  // Drain any DUE deferred/scheduled digests first (best-effort — a scheduling
-  // failure must not block the daily digest). See lib/email/scheduled.ts.
+  // Drain DUE deferred digests first (best-effort — a scheduling failure must
+  // not block the daily digest). See lib/email/scheduled.ts.
+  //
+  // Follow-ups are drained at the END of this handler instead: they need the
+  // reconcile cron's re-check pass to have finished, and Vercel Hobby does not
+  // guarantee the 15-minute gap between the two crons. Every second spent here
+  // first is a second the re-check gets.
   let scheduled: Awaited<ReturnType<typeof drainScheduledEmails>> = [];
   try {
-    scheduled = await drainScheduledEmails(db, new Date().toISOString());
+    scheduled = await drainScheduledEmails(db, new Date().toISOString(), { kinds: ["digest"] });
   } catch (err) {
     console.warn("scheduled email drain failed:", err instanceof Error ? err.message : err);
   }
@@ -138,6 +144,33 @@ async function handle(req: NextRequest) {
       await saveEmailPdf(db, logId, r.city, r.bytes).catch(() => {});
   }
 
+  // Queue this date's follow-up, to go out two days after this email. Recipients
+  // are copied from the send that actually happened rather than left empty: the
+  // drain's fallback is the DIGEST_RECIPIENTS env var, not the curated list, so
+  // an empty row would mail a different set of people than this digest reached.
+  const enqueue = shouldEnqueueFollowUp({
+    sent: result.sent,
+    runIncomplete: digest.runIncomplete,
+    snapshot: result.totals ?? null,
+  });
+  if (enqueue.enqueue) {
+    await enqueueFollowUp(db, {
+      businessDate: date,
+      sourceEmailLogId: logId,
+      recipients: result.recipients ?? [],
+      cc: result.cc ?? [],
+      bcc: result.bcc ?? [],
+    }).catch(() => false);
+  }
+
+  // Now the follow-ups, last, having given the re-check every spare second.
+  let followUps: Awaited<ReturnType<typeof drainScheduledEmails>> = [];
+  try {
+    followUps = await drainScheduledEmails(db, new Date().toISOString(), { kinds: ["follow_up"] });
+  } catch (err) {
+    console.warn("follow-up drain failed:", err instanceof Error ? err.message : err);
+  }
+
   // 30-day retention: prune old email logs + their archived documents.
   // Best-effort and capped per run — must never fail the daily send. The
   // scheduled_emails FK is ON DELETE SET NULL, so row deletion is safe.
@@ -161,7 +194,9 @@ async function handle(req: NextRequest) {
 
   // Strip the rendered body from the response — it's archived, not API payload.
   const { html: _html, subject: _subject, ...meta } = result;
-  return NextResponse.json({ ok: true, date, ...meta, scheduled, pruned });
+  return NextResponse.json({ ok: true, date, ...meta, scheduled,
+    followUps,
+    followUpQueued: enqueue.enqueue ? date : enqueue.reason, pruned });
 }
 
 export async function GET(req: NextRequest) {

@@ -12,6 +12,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runAllCities, type MultiCityRun } from "../engine/run";
+import { guardTruncatedSheet } from "./sheet-guard";
 import { pullAll } from "../connectors";
 import { processPendingGuardUploads } from "../connectors/ocr/process";
 import {
@@ -78,7 +79,24 @@ export async function runReconcilePipeline(
         }).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
 
     // 1. Pull all 4 sources (tolerant of individual failures).
-    const { rowsByCity, results, presentSources, reportedByCity } = await pullAll(runDate);
+    const { rowsByCity, results, presentSources, reportedByCity: pulledReported } =
+      await pullAll(runDate);
+
+    // 1a. Refuse to trust a truncated ops-sheet pull. The Sheets connector keeps
+    //     a rolling buffer, and a re-run of an older date can come back short
+    //     without looking like an outage — rows are still returned, so the
+    //     sheet reads as REPORTED and resolveStaleOpenVariances then rewrites
+    //     genuinely-open items to "this gap had cleared". Silent data loss
+    //     dressed as a resolution. Best-effort; never fails the run.
+    const pipelineWarnings: string[] = [];
+    const reportedByCity = await guardTruncatedSheet(
+      db,
+      runDate,
+      rowsByCity,
+      pulledReported,
+      pipelineWarnings
+    ).catch(() => pulledReported);
+    for (const w of pipelineWarnings) console.warn(`[reconcile] ${w}`);
 
     // 2. Persist the complete raw feed (pruned after 7 days).
     const sourceRowsStored = await saveSourceRows(db, runId, runDate, rowsByCity);

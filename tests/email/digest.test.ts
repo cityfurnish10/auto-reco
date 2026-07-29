@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectNoJargon } from "./vocabulary";
 import {
   buildSections,
   digestSubject,
@@ -159,17 +160,10 @@ describe("digest — vocabulary", () => {
       deUrl(renderDigestText(d, URL)),
       digestSubject(d),
     ];
-    for (const s of surfaces) {
-      expect(s).not.toMatch(/\bvariances?\b/i);
-      expect(s).not.toMatch(/\bbuckets?\b/i);
-      // Case-SENSITIVE: bans the REAL/INFO tokens, not English "a real gap".
-      expect(s).not.toMatch(/\bREAL\b/);
-      expect(s).not.toMatch(/\bINFO\b/);
-      // Word boundary: "record" and "Reconciliation" are ordinary English.
-      expect(s).not.toMatch(/\breco\b/i);
-      // A raw responsible slug leaking through.
-      expect(s).not.toMatch(/\b\w+_team\b/);
-    }
+    // The one shared list, in tests/email/vocabulary.ts. Two copies of these
+    // regexes would let the ban be enforced on one email and quietly not on
+    // the other — which is exactly what happens as a codebase grows.
+    expectNoJargon(Object.fromEntries(surfaces.map((v, i) => [`surface ${i}`, v])));
   });
 
   it.each(FIXTURES)("renders no placeholder garbage (%s)", (_name, d) => {

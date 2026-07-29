@@ -9,11 +9,15 @@ import { buildDigestFromDb, sendReconciliationDigest } from "./index";
 import { saveEmailArchive, saveEmailPdf } from "./email-archive";
 import { buildRegisterPdfs, registerAttachments } from "./register-pdf";
 import { saveEmailLog } from "../db/persist";
+import { sendFollowUpForRow } from "./followup/drain";
 import type { ScheduledEmailDB } from "../db/schema";
 
 // A scheduled send that keeps failing its "resolved" gate is abandoned after
 // this many daily attempts (≈ a week of retries) so it never loops forever.
-const MAX_ATTEMPTS = 7;
+export const MAX_ATTEMPTS = 7;
+
+/** Stop claiming new rows past this, so the drain cannot eat the whole budget. */
+const DRAIN_BUDGET_MS = 35_000;
 
 export interface DrainResult {
   id: string;
@@ -35,12 +39,19 @@ async function openRealCount(db: SupabaseClient, businessDate: string): Promise<
   return count ?? 0;
 }
 
-export async function drainScheduledEmails(db: SupabaseClient, nowIso: string): Promise<DrainResult[]> {
-  const { data: due, error } = await db
+export async function drainScheduledEmails(
+  db: SupabaseClient,
+  nowIso: string,
+  opts: { kinds?: ("digest" | "follow_up")[] } = {}
+): Promise<DrainResult[]> {
+  const started = Date.now();
+  let q = db
     .from("scheduled_emails")
     .select("*")
     .eq("status", "pending")
-    .lte("send_at", nowIso)
+    .lte("send_at", nowIso);
+  if (opts.kinds?.length) q = q.in("kind", opts.kinds);
+  const { data: due, error } = await q
     .order("send_at", { ascending: true })
     .limit(50);
   if (error) throw new Error(`drainScheduledEmails query failed: ${error.message}`);
@@ -48,6 +59,12 @@ export async function drainScheduledEmails(db: SupabaseClient, nowIso: string): 
   const results: DrainResult[] = [];
 
   for (const row of (due ?? []) as ScheduledEmailDB[]) {
+    // Each row is a build + PDFs + an SMTP round trip + archive writes, roughly
+    // 4s. Fifty of them is 200s against a 60s ceiling — harmless while the queue
+    // was normally empty, and no longer true now that follow-ups auto-enqueue.
+    // Whatever is left stays 'pending' and drains on the next run.
+    if (Date.now() - started > DRAIN_BUDGET_MS) break;
+
     const attempts = (row.attempts ?? 0) + 1;
 
     // Atomically CLAIM the row (pending → sending) so a concurrent cron run can't
@@ -63,6 +80,14 @@ export async function drainScheduledEmails(db: SupabaseClient, nowIso: string): 
     if (!claimed) continue; // lost the race
 
     try {
+      // A follow-up is a different email with a different gate. Everything
+      // above — the claim, attempts, the retry ladder — is kind-agnostic and
+      // shared; only the body differs.
+      if (row.kind === "follow_up") {
+        results.push(await sendFollowUpForRow(db, row, attempts));
+        continue;
+      }
+
       // "Send once resolved" gate — hold (or eventually give up) while REAL
       // variances for the date are still open.
       if (row.require_resolved) {

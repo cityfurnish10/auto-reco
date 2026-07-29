@@ -94,7 +94,7 @@ function blockHtml(b: Block): string {
   }
 }
 
-export function renderHtml(sections: Section[], date: string): string {
+export function renderHtml(sections: Section[], date: string, kicker: string): string {
   const body = sections
     .map((s) => {
       const title = s.title
@@ -112,7 +112,7 @@ export function renderHtml(sections: Section[], date: string): string {
     <table role="presentation" cellpadding="0" cellspacing="0" width="600" style="width:100%;max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;">
       <tr><td style="padding:22px 28px 0;">
         <p style="margin:0;font-size:15px;font-weight:800;letter-spacing:-.2px;color:#111827;">CITYFURNISH</p>
-        <p style="margin:2px 0 0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.4px;color:#9ca3af;">Daily stock check &middot; ${esc(date)}</p>
+        <p style="margin:2px 0 0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.4px;color:#9ca3af;">${esc(kicker)} &middot; ${esc(date)}</p>
       </td></tr>
       <tr><td style="padding:16px 28px 26px;">${body}</td></tr>
       <tr><td style="padding:16px 28px;border-top:1px solid #e5e7eb;background:#f9fafb;">

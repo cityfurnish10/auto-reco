@@ -170,6 +170,10 @@ export interface SectionOpts {
 }
 
 /** Rendered-word budget for the whole email. A test asserts the worst case. */
+// The masthead line. A parameter rather than a default, so the follow-up must
+// name its own and cannot silently inherit "Daily stock check".
+export const DIGEST_KICKER = "Daily stock check";
+
 export const WORD_BUDGET = 250;
 
 /**
