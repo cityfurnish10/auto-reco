@@ -12,6 +12,7 @@ import CloseVarianceModal, { type ClosureReason } from "./close-variance-modal";
 import VarianceDetailModal from "./variance-detail-modal";
 import VarianceListModal, { type ListModalRequest } from "./variance-list-modal";
 import { isCityOff } from "@/lib/engine/schedule";
+import { queueCaption, rateCaption } from "@/lib/ui/stat-captions";
 import {
   PRIORITY_BADGE,
   STATUS_BADGE,
@@ -254,9 +255,9 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
           what it actually controls. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-headline text-xl text-text-primary">Warehouse Operations Dashboard</h2>
+          <h2 className="font-headline text-xl text-text-primary">{city} daily stock check</h2>
           <p className="text-sm text-text-muted">
-            Inventory reconciliation and variance resolution for {city}.
+            {cityAgg ? rateCaption(cityAgg) : ""}
             {stats?.run && ` Run ${stats.run.business_date}.`}
           </p>
         </div>
@@ -316,16 +317,18 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
           className="kpi-tile kpi-tile--danger card-hover text-left group cursor-pointer"
         >
           <div className="p-2 bg-danger-soft text-danger rounded-control w-fit mb-4"><Icon name="warning" size={22} /></div>
-          <p className="kpi-label group-hover:underline">Variances — losses</p>
+          <p className="kpi-label group-hover:underline">Not accounted for</p>
           <h3 className="kpi-value text-danger mt-1">{statsLoading ? "…" : cityAgg?.real ?? 0}</h3>
+          <span className="text-xs text-text-muted mt-1 block">{rateCaption(cityAgg)}</span>
         </button>
         <button
           onClick={() => setListRequest({ bucket: "REAL", status: "open", title: "Open losses" })}
           className="kpi-tile card-hover text-left group cursor-pointer"
         >
           <div className="p-2 bg-accent-soft text-accent rounded-control w-fit mb-4"><Icon name="pending_actions" size={22} /></div>
-          <p className="kpi-label group-hover:underline">Open</p>
+          <p className="kpi-label group-hover:underline">Still open</p>
           <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.openReal ?? 0}</h3>
+          <span className="text-xs text-text-muted mt-1 block">{queueCaption(cityAgg)}</span>
         </button>
         <button
           onClick={() =>
@@ -334,16 +337,24 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
           className="kpi-tile card-hover text-left group cursor-pointer"
         >
           <div className="p-2 bg-surface-elevated rounded-control text-accent w-fit mb-4"><Icon name="approval" size={22} /></div>
-          <p className="kpi-label group-hover:underline">Awaiting approval</p>
+          <p className="kpi-label group-hover:underline">With the admin</p>
           <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.pendingApproval ?? 0}</h3>
+          <span className="text-xs text-text-muted mt-1 block">
+            {(cityAgg?.pendingApproval ?? 0) > 0
+              ? "Submitted — nothing more for you to do on these"
+              : "Nothing waiting on the admin"}
+          </span>
         </button>
         <button
           onClick={() => setListRequest({ bucket: "REAL", status: "closed", title: "Closed variances" })}
           className="kpi-tile kpi-tile--success card-hover text-left group cursor-pointer"
         >
           <div className="p-2 bg-success-soft text-success rounded-control w-fit mb-4"><Icon name="task_alt" size={22} /></div>
-          <p className="kpi-label group-hover:underline">Closed</p>
+          <p className="kpi-label group-hover:underline">Closed today</p>
           <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.closed ?? 0}</h3>
+          {/* Deliberately no "x% of today's N": `closed` counts every bucket
+              while `real` counts losses only, so that ratio can exceed 100%. */}
+          <span className="text-xs text-text-muted mt-1 block">Settled or written off today</span>
           {/* Pending-list items are stored as closed, so they land in the count
               above. Naming them stops the tile reading as "all finished". */}
           {(cityAgg?.pendingList ?? 0) > 0 && (
@@ -355,7 +366,8 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
       </div>
       {!statsLoading && (cityAgg?.infoBucket ?? 0) > 0 && (
         <p className="text-xs text-text-disabled -mt-2">
-          + {cityAgg?.infoBucket} posting-lag / hygiene entries hidden (audit only —{" "}
+          {cityAgg?.infoBucket} more items were checked and need nothing from you — late Odoo
+          postings, barcode typos, paperwork written a day either side.{" "}
           <button
             onClick={() =>
               setListRequest({
@@ -366,9 +378,8 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
             }
             className="underline hover:text-text-secondary"
           >
-            view them
+            View the list
           </button>
-          )
         </p>
       )}
 
@@ -385,7 +396,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
           <Icon name="category" size={16} className="text-accent" /> Consumables{" "}
           <b className="text-text-primary">{statsLoading ? "…" : cityAgg?.consumable ?? 0}</b>
         </span>
-        <span className="text-xs text-text-disabled">for this run — tracked as counts, not variances</span>
+        <span className="text-xs text-text-disabled">Counted by quantity, not by barcode — they never appear in the list below.</span>
       </div>
 
       {/* Variance table */}
@@ -435,12 +446,12 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
             {/* The date picker moved to the page header — it governs the KPI
                 tiles too, not just this table. */}
             <select value={bucket} onChange={(e) => resetPage(setBucket)(e.target.value as Bucket | "ALL")} className="input-clean font-semibold cursor-pointer">
-              <option value="ALL">All Buckets</option>
-              <option value="REAL">REAL only</option>
-              <option value="INFO">INFO only</option>
+              <option value="ALL">All items</option>
+              <option value="REAL">Needs chasing</option>
+              <option value="INFO">Needs nothing</option>
             </select>
             <select value={priority} onChange={(e) => resetPage(setPriority)(e.target.value as Priority | "ALL")} className="input-clean cursor-pointer">
-              <option value="ALL">All Priority</option>
+              <option value="ALL">Any priority</option>
               <option value="High">High</option>
               <option value="Medium">Medium</option>
               <option value="Info">Info</option>
@@ -449,12 +460,12 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
               {/* "Needs action" spans open + in_progress. Flagging moves a row
                   to in_progress, and a plain "open" filter hid exactly the rows
                   the flag was meant to escalate. */}
-              <option value="ACTIVE">Needs action (open + flagged)</option>
+              <option value="ACTIVE">Still needs someone</option>
               <option value="open">Open only</option>
               <option value="in_progress">Flagged / in progress</option>
               <option value="pending_approval">Pending Approval</option>
               <option value="closed">Closed</option>
-              <option value="ALL">All Status</option>
+              <option value="ALL">Any status</option>
             </select>
             {/* Variance type — lets a manager work one cause at a time instead
                 of a mixed list. */}
@@ -464,7 +475,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
               className="input-clean cursor-pointer max-w-[220px]"
               title="Filter to one kind of variance"
             >
-              <option value="ALL">All Variance Types</option>
+              <option value="ALL">All problem types</option>
               {varianceNames.map((f) => (
                 <option key={f.value} value={f.value}>
                   {f.value} ({f.real})
@@ -493,7 +504,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
               className="input-clean cursor-pointer max-w-[200px]"
               title="Filter to one ops type"
             >
-              <option value="ALL">All Ops Types</option>
+              <option value="ALL">All job types</option>
               {opsTypes.map((f) => (
                 <option key={f.value} value={f.value}>
                   {opsTypeLabel(f.value)} ({f.real})
@@ -616,13 +627,13 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                   />
                 </th>
                 <SortHeader label="Date" sortKey="date" state={sort} onSort={applySort} />
-                <SortHeader label="Item Name" sortKey="product" state={sort} onSort={applySort} />
+                <SortHeader label="Item" sortKey="product" state={sort} onSort={applySort} />
                 <SortHeader label="Barcode" sortKey="barcode" state={sort} onSort={applySort} />
-                <SortHeader label="Ticket ID" sortKey="ticket" state={sort} onSort={applySort} />
-                <SortHeader label="Source" sortKey="source" state={sort} onSort={applySort} />
-                <SortHeader label="Ops Type" sortKey="jobType" state={sort} onSort={applySort} />
-                <SortHeader label="SO Number" sortKey="so" state={sort} onSort={applySort} />
-                <SortHeader label="Variance" sortKey="variance" state={sort} onSort={applySort} />
+                <SortHeader label="Ticket" sortKey="ticket" state={sort} onSort={applySort} />
+                <SortHeader label="Raised by" sortKey="source" state={sort} onSort={applySort} />
+                <SortHeader label="Job type" sortKey="jobType" state={sort} onSort={applySort} />
+                <SortHeader label="SO" sortKey="so" state={sort} onSort={applySort} />
+                <SortHeader label="Problem" sortKey="variance" state={sort} onSort={applySort} />
                 <SortHeader
                   label="Priority"
                   sortKey="priority"
@@ -632,7 +643,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                 />
                 <SortHeader label="Status" sortKey="status" state={sort} onSort={applySort} />
                 <SortHeader
-                  label="Age"
+                  label="Open for"
                   sortKey="age"
                   state={sort}
                   onSort={applySort}

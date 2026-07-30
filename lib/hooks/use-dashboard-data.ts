@@ -271,6 +271,12 @@ export interface CityAgg {
   infoBucket: number;
   ppBox: number;
   consumable: number;
+  /** Distinct directional movements for the day — the denominator. */
+  movements: number;
+  /** Open losses first seen more than three days ago. */
+  openOver3d: number;
+  /** ISO timestamp of the oldest open loss, or null when none are open. */
+  oldestOpenAt: string | null;
 }
 
 export interface StatsResponse {

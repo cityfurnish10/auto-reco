@@ -43,7 +43,7 @@ export default function LeaderboardPage() {
   const topWithData = rows.find((r) => r.accuracy !== null) ?? null;
 
   function exportCsv() {
-    const header = "Rank,City,Accuracy %,Movements,REAL Variances,High,Trend\n";
+    const header = "Rank,City,Traced %,Units moved,Not accounted for,Urgent,vs last period\n";
     const body = rows
       .map((r) =>
         [r.rank, r.city, r.accuracy ?? "", r.movements, r.real, r.high, r.trend].join(",")
@@ -78,7 +78,7 @@ export default function LeaderboardPage() {
             City Leaderboard
           </h1>
           <p className="text-text-muted text-sm">
-            Cities ranked by reconciliation accuracy — REAL variances per movement.
+            Which city traces the most of what it moves. Score = units traced end to end ÷ units moved. Days a warehouse was shut are left out.
             {win?.to ? ` ${win.label} (through ${win.to}).` : ""}
           </p>
         </div>
@@ -115,7 +115,7 @@ export default function LeaderboardPage() {
       <section className="grid grid-cols-1 md:grid-cols-4 gap-gutter">
         <div className="kpi-tile kpi-tile--success card-hover flex flex-col justify-between">
           <div className="flex items-start justify-between">
-            <span className="kpi-label">Top Performer</span>
+            <span className="kpi-label">Cleanest city</span>
             <Icon name="workspace_premium" size={22} className="text-[#b9aa83]" />
           </div>
           <div className="mt-4">
@@ -131,31 +131,31 @@ export default function LeaderboardPage() {
 
         <div className="kpi-tile card-hover flex flex-col justify-between">
           <div className="flex items-start justify-between">
-            <span className="kpi-label">Total Movements</span>
+            <span className="kpi-label">Units moved</span>
             <Icon name="inventory_2" size={22} className="text-accent" />
           </div>
           <div className="mt-4">
             <h3 className="kpi-value">{totalMovements.toLocaleString()}</h3>
-            <p className="text-xs text-text-muted">IN + OUT across all cities</p>
+            <p className="text-xs text-text-muted">In and out, all cities, working days only</p>
           </div>
         </div>
 
         <div className="kpi-tile kpi-tile--danger card-hover flex flex-col justify-between">
           <div className="flex items-start justify-between">
-            <span className="kpi-label">REAL Variances</span>
+            <span className="kpi-label">Not accounted for</span>
             <Icon name="report" size={22} className="text-danger" />
           </div>
           <div className="mt-4">
             <h3 className="kpi-value text-danger">{totalReal.toLocaleString()}</h3>
-            <p className="text-xs text-text-muted">Actionable, as-found</p>
+            <p className="text-xs text-text-muted">{pct(totalMovements ? (totalReal / totalMovements) * 100 : null)} of the {totalMovements.toLocaleString()} units moved</p>
           </div>
         </div>
 
         <div className="kpi-tile kpi-tile--accent card-hover flex flex-col justify-between overflow-hidden relative">
           <div className="relative z-10">
-            <span className="kpi-label">Avg Accuracy</span>
+            <span className="kpi-label">Traced end to end</span>
             <h3 className="kpi-value mt-4">{pct(avgAccuracy)}</h3>
-            <p className="text-xs text-text-muted">Movement-weighted</p>
+            <p className="text-xs text-text-muted">Weighted by units moved — not an average of the city scores</p>
           </div>
           <div className="absolute right-0 bottom-0 opacity-10">
             <Icon name="monitoring" size={80} />
@@ -169,7 +169,7 @@ export default function LeaderboardPage() {
           <div className="p-12 text-center text-text-muted">
             <Icon name="leaderboard" size={40} className="mx-auto mb-3 opacity-40" />
             <p className="text-sm">
-              {loading ? "Loading…" : "No reconciliation data yet — run a reconcile to populate the leaderboard."}
+              {loading ? "Loading…" : "No stock checks have run yet — run one to fill the scoreboard."}
             </p>
           </div>
         ) : (
@@ -196,8 +196,8 @@ export default function LeaderboardPage() {
                     </div>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-muted mt-2">
                       <span className="tabular-nums">{r.movements.toLocaleString()} moves</span>
-                      <span className={r.real > 0 ? "text-danger font-semibold" : ""}>{r.real} REAL</span>
-                      <span>{r.high} high</span>
+                      <span className={r.real > 0 ? "text-danger font-semibold" : ""}>{r.real} not traced</span>
+                      <span>{r.high} urgent</span>
                       {r.accuracy !== null && r.movements < MIN_MOVEMENTS && (
                         <span className="badge badge-suppressed">Low sample</span>
                       )}
@@ -214,11 +214,11 @@ export default function LeaderboardPage() {
                   <tr>
                     <th className="w-20 text-center">Rank</th>
                     <th>City</th>
-                    <th className="text-right">Accuracy %</th>
-                    <th className="text-right">Movements</th>
-                    <th className="text-right">REAL Variances</th>
-                    <th className="text-center">High</th>
-                    <th className="text-center">Trend</th>
+                    <th className="text-right">Traced %</th>
+                    <th className="text-right">Units moved</th>
+                    <th className="text-right">Not accounted for</th>
+                    <th className="text-center">Urgent</th>
+                    <th className="text-center">vs last period</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -274,7 +274,7 @@ export default function LeaderboardPage() {
         )}
         <div className="px-6 py-3 bg-surface-elevated border-t border-border flex flex-wrap items-center gap-x-3 gap-y-1">
           <span className="text-xs text-text-muted">
-            {win ? `${win.label} • ranked by REAL variances per movement` : "—"}
+            {win ? `${win.label} • ranked by the share of units traced end to end` : "—"}
           </span>
           {thinRows > 0 && (
             <span className="text-xs text-text-muted">

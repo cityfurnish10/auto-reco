@@ -33,7 +33,7 @@ function barHeight(acc: number | null): number {
 }
 const ddmm = (d: string) => d.slice(8, 10); // day-of-month for the x tick
 
-// A day with no run at all, as opposed to a day that ran and scored badly.
+// A day with no check at all, as opposed to a day that ran and scored badly.
 interface TrendPoint extends DayPoint {
   missing?: boolean;
 }
@@ -82,9 +82,9 @@ export default function AnalyticsPage() {
       {/* Header */}
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h1 className="font-headline text-xl text-text-primary mb-1">Historical Analytics</h1>
+          <h1 className="font-headline text-xl text-text-primary mb-1">Accuracy over time</h1>
           <p className="text-text-muted text-sm">
-            Reconciliation accuracy over time — daily trend and per-city comparison.
+            How much of what we move gets traced end to end — day by day, and city by city. Days a warehouse was shut are left out.
           </p>
         </div>
         <div className="bg-surface-elevated rounded-control p-1 flex">
@@ -113,22 +113,22 @@ export default function AnalyticsPage() {
       {/* KPI Row */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-gutter">
         <div className="kpi-tile kpi-tile--accent card-hover">
-          <span className="kpi-label">Avg Accuracy</span>
+          <span className="kpi-label">Traced end to end</span>
           <h3 className="kpi-value mt-3">{pct(avgAccuracy)}</h3>
-          <p className="text-xs text-text-muted">Movement-weighted, {nDays}d</p>
+          <p className="text-xs text-text-muted">Last {nDays} days · {totalMovements.toLocaleString()} units moved</p>
         </div>
         <div className="kpi-tile kpi-tile--success card-hover">
-          <span className="kpi-label">Best City</span>
+          <span className="kpi-label">Best city</span>
           <h3 className="text-xl font-bold text-text-primary mt-3">{best?.city ?? "—"}</h3>
           <p className="text-xs text-success font-semibold">{pct(best?.accuracy ?? null)}</p>
         </div>
         <div className="kpi-tile kpi-tile--danger card-hover">
-          <span className="kpi-label">Needs Attention</span>
+          <span className="kpi-label">Needs attention</span>
           <h3 className="text-xl font-bold text-text-primary mt-3">{worst?.city ?? "—"}</h3>
           <p className="text-xs text-danger font-semibold">{pct(worst?.accuracy ?? null)}</p>
         </div>
         <div className="kpi-tile card-hover">
-          <span className="kpi-label">REAL Variances</span>
+          <span className="kpi-label">Not accounted for</span>
           <h3 className="kpi-value mt-3 text-danger">{totalReal.toLocaleString()}</h3>
           <p className="text-xs text-text-muted">{totalMovements.toLocaleString()} movements</p>
         </div>
@@ -138,7 +138,7 @@ export default function AnalyticsPage() {
         <div className="card p-12 text-center text-text-muted">
           <Icon name="monitoring" size={40} className="mx-auto mb-3 opacity-40" />
           <p className="text-sm">
-            {loading ? "Loading…" : "No reconciliation data yet — run a reconcile to populate analytics."}
+            {loading ? "Loading…" : "No stock checks have run yet — run one to fill these charts."}
           </p>
         </div>
       ) : (
@@ -146,7 +146,7 @@ export default function AnalyticsPage() {
           {/* Daily accuracy trend */}
           <section className="card p-6">
             <div className="flex items-center justify-between mb-6 gap-3">
-              <h3 className="font-headline text-lg text-text-primary">Daily Accuracy Trend</h3>
+              <h3 className="font-headline text-lg text-text-primary">Traced each day, all cities</h3>
               {missingDays > 0 && (
                 <span className="badge badge-medium" title="Days with no reconciliation stats">
                   <Icon name="warning" size={14} />
@@ -218,7 +218,7 @@ export default function AnalyticsPage() {
               </div>
             </div>
             <p className="text-xs text-text-muted mt-3">
-              Overall accuracy per day (all cities). Green ≥95%, amber ≥90%, red below.{" "}
+              Share of units traced each day, all cities. Green ≥95%, amber ≥90%, red below.{" "}
               <b>The axis starts at {AXIS_MIN}%</b>, not zero — differences look larger than
               they are. A dashed column is a day with no reconciliation run, which is not the
               same as a day that scored zero.
@@ -228,7 +228,7 @@ export default function AnalyticsPage() {
           {/* Per-city accuracy */}
           <section className="card p-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="font-headline text-lg text-text-primary">Accuracy by City</h3>
+              <h3 className="font-headline text-lg text-text-primary">Traced by city</h3>
               <span className="text-xs text-text-muted">{win}-day window</span>
             </div>
             <div className="relative pl-9">

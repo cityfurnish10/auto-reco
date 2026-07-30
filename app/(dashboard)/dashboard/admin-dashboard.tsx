@@ -23,6 +23,7 @@ import CloseVarianceModal from "./close-variance-modal";
 import VarianceDetailModal from "./variance-detail-modal";
 import VarianceListModal, { type ListModalRequest } from "./variance-list-modal";
 import { isCityOff } from "@/lib/engine/schedule";
+import { cityRateLine, queueCaption, rankLine, rateCaption } from "@/lib/ui/stat-captions";
 import {
   PRIORITY_BADGE,
   STATUS_BADGE,
@@ -181,6 +182,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
       : stats.byCity.find((c) => c.city === cityTab) ?? {
           city: cityTab, total: 0, open: 0, openReal: 0, inProgress: 0, pendingApproval: 0, closed: 0,
           pendingList: 0, high: 0, medium: 0, info: 0, real: 0, infoBucket: 0, ppBox: 0, consumable: 0,
+          // A city with no row in this run moved nothing we recorded. movements
+          // 0 makes rateCaption say "No movements recorded for this day" rather
+          // than inventing a perfect score out of a zero denominator.
+          movements: 0, openOver3d: 0, oldestOpenAt: null,
         };
   }, [stats, cityTab]);
 
@@ -417,13 +422,16 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             title="Open every loss variance"
             className="w-full text-left flex flex-col cursor-pointer"
           >
-            <span className="kpi-label group-hover:underline">Variances — losses</span>
+            <span className="kpi-label group-hover:underline">Not accounted for</span>
             <div className="flex items-end justify-between mt-2">
               <span className="kpi-value">{statsLoading ? "…" : agg?.real ?? 0}</span>
-              {(agg?.high ?? 0) > 0 && <span className="badge badge-high">{agg?.high} High</span>}
+              {/* "High" is an enum value; "urgent" is what it means. Safe to
+                  trust: applyBucket forces every INFO row to Info priority, so a
+                  High row is a loss by construction. */}
+              {(agg?.high ?? 0) > 0 && <span className="badge badge-high">{agg?.high} urgent</span>}
             </div>
             <span className="text-xs text-text-muted mt-1">
-              Genuine cross-source gaps · {runLabel}
+              {rateCaption(agg)}
             </span>
           </button>
         </div>
@@ -435,7 +443,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             title="Open the losses awaiting action"
             className="w-full text-left flex flex-col cursor-pointer"
           >
-            <span className="kpi-label group-hover:underline">Open</span>
+            <span className="kpi-label group-hover:underline">Still open</span>
             <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.openReal ?? 0}</span>
           </button>
           <span className="text-xs text-text-muted mt-1">
@@ -453,7 +461,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 {agg?.pendingApproval} pending approval
               </button>
             ) : (
-              "Losses awaiting action"
+              "{queueCaption(agg)}"
             )}
           </span>
         </div>
@@ -465,9 +473,13 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             title="Open the resolved losses"
             className="w-full text-left flex flex-col cursor-pointer"
           >
-            <span className="kpi-label group-hover:underline">Resolved</span>
+            <span className="kpi-label group-hover:underline">Closed today</span>
             <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.closed ?? 0}</span>
-            <span className="text-xs text-text-muted mt-1">Closed on this business date</span>
+            {/* Deliberately NO "x% of today's N". `closed` counts every bucket
+                while `real` counts losses only, so the ratio can exceed 100%.
+                Until those two agree this tile states what it is and relates it
+                to nothing. */}
+            <span className="text-xs text-text-muted mt-1">Settled or written off on this day&apos;s list</span>
           </button>
           {/* Pending-list items are stored as closed, so they land in the count
               above. Naming them stops the tile reading as "all finished". */}
@@ -483,7 +495,8 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
       </div>
       {!statsLoading && (agg?.infoBucket ?? 0) > 0 && (
         <p className="text-xs text-text-disabled -mt-2">
-          + {agg?.infoBucket} posting-lag / hygiene entries hidden (audit only —{" "}
+          {agg?.infoBucket} more items were checked and need nothing from you — late Odoo
+          postings, barcode typos, paperwork written a day either side.{" "}
           <button
             onClick={() =>
               setListRequest({
@@ -494,9 +507,8 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             }
             className="underline hover:text-text-secondary"
           >
-            view them
+            View the list
           </button>
-          )
         </p>
       )}
 
@@ -513,7 +525,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
           <Icon name="category" size={16} className="text-accent" /> Consumables{" "}
           <b className="text-text-primary">{statsLoading ? "…" : agg?.consumable ?? 0}</b>
         </span>
-        <span className="text-xs text-text-disabled">for this run — tracked as counts, not variances</span>
+        <span className="text-xs text-text-disabled">Counted by quantity, not by barcode — they never appear in the list below.</span>
       </div>
 
       {/* City-wise breakdown */}
@@ -550,16 +562,21 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 </div>
                 <div className="text-xs text-text-muted">
                   {off ? (
-                    <span>Weekly off — data not expected</span>
+                    <span>Weekly off — the warehouse was shut, so nothing is expected</span>
                   ) : (
                     <>
-                      <span className="text-danger font-semibold">{c.real} to chase</span> ·{" "}
+                      <span className="text-danger font-semibold">{cityRateLine(c)}</span>{" · "}
                       {c.openReal} open
                     </>
                   )}
                 </div>
+                {!off && rankLine(c.city, stats?.byCity ?? []) && (
+                  <div className="text-xs text-text-muted">
+                    {rankLine(c.city, stats?.byCity ?? [])}
+                  </div>
+                )}
                 <div className="text-xs text-text-disabled">
-                  PP-Box {c.ppBox} · Consumable {c.consumable}
+                  PP boxes {c.ppBox} · Consumables {c.consumable} — counted, not chased
                 </div>
                 <button
                   onClick={() => resetPage(setCityTab)(c.city as City)}
@@ -626,16 +643,16 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             {/* The date picker moved to the page header — it governs the KPI
                 tiles and city breakdown too, not just this table. */}
             <select value={bucket} onChange={(e) => resetPage(setBucket)(e.target.value as Bucket | "ALL")} className="input-clean font-semibold cursor-pointer">
-              <option value="ALL">All Buckets</option>
-              <option value="REAL">REAL only</option>
-              <option value="INFO">INFO only</option>
+              <option value="ALL">All items</option>
+              <option value="REAL">Needs chasing</option>
+              <option value="INFO">Needs nothing</option>
             </select>
             <select value={source} onChange={(e) => resetPage(setSource)(e.target.value as VarianceSource | "ALL")} className="input-clean font-semibold cursor-pointer">
-              <option value="ALL">All Sources</option>
+              <option value="ALL">Raised by any check</option>
               {SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
             <select value={priority} onChange={(e) => resetPage(setPriority)(e.target.value as Priority | "ALL")} className="input-clean font-semibold cursor-pointer">
-              <option value="ALL">All Priority</option>
+              <option value="ALL">Any priority</option>
               <option value="High">High</option>
               <option value="Medium">Medium</option>
               <option value="Info">Info</option>
@@ -644,12 +661,12 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               {/* "Needs action" spans open + in_progress. Flagging moves a row
                   to in_progress, and a plain "open" filter hid exactly the rows
                   the flag was meant to escalate. */}
-              <option value="ACTIVE">Needs action (open + flagged)</option>
+              <option value="ACTIVE">Still needs someone</option>
               <option value="open">Open only</option>
               <option value="in_progress">Flagged / in progress</option>
               <option value="pending_approval">Pending Approval</option>
               <option value="closed">Closed</option>
-              <option value="ALL">All Status</option>
+              <option value="ALL">Any status</option>
             </select>
             {/* Variance type — this is what makes the digest's "Top Gap: 57
                 losses share one cause" line actionable. */}
@@ -659,7 +676,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               className="input-clean cursor-pointer max-w-[220px]"
               title="Filter to one kind of variance"
             >
-              <option value="ALL">All Variance Types</option>
+              <option value="ALL">All problem types</option>
               {varianceNames.map((f) => (
                 <option key={f.value} value={f.value}>
                   {f.value} ({f.real})
@@ -673,7 +690,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               className="input-clean cursor-pointer"
               title="Filter to the team that owns these"
             >
-              <option value="ALL">All Owners</option>
+              <option value="ALL">All teams</option>
               {responsibles.map((f) => (
                 <option key={f.value} value={f.value}>
                   {responsibleLabel(f.value)} ({f.real})
@@ -689,7 +706,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               className="input-clean cursor-pointer max-w-[200px]"
               title="Filter to one ops type"
             >
-              <option value="ALL">All Ops Types</option>
+              <option value="ALL">All job types</option>
               {opsTypes.map((f) => (
                 <option key={f.value} value={f.value}>
                   {opsTypeLabel(f.value)} ({f.real})
@@ -848,34 +865,34 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 </th>
                 <SortHeader label="Date" sortKey="date" state={sort} onSort={applySort} />
                 <SortHeader label="City" sortKey="city" state={sort} onSort={applySort} />
-                <SortHeader label="Item Name" sortKey="product" state={sort} onSort={applySort} />
+                <SortHeader label="Item" sortKey="product" state={sort} onSort={applySort} />
                 <SortHeader label="Barcode" sortKey="barcode" state={sort} onSort={applySort} />
-                <SortHeader label="Ticket ID" sortKey="ticket" state={sort} onSort={applySort} />
-                <SortHeader label="Source" sortKey="source" state={sort} onSort={applySort} />
-                <SortHeader label="Ops Type" sortKey="jobType" state={sort} onSort={applySort} />
-                <SortHeader label="SO Number" sortKey="so" state={sort} onSort={applySort} />
-                <SortHeader label="Variance" sortKey="variance" state={sort} onSort={applySort} />
+                <SortHeader label="Ticket" sortKey="ticket" state={sort} onSort={applySort} />
+                <SortHeader label="Raised by" sortKey="source" state={sort} onSort={applySort} />
+                <SortHeader label="Job type" sortKey="jobType" state={sort} onSort={applySort} />
+                <SortHeader label="SO" sortKey="so" state={sort} onSort={applySort} />
+                <SortHeader label="Problem" sortKey="variance" state={sort} onSort={applySort} />
                 <SortHeader
-                  label="Owner"
+                  label="Team"
                   sortKey="responsible"
                   state={sort}
                   onSort={applySort}
-                  title="Sort by the team responsible"
+                  title="Sort by the team that has to fix it"
                 />
                 <SortHeader
                   label="Priority"
                   sortKey="priority"
                   state={sort}
                   onSort={applySort}
-                  title="Sort by severity — High, Medium, Info"
+                  title="Sort by urgency — High, Medium, Info"
                 />
                 <SortHeader label="Status" sortKey="status" state={sort} onSort={applySort} />
                 <SortHeader
-                  label="Age"
+                  label="Open for"
                   sortKey="age"
                   state={sort}
                   onSort={applySort}
-                  title="Sort by how long this has been unresolved"
+                  title="Sort by how long this has gone unfixed"
                 />
                 <th className="text-center">Action</th>
               </tr>

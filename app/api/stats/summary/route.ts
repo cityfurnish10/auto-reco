@@ -36,6 +36,20 @@ interface CityAgg {
   infoBucket: number;
   ppBox: number; // count-only PP-box movements for the run (from run_city_stats)
   consumable: number; // count-only spare/consumable movements for the run
+  /**
+   * Distinct directional movements for the day — THE denominator.
+   *
+   * Every other page already uses it (the leaderboard and analytics both rank on
+   * it), and it was being read one column away from here and discarded. Without
+   * it a big warehouse always looks worse than a small one: Delhi with 18 gaps
+   * in 1,204 movements reads worse than Pune with 12 in 180, when Pune is four
+   * times worse per unit.
+   */
+  movements: number;
+  /** Open losses first seen more than three days ago. */
+  openOver3d: number;
+  /** ISO timestamp of the oldest open loss, or null when none are open. */
+  oldestOpenAt: string | null;
 }
 
 function emptyAgg(city: string): CityAgg {
@@ -55,6 +69,9 @@ function emptyAgg(city: string): CityAgg {
     infoBucket: 0,
     ppBox: 0,
     consumable: 0,
+    movements: 0,
+    openOver3d: 0,
+    oldestOpenAt: null,
   };
 }
 
@@ -117,11 +134,16 @@ export async function GET(req: NextRequest) {
     priority: string;
     bucket: string;
     closure_reason: string | null;
+    /**
+     * Never reset by a re-run — persist.ts omits it from the upsert payload —
+     * so `now - first_seen_at` is a real age, not "when we last looked".
+     */
+    first_seen_at: string | null;
   }[] = [];
   for (let from = 0; ; from += 1000) {
     const { data: page, error: varErr } = await supabase
       .from("variances")
-      .select("city, status, priority, bucket, closure_reason")
+      .select("city, status, priority, bucket, closure_reason, first_seen_at")
       .eq("run_id", run.id)
       // Deterministic order — unordered .range() pages can repeat/skip rows.
       .order("id", { ascending: true })
@@ -133,6 +155,7 @@ export async function GET(req: NextRequest) {
 
   const byCityMap = new Map<string, CityAgg>();
   const overall = emptyAgg("ALL");
+  const threeDaysAgo = Date.now() - 3 * 86400_000;
 
   for (const v of variances ?? []) {
     const agg = byCityMap.get(v.city) ?? emptyAgg(v.city);
@@ -150,7 +173,19 @@ export async function GET(req: NextRequest) {
       else if (v.priority === "Info") target.info += 1;
       if (v.bucket === "REAL") target.real += 1;
       else if (v.bucket === "INFO") target.infoBucket += 1;
-      if (v.status === "open" && v.bucket === "REAL") target.openReal += 1;
+      if (v.status === "open" && v.bucket === "REAL") {
+        target.openReal += 1;
+        // How long the queue has been waiting. A bare "Open: 23" cannot say
+        // whether those 23 arrived this afternoon or have been sitting a week,
+        // which is the first thing an owner asks about a backlog.
+        const seen = v.first_seen_at ? Date.parse(v.first_seen_at) : NaN;
+        if (Number.isFinite(seen)) {
+          if (seen < threeDaysAgo) target.openOver3d += 1;
+          if (target.oldestOpenAt === null || seen < Date.parse(target.oldestOpenAt)) {
+            target.oldestOpenAt = v.first_seen_at;
+          }
+        }
+      }
     }
     byCityMap.set(v.city, agg);
   }
@@ -159,15 +194,19 @@ export async function GET(req: NextRequest) {
   // this run's date (RLS-scoped: a manager sees only their own city's row).
   const { data: cityStats } = await supabase
     .from("run_city_stats")
-    .select("city, pp_box_count, consumable_count")
+    .select("city, pp_box_count, consumable_count, movements")
     .eq("business_date", run.business_date);
   for (const s of cityStats ?? []) {
     const agg = byCityMap.get(s.city) ?? emptyAgg(s.city);
     agg.ppBox = s.pp_box_count ?? 0;
     agg.consumable = s.consumable_count ?? 0;
+    // The denominator. It was being fetched one column away from here and
+    // thrown out, which is why five city cards ranked by warehouse size.
+    agg.movements = s.movements ?? 0;
     byCityMap.set(s.city, agg);
     overall.ppBox += s.pp_box_count ?? 0;
     overall.consumable += s.consumable_count ?? 0;
+    overall.movements += s.movements ?? 0;
   }
 
   return NextResponse.json({

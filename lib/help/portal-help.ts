@@ -58,10 +58,10 @@ export const HELP_BY_ROUTE: Record<string, HelpEntry> = {
   "/leaderboard": {
     title: "City Leaderboard",
     blurb:
-      "Ranks the five warehouses by how few losses they have relative to total movements.",
+      "Ranks the five warehouses by how much of what they move can be traced end to end.",
     points: [
-      "Accuracy = 1 minus losses divided by movements, measured as found in each run.",
-      "Switch between the latest run, last 7 days, last 30 days, and overall.",
+      "The score is units traced end to end divided by units moved, measured as found in each check.",
+      "Switch between the latest check, last 7 days, last 30 days, and overall. A day a warehouse was shut is left out, so a closed Thursday can neither help nor hurt its score.",
       "A higher rank means cleaner agreement between the four systems — fewer gaps to chase.",
     ],
   },
@@ -87,7 +87,7 @@ export const HELP_BY_ROUTE: Record<string, HelpEntry> = {
   },
   "/analytics": {
     title: "Analytics",
-    blurb: "Trends over time — daily accuracy and flagged-item volumes per city.",
+    blurb: "Trends over time — how much gets traced each day, and how the warehouses compare.",
     points: [
       "Charts of accuracy across the last 7 and 30 days.",
       "Compare cities and spot which warehouses are improving or slipping.",
