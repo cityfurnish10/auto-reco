@@ -71,7 +71,16 @@ export function cityRateLine(agg: StatLike | null | undefined): string {
   return `${n(real)} of ${n(movements)} units moved · ${accuracyOf(movements, real)}% traced`;
 }
 
-/** "4th of 5 today" — where this city sits, cleanest first. */
+/**
+ * "2nd of 3 compared" — where this city sits, cleanest first.
+ *
+ * The denominator is the number of cities with ENOUGH MOVEMENT to rank, not the
+ * number on screen. A warehouse that moved 31 units cannot be meaningfully
+ * ranked against one that moved 172, so it is left out — and saying "of 3" while
+ * five cards are visible reads as a bug unless the word "compared" is there to
+ * explain it. Cities below the floor get no rank line at all; their rate line
+ * already says "too few to compare".
+ */
 export function rankLine(
   city: string,
   all: { city: string; real: number; movements: number }[]
@@ -84,7 +93,7 @@ export function rankLine(
   if (scored.length < 2) return null;
   const i = scored.findIndex((c) => c.city === city);
   if (i < 0) return null;
-  return `${i + 1}${ordinal(i + 1)} of ${scored.length} today`;
+  return `${i + 1}${ordinal(i + 1)} of ${scored.length} compared`;
 }
 
 function ordinal(x: number): string {

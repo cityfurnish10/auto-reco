@@ -461,7 +461,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 {agg?.pendingApproval} pending approval
               </button>
             ) : (
-              "{queueCaption(agg)}"
+              queueCaption(agg)
             )}
           </span>
         </div>
@@ -875,7 +875,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             <EmptyState
               compact
               icon={filtersActive ? "search_off" : "task_alt"}
-              title={filtersActive ? "No variances match these filters" : "Nothing to chase here"}
+              title={filtersActive ? "Nothing matches these filters" : "Everything is accounted for"}
               detail={
                 filtersActive
                   ? "The rows may exist on another date, city or status."
@@ -1057,7 +1057,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     <EmptyState
                       icon={filtersActive ? "search_off" : "task_alt"}
                       title={
-                        filtersActive ? "No variances match these filters" : "Nothing to chase here"
+                        filtersActive ? "Nothing matches these filters" : "Everything is accounted for"
                       }
                       detail={
                         filtersActive

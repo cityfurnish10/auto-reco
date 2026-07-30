@@ -616,7 +616,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
             <EmptyState
               compact
               icon={filtersActive ? "search_off" : "task_alt"}
-              title={filtersActive ? "No variances match these filters" : "All clear"}
+              title={filtersActive ? "Nothing matches these filters" : `${city} is fully accounted for`}
               detail={
                 filtersActive
                   ? "The rows may exist on another date or status."
@@ -750,7 +750,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                   <td colSpan={13}>
                     <EmptyState
                       icon={filtersActive ? "search_off" : "task_alt"}
-                      title={filtersActive ? "No variances match these filters" : "All clear"}
+                      title={filtersActive ? "Nothing matches these filters" : `${city} is fully accounted for`}
                       detail={
                         filtersActive
                           ? "The rows may exist on another date or status."
