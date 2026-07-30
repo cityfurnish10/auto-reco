@@ -104,6 +104,18 @@ export async function runReconcilePipeline(
     //     genuinely-open items to "this gap had cleared". Silent data loss
     //     dressed as a resolution. Best-effort; never fails the run.
     const pipelineWarnings: string[] = [];
+
+    // 1a-0. A source that FAILED must say so where a human looks. Until now the
+    //       only trace was an ingestion_logs row, and the run's own warnings —
+    //       which the dashboard and System Health read — stayed empty. The ops
+    //       sheet failed on every run from 27 Jul 2026 with a malformed
+    //       SHEETS_CONFIG and nothing anywhere said the word "sheet"; the run
+    //       just went 'partial', as it does for a dozen benign reasons.
+    for (const r of results) {
+      if (!r.ok) {
+        pipelineWarnings.push(`${r.source} source failed: ${r.message ?? "unknown error"}`);
+      }
+    }
     // Which cities the guard demoted, as a set rather than a regex over prose —
     // the run snapshot stores it so the Stock Analyser can tell a truncated pull
     // from an outright outage.

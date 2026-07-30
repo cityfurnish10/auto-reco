@@ -55,7 +55,12 @@ export function registerAttachments(res: RegisterPdfResult | null): {
       })),
     };
   }
-  return res?.reason ? { attachmentNote: res.reason } : {};
+  // `null` means buildRegisterPdfs THREW and every call site swallowed it. That
+  // used to return {} — no attachment and no explanation, which is how a reader
+  // ends up assuming there was simply nothing to send. Always say something.
+  return {
+    attachmentNote: res?.reason ?? "the register could not be built for this date",
+  };
 }
 
 interface SheetRow {

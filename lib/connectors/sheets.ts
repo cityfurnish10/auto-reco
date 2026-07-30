@@ -37,7 +37,7 @@
 import { google, sheets_v4 } from "googleapis";
 import type { Connector, CityTaggedRow } from "./types";
 import { normalizeCity } from "./types";
-import { readServiceAccountKey } from "./google-service-account";
+import { parseJsonEnv, readServiceAccountKey } from "./google-service-account";
 import { detectDateOrder, resolveSheetDate } from "./sheets-mapping";
 import type { Direction } from "../engine/types";
 
@@ -61,12 +61,9 @@ interface SheetConfigEntry {
 function readSheetsConfig(): Record<string, SheetConfigEntry> | null {
   const raw = process.env.SHEETS_CONFIG;
   if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as Record<string, SheetConfigEntry>;
-    return Object.keys(parsed).length > 0 ? parsed : null;
-  } catch {
-    return null;
-  }
+  const parsed = parseJsonEnv<Record<string, SheetConfigEntry>>(raw);
+  if (!parsed) return null;
+  return Object.keys(parsed).length > 0 ? parsed : null;
 }
 
 let sheetsApiPromise: Promise<sheets_v4.Sheets> | null = null;
@@ -142,7 +139,16 @@ export const sheetsConnector: Connector = {
   label: "Google Sheets",
   async pull(runDate: string): Promise<CityTaggedRow[]> {
     const config = readSheetsConfig();
-    if (!config) throw new Error("Sheets not configured (set SHEETS_CONFIG).");
+    // Distinguish "never set up" from "set up and broken". The single old
+    // message covered both, so three days of a malformed SHEETS_CONFIG read as
+    // a feature nobody had configured yet.
+    if (!config) {
+      throw new Error(
+        process.env.SHEETS_CONFIG
+          ? "SHEETS_CONFIG is set but could not be read as JSON (check for escaped quotes or a truncated paste)."
+          : "Sheets not configured (set SHEETS_CONFIG)."
+      );
+    }
     if (!readServiceAccountKey()) {
       throw new Error("Sheets not configured (set GOOGLE_SERVICE_ACCOUNT_KEY).");
     }
