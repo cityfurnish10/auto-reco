@@ -23,7 +23,7 @@ import CloseVarianceModal from "./close-variance-modal";
 import VarianceDetailModal from "./variance-detail-modal";
 import VarianceListModal, { type ListModalRequest } from "./variance-list-modal";
 import { closedPartOfWindow, isCityOff } from "@/lib/engine/schedule";
-import { cityRateLine, queueCaption, rankLine, rateCaption } from "@/lib/ui/stat-captions";
+import { cityRateLine, queueCaption, rateCaption } from "@/lib/ui/stat-captions";
 import {
   PRIORITY_BADGE,
   STATUS_BADGE,
@@ -605,11 +605,6 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     Weekly off falls in this window — the day runs 3pm to 3pm, so
                     the morning half was the holiday. These numbers are real, but
                     they cover the open half only.
-                  </div>
-                )}
-                {!off && rankLine(c.city, stats?.byCity ?? []) && (
-                  <div className="text-xs text-text-muted">
-                    {rankLine(c.city, stats?.byCity ?? [])}
                   </div>
                 )}
                 <div className="text-xs text-text-disabled">

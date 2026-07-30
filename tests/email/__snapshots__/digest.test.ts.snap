@@ -39,6 +39,7 @@ exports[`digest — model snapshot > richDay 1`] = `
           [
             {
               "text": "Delhi",
+              "tone": undefined,
             },
             {
               "align": "right",
@@ -62,6 +63,7 @@ exports[`digest — model snapshot > richDay 1`] = `
           [
             {
               "text": "Bangalore",
+              "tone": undefined,
             },
             {
               "align": "right",
@@ -85,6 +87,7 @@ exports[`digest — model snapshot > richDay 1`] = `
           [
             {
               "text": "Mumbai",
+              "tone": undefined,
             },
             {
               "align": "right",
@@ -108,6 +111,7 @@ exports[`digest — model snapshot > richDay 1`] = `
           [
             {
               "text": "Pune",
+              "tone": undefined,
             },
             {
               "align": "right",
@@ -131,6 +135,7 @@ exports[`digest — model snapshot > richDay 1`] = `
           [
             {
               "text": "Hyderabad",
+              "tone": undefined,
             },
             {
               "align": "right",
@@ -181,7 +186,7 @@ exports[`digest — model snapshot > richDay 1`] = `
       },
       {
         "kind": "para",
-        "text": "+3 more kinds of item — see the dashboard.",
+        "text": "+3 more jobs, all on the dashboard.",
         "tone": "muted",
       },
     ],

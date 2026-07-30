@@ -74,10 +74,6 @@ const richDay = digest({
     { label: "Barcode Read Error", count: 114 },
     { label: "Late Paperwork", count: 26 },
   ],
-  watch: [
-    { label: "Register Gap", city: "MUMBAI", days: 5, consecutive: true, today: 148, median: 62, trend: "worsening" },
-    { label: "Ghost Dispatch", city: "PUNE", days: 4, consecutive: true, today: 0, median: 9, trend: "cleared" },
-  ],
 });
 
 const quietDay = digest({
@@ -186,10 +182,29 @@ describe("digest — budget", () => {
     expect(words, `rendered ${words} words`).toBeLessThanOrEqual(WORD_BUDGET);
   });
 
-  it("drops the watch list before it drops an action", () => {
+  it("keeps the top jobs, and says how many it is not showing", () => {
     const text = renderDigestText(richDay, URL);
-    // Actions are what the owner acts on; the watch list is context.
+    // The ladder now shrinks the action list first. Whatever it drops, the
+    // largest job survives and the count of what is hidden stays honest.
     expect(text).toContain("System-Only Entry");
+    expect(text).toMatch(/\+\d+ more jobs?, all on the dashboard\./);
+  });
+
+  it("marks a city whose weekly off falls inside the business day", () => {
+    // Both shapes: the date that IS the holiday, and the day before, whose
+    // morning half is. A business day runs 3pm to 3pm.
+    const d = digest({
+      totals: { movements: 100, tier1: 1, tier2: 0, tier3: 0, open: 1 },
+      cities: [
+        city({ city: "MUMBAI", tier1: 1, open: 1, weekOff: "partial" }),
+        city({ city: "PUNE", weekOff: "full", register: "off" }),
+        city({ city: "DELHI" }),
+      ],
+    });
+    const text = renderDigestText(d, URL);
+    expect(text).toContain("Mumbai (week off)");
+    expect(text).toContain("Pune (week off)");
+    expect(text).not.toContain("Delhi (week off)");
   });
 });
 
@@ -238,11 +253,12 @@ describe("digest — subject", () => {
 });
 
 describe("digest — the incomplete run outranks everything", () => {
-  it("replaces the opening line with the banner and drops the watch list", () => {
+  it("replaces the opening line with the banner", () => {
     const d = digest({ ...richDay, runIncomplete: true });
     const text = renderDigestText(d, URL);
     expect(text).toMatch(/did not finish/i);
-    expect(text).not.toContain("Worth watching");
+    // The banner REPLACES the opening line rather than sitting above it.
+    expect(text).not.toContain("closed at 3pm");
   });
 });
 

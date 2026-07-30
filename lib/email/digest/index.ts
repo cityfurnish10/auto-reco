@@ -11,7 +11,7 @@ export { buildDigestFromDb } from "./build";
 export { digestSubject } from "./subject";
 export { buildSections, WORD_BUDGET, DIGEST_KICKER } from "./sections";
 export { visibleStrings } from "./model";
-export type { DigestData, CityDigestRow, CityMovementCounts, ActionItem, WatchItem, RegisterState } from "./types";
+export type { DigestData, CityDigestRow, CityMovementCounts, ActionItem, RegisterState } from "./types";
 export type { Section, Block } from "./model";
 
 function dateLabel(d: string): string {

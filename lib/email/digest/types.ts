@@ -43,17 +43,6 @@ export interface ActionItem {
   cities: { city: string; count: number }[];
 }
 
-/** A (label, city) pattern seen on several recent days. */
-export interface WatchItem {
-  label: string;
-  city: string;
-  days: number; // days present within the window
-  consecutive: boolean;
-  today: number;
-  median: number; // median of the prior comparable days
-  trend: "worsening" | "steady" | "cleared";
-}
-
 export interface CityDigestRow {
   city: string;
   /** Distinct directional movements — the denominator, not a variance count. */
@@ -68,6 +57,15 @@ export interface CityDigestRow {
   /** The largest tier-1 kind for this city, or null when there is none. */
   topRisk: { label: string; count: number; team: string } | null;
   counts?: CityMovementCounts;
+  /**
+   * The weekly holiday falls inside this business day.
+   *
+   * "full" — the business date IS the city's off day.
+   * "partial" — the date is the day BEFORE, whose morning half is the holiday.
+   * Both are marked, because a business day runs 3pm to 3pm and a one-day
+   * closure therefore sits inside two of them.
+   */
+  weekOff?: "full" | "partial" | null;
   /**
    * How this city's at-risk count compares with its own recent comparable days.
    *
@@ -95,8 +93,6 @@ export interface DigestData {
   actions: ActionItem[];
   /** Tier-3 kinds with counts, biggest first — the footer line. */
   informational: { label: string; count: number }[];
-  /** Absent when the query failed; the section is then simply omitted. */
-  watch?: WatchItem[];
   /** True when no completed reconciliation exists for `date`. */
   runIncomplete?: boolean;
   /**

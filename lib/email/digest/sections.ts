@@ -111,7 +111,17 @@ const TREND_TEXT = { worse: "Worse", usual: "Usual", better: "Better" } as const
 
 function citySnapshot(cities: CityDigestRow[], footnote: string | null): Block {
   const rows = cities.map((c) => [
-    { text: cityName(c.city) },
+    // The marker rides the CITY cell, not the register column. The register cell
+    // already reads "Weekly off" on a full off day, but on the day BEFORE — whose
+    // morning half is the holiday — it reads "Not received", which blames the
+    // guard for a day nobody was there. A business day runs 3pm to 3pm, so a
+    // one-day closure lands inside two of them.
+    {
+      text: c.weekOff
+        ? `${cityName(c.city)} (week off)`
+        : cityName(c.city),
+      tone: c.weekOff ? ("muted" as const) : undefined,
+    },
     { text: n(c.movements), align: "right" as const },
     { text: n(c.tier1), align: "right" as const, tone: c.tier1 > 0 ? ("danger" as const) : undefined, strong: c.tier1 > 0 },
     {
@@ -178,27 +188,6 @@ function actionList(actions: ActionItem[], limit: number): Block[] {
     });
   }
   return blocks;
-}
-
-function watchLines(d: DigestData): string[] {
-  if (!d.watch?.length) return [];
-  return d.watch.map((w) => {
-    const where = `${w.label}, ${cityName(w.city)}`;
-    if (w.trend === "cleared")
-      return `${where} — clear today after ${w.days} straight days.`;
-    if (w.trend === "worsening")
-      // Both numbers are LABELLED. "40 to 61 units" never said which end was
-      // today, so the reader had to guess which direction it was moving.
-      return `${where} — ${w.days} of the last 7 days, and getting worse: ${n(w.median)} usually, ${n(w.today)} today.`;
-    return `${where} — ${n(w.today)} again today, the ${w.days}${ordinal(w.days)} day running.`;
-  });
-}
-
-/** 1st, 2nd, 3rd, 4th — English, not a number followed by "th". */
-function ordinal(x: number): string {
-  const rem100 = x % 100;
-  if (rem100 >= 11 && rem100 <= 13) return "th";
-  return ["th", "st", "nd", "rd"][x % 10] ?? "th";
 }
 
 function informationalLine(d: DigestData): string | null {
@@ -278,7 +267,7 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
 
   // If the check did not finish, every number below is stale or absent. That
   // outranks everything else and replaces the opening line rather than sitting
-  // above it — and the watch list is dropped to pay for the words.
+  // above it.
   if (data.runIncomplete) {
     sections.push({
       id: "incomplete",
@@ -326,15 +315,6 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
     });
   }
 
-  const watch = watchLines(data);
-  if (watch.length > 0 && !data.runIncomplete) {
-    sections.push({
-      id: "watch",
-      title: "Worth watching",
-      blocks: [{ kind: "list", items: watch.map((text) => ({ text, tone: "muted" as const })) }],
-    });
-  }
-
   const footer: Block[] = [];
   const info = informationalLine(data);
   if (info) footer.push({ kind: "para", text: info, tone: "muted" });
@@ -371,7 +351,7 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
 /**
  * Deterministic degradation, applied here rather than by hand at write time.
  *
- * Order: the watch list goes first, then the action list shrinks, then the
+ * Order: the action list shrinks first, then the
  * informational breakdown. NEVER dropped: the opening line, the at-risk column,
  * the top three actions, the link, and the incomplete-run banner.
  */
@@ -387,17 +367,7 @@ export function trimToBudget(sections: Section[]): Section[] {
   let out = sections;
   if (words(out) <= budget) return out;
 
-  // 1. Watch list: one line, then none.
-  out = out.map((s) =>
-    s.id === "watch" && s.blocks[0]?.kind === "list"
-      ? { ...s, blocks: [{ ...s.blocks[0], items: s.blocks[0].items.slice(0, 1) }] }
-      : s
-  );
-  if (words(out) <= budget) return out;
-  out = out.filter((s) => s.id !== "watch");
-  if (words(out) <= budget) return out;
-
-  // 2. Actions: five to three, keeping the "+N more" pointer honest.
+  // 1. Actions: down to three, keeping the "+N more" pointer honest.
   out = out.map((s) => {
     if (s.id !== "actions") return s;
     const list = s.blocks.find((b) => b.kind === "list");
@@ -416,7 +386,9 @@ export function trimToBudget(sections: Section[]): Section[] {
         { ...list, items: list.items.slice(0, 3) },
         {
           kind: "para",
-          text: `+${dropped} more ${dropped === 1 ? "kind" : "kinds"} of item — see the dashboard.`,
+          // Same wording as actionList above. Two spellings of one line meant the
+          // email changed voice the moment the budget bit.
+          text: `+${dropped} more ${dropped === 1 ? "job" : "jobs"}, all on the dashboard.`,
           tone: "muted",
         },
       ],
@@ -424,7 +396,7 @@ export function trimToBudget(sections: Section[]): Section[] {
   });
   if (words(out) <= budget) return out;
 
-  // 3. Informational breakdown collapses to a bare count.
+  // 2. Informational breakdown collapses to a bare count.
   out = out.map((s) => {
     if (s.id !== "footer") return s;
     return {
