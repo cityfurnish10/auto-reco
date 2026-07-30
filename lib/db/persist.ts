@@ -10,6 +10,7 @@ import { RESOLVED_LATE_NOTE } from "../engine/resolution";
 import { canonicalize } from "../engine/barcode";
 import { addDays } from "../engine/dates";
 import type { ConnectorResult } from "../connectors/types";
+import { RUN_SNAPSHOT_SCHEMA, type RunCitySnapshot } from "../reconcile/run-snapshot";
 
 type DB = SupabaseClient;
 
@@ -47,22 +48,95 @@ export async function loadRecentFloorBarcodes(
   return out;
 }
 
+/**
+ * Which PASS this run is (migration 0017).
+ *
+ * Orthogonal to `trigger`, which records WHO started it. An admin's targeted
+ * re-run is trigger='manual', role='adhoc'; the scheduled re-check is
+ * trigger='cron', role='recheck'. Folding them into one column loses one of the
+ * two facts permanently.
+ */
+export type RunRole = "primary" | "recheck" | "adhoc";
+
 export async function createRun(
   db: DB,
-  opts: { runDate: string; trigger: "cron" | "manual"; triggeredBy?: string }
-): Promise<string> {
-  const { data, error } = await db
+  opts: {
+    runDate: string;
+    trigger: "cron" | "manual";
+    triggeredBy?: string;
+    /**
+     * REQUIRED, not optional, and that is the point: `tsc --noEmit` fails at
+     * every call site until its author decides which pass this is. Nothing can
+     * be inferred after the fact — the re-check pass writes trigger:'cron',
+     * byte-identical to the primary pass.
+     */
+    role: RunRole;
+    /** Step 0 was skipped. True on every re-check pass. */
+    skipOcr?: boolean;
+  }
+): Promise<{ id: string; createdAt: string }> {
+  const base = {
+    business_date: opts.runDate,
+    status: "running",
+    trigger: opts.trigger,
+    triggered_by: opts.triggeredBy ?? null,
+  };
+  // created_at is selected because run_city_snapshots denormalises it, which
+  // turns "the passes for this date in order" into an index range scan instead
+  // of a join on every page load.
+  const cols = "id, created_at";
+
+  let { data, error } = await db
     .from("reconciliation_runs")
-    .insert({
-      business_date: opts.runDate,
-      status: "running",
-      trigger: opts.trigger,
-      triggered_by: opts.triggeredBy ?? null,
-    })
-    .select("id")
+    .insert({ ...base, run_role: opts.role, ocr_skipped: opts.skipOcr === true })
+    .select(cols)
     .single();
+
+  if (error) {
+    // THE highest-stakes degradation in this file. createRun is called OUTSIDE
+    // runReconcilePipeline's try block, and the cron's primary call has no
+    // .catch() — a throw here ends the night with no run row at all, and no
+    // variances for the day, purely because two new columns had nowhere to go.
+    //
+    // 42703 = undefined_column; PostgREST reports an unknown column as PGRST204
+    // "Could not find the 'x' column ... in the schema cache".
+    if (
+      error.code === "42703" ||
+      error.code === "PGRST204" ||
+      /does not exist|could not find/i.test(error.message)
+    ) {
+      warnNo0017();
+      ({ data, error } = await db
+        .from("reconciliation_runs")
+        .insert(base)
+        .select(cols)
+        .single());
+    }
+  }
   if (error) throw new Error(`createRun failed: ${error.message}`);
-  return data.id as string;
+  return {
+    id: data!.id as string,
+    createdAt: (data as { created_at?: string }).created_at ?? new Date().toISOString(),
+  };
+}
+
+/**
+ * Record why no re-check pass followed a scheduled primary run.
+ *
+ * Best-effort and deliberately quiet: this is an explanation, not a result. The
+ * fact previously existed only in the cron's HTTP response body and was
+ * discarded, so "this date has only one run" was indistinguishable from "the
+ * platform killed us".
+ */
+export async function noteRecheckSkipped(
+  db: DB,
+  runId: string,
+  reason: string
+): Promise<void> {
+  await db
+    .from("reconciliation_runs")
+    .update({ recheck_skipped_reason: reason })
+    .eq("id", runId);
 }
 
 export async function saveSourceRows(
@@ -194,6 +268,13 @@ function warnNo0013(): void {
   );
 }
 
+export interface StaleResolution {
+  superseded: number;
+  resolvedLate: number;
+  /** The same figures per city, for the run snapshot (migration 0017). */
+  byCity: Partial<Record<City, { superseded: number; resolvedLate: number }>>;
+}
+
 // Stale-open resolution — the "next-day re-check" pass. On a RE-RUN of a date,
 // upsertVariances refreshes rows that re-fire under the SAME name, but a gap
 // that CLEARED (a late entry folded in) leaves its old open row behind, because
@@ -213,9 +294,14 @@ export async function resolveStaleOpenVariances(
   runDate: string,
   perCity: CityRunResult[],
   reportedByCity: Partial<Record<City, ReportedSources>>
-): Promise<{ superseded: number; resolvedLate: number }> {
+): Promise<StaleResolution> {
   let superseded = 0;
   let resolvedLate = 0;
+  // Kept per city as well as summed (migration 0017). The run snapshot stores
+  // this split so the Stock Analyser has a SECOND, independent number to check
+  // its key-diff against — and because superseded rows are hard-DELETEd below,
+  // the count is the only surviving trace that they existed at all.
+  const byCity: Partial<Record<City, { superseded: number; resolvedLate: number }>> = {};
   const now = new Date().toISOString();
 
   for (const cr of perCity) {
@@ -267,10 +353,13 @@ export async function resolveStaleOpenVariances(
       }
     }
 
+    const mine = (byCity[cr.city] ??= { superseded: 0, resolvedLate: 0 });
+
     if (supersededIds.length > 0) {
       const { error: delErr } = await db.from("variances").delete().in("id", supersededIds);
       if (delErr) throw new Error(`resolveStaleOpenVariances delete failed: ${delErr.message}`);
       superseded += supersededIds.length;
+      mine.superseded += supersededIds.length;
     }
     if (resolvedIds.length > 0) {
       const { error: updErr } = await db
@@ -286,10 +375,11 @@ export async function resolveStaleOpenVariances(
         .in("id", resolvedIds);
       if (updErr) throw new Error(`resolveStaleOpenVariances update failed: ${updErr.message}`);
       resolvedLate += resolvedIds.length;
+      mine.resolvedLate += resolvedIds.length;
     }
   }
 
-  return { superseded, resolvedLate };
+  return { superseded, resolvedLate, byCity };
 }
 
 // Per-city rollup for the leaderboard (movements = accuracy denominator,
@@ -369,6 +459,94 @@ export async function saveCityStats(
     throw new Error(`saveCityStats failed: ${error.message}`);
   }
   return payload.length;
+}
+
+// ---------------------------------------------------------------------------
+// Per-RUN, per-city snapshots (migration 0017).
+//
+// saveCityStats above upserts on (business_date, city), so the re-check pass
+// OVERWRITES the numbers the primary pass produced. That is right for the
+// leaderboard — a window sum must not double-count a re-run — and it is exactly
+// why "what did the first check find?" has no answer today.
+//
+// This INSERTs one row per (run_id, city) and never updates. The UNIQUE
+// constraint exists to catch a double write, not to permit one.
+export async function saveRunCitySnapshots(
+  db: DB,
+  runId: string,
+  runDate: string,
+  runStartedAt: string,
+  rows: RunCitySnapshot[],
+  opts: { backfilled?: boolean } = {}
+): Promise<number> {
+  if (rows.length === 0) return 0;
+  const payload = rows.map((s) => ({
+    run_id: runId,
+    business_date: s.businessDate || runDate,
+    city: s.city,
+    run_started_at: runStartedAt,
+    schema_version: RUN_SNAPSHOT_SCHEMA,
+    movements: s.movements,
+    emitted_count: s.emittedCount,
+    real_count: s.realCount,
+    info_count: s.infoCount,
+    high_count: s.highCount,
+    tier1_count: s.tier1Count,
+    tier2_count: s.tier2Count,
+    tier3_count: s.tier3Count,
+    flagged_count: s.flaggedCount,
+    by_variance: s.byVariance,
+    superseded_count: s.supersededCount,
+    resolved_late_count: s.resolvedLateCount,
+    reported_p: s.reported.P,
+    reported_s: s.reported.S,
+    reported_d: s.reported.D,
+    reported_o: s.reported.O,
+    sheet_truncated: s.sheetTruncated,
+    sheet_in: s.sheetIn,
+    sheet_out: s.sheetOut,
+    odoo_in: s.odooIn,
+    odoo_out: s.odooOut,
+    dt_in: s.dtIn,
+    dt_out: s.dtOut,
+    phys_in: s.physIn,
+    phys_out: s.physOut,
+    tier1_keys: s.tier1Keys,
+    tier2_keys: s.tier2Keys,
+    tier3_keys: s.tier3Keys,
+    keys_truncated: s.keysTruncated,
+    backfilled: opts.backfilled ?? false,
+  }));
+
+  const { error } = await db.from("run_city_snapshots").insert(payload);
+  if (error) {
+    // A missing TABLE is not a missing COLUMN: PostgREST reports it as PGRST205
+    // ("Could not find the table ... in the schema cache") and Postgres as 42P01
+    // (undefined_table). The 0013 guard in upsertVariances tests 42703/PGRST204
+    // and would NOT catch either of these, so copying it verbatim would let an
+    // unapplied 0017 throw on the nightly critical path. Same reasoning as
+    // upsertMovementEvents below.
+    if (
+      error.code === "42P01" ||
+      error.code === "PGRST205" ||
+      /does not exist|could not find/i.test(error.message)
+    ) {
+      warnNo0017();
+      return 0;
+    }
+    // A CHECK violation (23514) is deliberately NOT swallowed. It means the
+    // builder produced a flagged_count that disagrees with its own tiers, or blew
+    // the key budget — a bug that should cost one snapshot, loudly, rather than
+    // write history nobody can trust. The pipeline's .catch() downgrades it to a
+    // warning.
+    throw new Error(`saveRunCitySnapshots failed: ${error.message}`);
+  }
+  return payload.length;
+}
+
+/** 120-day retention for the snapshot key arrays only. Best-effort. */
+export async function pruneRunSnapshotKeys(db: DB): Promise<void> {
+  await db.rpc("prune_run_snapshot_keys");
 }
 
 export async function saveIngestionLogs(
@@ -457,24 +635,56 @@ export async function saveEmailLog(
   return data?.id ?? null;
 }
 
+/**
+ * Cap on stored warnings.
+ *
+ * Five cities of OCR-orphan merges can run long, and this column is read on a
+ * page load. 200 x ~120 B is ~24 KB, which is fine; past that the tail is
+ * repetitive and the count is what matters.
+ */
+const MAX_STORED_WARNINGS = 200;
+
 export async function finalizeRun(
   db: DB,
   runId: string,
   run: MultiCityRun,
-  status: "success" | "partial" | "failed"
+  status: "success" | "partial" | "failed",
+  /**
+   * Pipeline-level warnings (the sheet-truncation guard, chiefly).
+   *
+   * The `warnings` column has existed since 0001 and only markRunFailed ever
+   * wrote it, so every engine and pipeline warning was console.warn only — and on
+   * Vercel Hobby those logs are effectively gone within the day. The
+   * sheet-truncation warning is the direct, human-readable evidence that a
+   * re-check saw less than the primary pass, which is precisely what the Stock
+   * Analyser needs to refuse a comparison. It was being thrown away.
+   */
+  extraWarnings: string[] = []
 ): Promise<void> {
+  const all = [
+    ...extraWarnings,
+    ...run.perCity.flatMap((c) => c.warnings.map((w) => `${c.city}: ${w}`)),
+    ...run.skipped.map((s) => `${s.city} skipped: ${s.error}`),
+  ];
+  const warnings =
+    all.length > MAX_STORED_WARNINGS
+      ? [...all.slice(0, MAX_STORED_WARNINGS), `… ${all.length - MAX_STORED_WARNINGS} more suppressed`]
+      : all;
+
+  const base = {
+    run_date: run.date || null,
+    status,
+    total: run.combined.total,
+    real_count: run.combined.real_count,
+    info_count: run.combined.info_count,
+    high_priority: run.combined.high_priority,
+    by_variance: run.combined.by_variance,
+    completed_at: new Date().toISOString(),
+  };
+
   const { error } = await db
     .from("reconciliation_runs")
-    .update({
-      run_date: run.date || null,
-      status,
-      total: run.combined.total,
-      real_count: run.combined.real_count,
-      info_count: run.combined.info_count,
-      high_priority: run.combined.high_priority,
-      by_variance: run.combined.by_variance,
-      completed_at: new Date().toISOString(),
-    })
+    .update({ ...base, warnings })
     .eq("id", runId);
   if (error) throw new Error(`finalizeRun failed: ${error.message}`);
 }
@@ -578,6 +788,15 @@ function warnNo0016(): void {
   warned0016 = true;
   console.warn(
     "[saveEmailLog] migration 0016 not applied — the figures each email printed were not stored. Follow-up emails cannot be sent for these dates; apply supabase/migrations/0016_followup_emails.sql."
+  );
+}
+
+let warned0017 = false;
+function warnNo0017(): void {
+  if (warned0017) return;
+  warned0017 = true;
+  console.warn(
+    "[reconcile] migration 0017 not applied — per-run, per-city snapshots were not stored and runs are not labelled by pass. The Stock Analyser cannot compare the first check against the re-check for these dates, and it can never be reconstructed; apply supabase/migrations/0017_run_city_snapshots.sql."
   );
 }
 

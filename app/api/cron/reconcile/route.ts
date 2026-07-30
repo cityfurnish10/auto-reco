@@ -11,6 +11,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runReconcilePipeline } from "@/lib/reconcile/pipeline";
 import { reconcileTargetDate, recheckTargetDate } from "@/lib/reconcile/cron-dates";
+import { noteRecheckSkipped } from "@/lib/db/persist";
 import { addDays } from "@/lib/engine/dates";
 
 export const runtime = "nodejs";
@@ -60,15 +61,25 @@ async function handle(req: NextRequest) {
     );
   }
 
-  const runDate = req.nextUrl.searchParams.get("date") || reconcileTargetDate();
+  const explicitDate = req.nextUrl.searchParams.get("date");
+  const runDate = explicitDate || reconcileTargetDate();
   const trigger = req.method === "POST" ? "manual" : "cron";
+  // THE definition of "this is the untouched scheduled pass". Used for the run's
+  // recorded role AND for the re-check gate below, so the two cannot drift — this
+  // predicate was spelled out twice, and the file's own comment records that the
+  // last pair of duplicated date expressions here disagreed by a day.
+  const scheduled = req.method === "GET" && !explicitDate;
   const db = createAdminClient();
 
   // The whole pipeline lives in lib/reconcile/pipeline.ts (shared with the
   // admin-triggered /api/reconcile route). The digest is NOT sent here — it
   // goes out 15 minutes later via /api/cron/email-digest.
   const startedAt = Date.now();
-  const result = await runReconcilePipeline(db, { runDate, trigger });
+  const result = await runReconcilePipeline(db, {
+    runDate,
+    trigger,
+    role: scheduled ? "primary" : "adhoc",
+  });
 
   // Second-pass re-check: on the scheduled run (GET, no explicit ?date=), also
   // re-reconcile TWO days before the primary target, so entries made even later
@@ -93,10 +104,16 @@ async function handle(req: NextRequest) {
   // source is then simply absent, fullCoverage is false, and the resolved-late
   // branch does not fire at all.
   let recheck: unknown;
-  if (req.method === "GET" && !req.nextUrl.searchParams.get("date")) {
+  if (scheduled) {
     const elapsed = Date.now() - startedAt;
     if (elapsed > RECHECK_BUDGET_MS) {
+      const reason = `budget: ${elapsed}ms elapsed of ${RECHECK_BUDGET_MS}ms`;
       recheck = { ok: false, skipped: "budget", elapsedMs: elapsed };
+      // Record it on the primary run (migration 0017). Until now this lived only
+      // in the response body, so "this date has only one run" was
+      // indistinguishable from "the platform killed us" — and the Stock Analyser
+      // has to tell the reader which.
+      await noteRecheckSkipped(db, result.runId, reason).catch(() => {});
     } else {
       // recheckTargetDate(), not local arithmetic: the follow-up email looks
       // for a re-run of exactly this date, so the two must be one expression.
@@ -105,6 +122,7 @@ async function handle(req: NextRequest) {
         runDate: recheckTargetDate(),
         trigger: "cron",
         skipOcr: true,
+        role: "recheck",
       }).catch((e) => ({ ok: false, error: e instanceof Error ? e.message : String(e) }));
     }
   }

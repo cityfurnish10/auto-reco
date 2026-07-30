@@ -39,6 +39,9 @@ export async function POST(req: NextRequest) {
     runDate,
     trigger: "manual",
     triggeredBy: me.id,
+    // A human re-running one date is never the scheduled first pass or the
+    // scheduled re-check, whatever date they picked (migration 0017).
+    role: "adhoc",
   });
 
   return NextResponse.json(result, { status: result.ok ? 200 : 500 });

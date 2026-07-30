@@ -66,7 +66,17 @@ export async function guardTruncatedSheet(
   runDate: string,
   rowsByCity: Record<City, { source: string }[]>,
   reportedByCity: Partial<Record<City, ReportedSources>>,
-  warnings: string[]
+  warnings: string[],
+  /**
+   * Out-param: the cities demoted here.
+   *
+   * The run snapshot (migration 0017) stores `sheet_truncated` so the Stock
+   * Analyser can tell "the Sheets connector was down" from "the pull came back at
+   * 34% of what we recorded earlier" — two facts this function otherwise
+   * collapses into a single S=false. Passed as a set rather than parsed back out
+   * of `warnings`, because a regex over a prose string is not a fact.
+   */
+  truncated?: Set<City>
 ): Promise<Partial<Record<City, ReportedSources>>> {
   const { data, error } = await db
     .from("run_city_stats")
@@ -90,6 +100,7 @@ export async function guardTruncatedSheet(
     const rep = guarded[check.city as City];
     if (!rep?.S) continue; // already unreported — nothing to protect
     guarded[check.city as City] = { ...rep, S: false };
+    truncated?.add(check.city as City);
     warnings.push(
       `Ops sheet for ${check.city} pulled ${check.pulled} rows against ${check.previously} recorded earlier for ${runDate} — treating the sheet as not reported so a truncated pull cannot resolve open items.`
     );

@@ -15,6 +15,8 @@ import { runAllCities, type MultiCityRun } from "../engine/run";
 import { guardTruncatedSheet } from "./sheet-guard";
 import { pullAll } from "../connectors";
 import { processPendingGuardUploads } from "../connectors/ocr/process";
+import { buildRunCitySnapshots } from "./run-snapshot";
+import type { City } from "../sample-data";
 import {
   createRun,
   saveSourceRows,
@@ -23,10 +25,13 @@ import {
   upsertMovementEvents,
   resolveStaleOpenVariances,
   saveCityStats,
+  saveRunCitySnapshots,
+  pruneRunSnapshotKeys,
   saveIngestionLogs,
   finalizeRun,
   markRunFailed,
   prune,
+  type RunRole,
 } from "../db/persist";
 
 export interface ReconcileResult {
@@ -39,6 +44,8 @@ export interface ReconcileResult {
   variancesUpserted?: number;
   movementsLedgered?: number;
   stale?: { superseded: number; resolvedLate: number };
+  /** Per-city snapshot rows written for this run (migration 0017). */
+  snapshotsWritten?: number;
   combined?: MultiCityRun["combined"];
   guardOcr?: unknown;
   error?: string;
@@ -58,13 +65,21 @@ export async function runReconcilePipeline(
      * the resolved-late branch does not fire.
      */
     skipOcr?: boolean;
+    /**
+     * Which pass this is (migration 0017). REQUIRED — nothing can infer it after
+     * the fact, because the re-check writes trigger:'cron' exactly like the
+     * primary pass.
+     */
+    role: RunRole;
   }
 ): Promise<ReconcileResult> {
   const { runDate, trigger } = opts;
-  const runId = await createRun(db, {
+  const { id: runId, createdAt: runStartedAt } = await createRun(db, {
     runDate,
     trigger,
     triggeredBy: opts.triggeredBy ?? undefined,
+    role: opts.role,
+    skipOcr: opts.skipOcr === true,
   });
 
   try {
@@ -89,12 +104,17 @@ export async function runReconcilePipeline(
     //     genuinely-open items to "this gap had cleared". Silent data loss
     //     dressed as a resolution. Best-effort; never fails the run.
     const pipelineWarnings: string[] = [];
+    // Which cities the guard demoted, as a set rather than a regex over prose —
+    // the run snapshot stores it so the Stock Analyser can tell a truncated pull
+    // from an outright outage.
+    const truncatedCities = new Set<City>();
     const reportedByCity = await guardTruncatedSheet(
       db,
       runDate,
       rowsByCity,
       pulledReported,
-      pipelineWarnings
+      pipelineWarnings,
+      truncatedCities
     ).catch(() => pulledReported);
     for (const w of pipelineWarnings) console.warn(`[reconcile] ${w}`);
 
@@ -134,29 +154,70 @@ export async function runReconcilePipeline(
       }
     );
 
-    // 4a. Next-day re-check: on a re-run, resolve/downgrade open rows whose gap
+    // 4b. Next-day re-check: on a re-run, resolve/downgrade open rows whose gap
     //     has since cleared (a late entry folded in). Best-effort — a failure
     //     here must not fail an otherwise-good run.
     const stale = await resolveStaleOpenVariances(db, runId, runDate, run.perCity, reportedByCity).catch(
       (e) => {
         console.warn("resolveStaleOpenVariances failed:", e instanceof Error ? e.message : e);
-        return { superseded: 0, resolvedLate: 0 };
+        return { superseded: 0, resolvedLate: 0, byCity: {} };
       }
     );
 
-    // 4b. Per-city rollup for the leaderboard (movements + REAL count per city).
+    // 4c. Per-city rollup for the leaderboard (movements + REAL count per city).
     await saveCityStats(db, runId, runDate, run.perCity, reportedByCity);
+
+    // 4d. Freeze what THIS run concluded, per city, with the coverage it had
+    //     (migration 0017).
+    //
+    //     AFTER 4b, deliberately: resolveStaleOpenVariances reports the
+    //     superseded/resolved-late split, and since it hard-DELETEs superseded
+    //     rows that count is the only surviving trace they existed.
+    //
+    //     Built from what the engine EMITTED, so rows the re-check just
+    //     downgraded are correctly absent — that is what makes a set difference
+    //     between two runs' keys mean "the later run did not re-raise this unit".
+    //
+    //     Best-effort in two layers, exactly as 4a is: an unapplied migration is
+    //     already swallowed inside, and this catch covers the rest. It must never
+    //     take the run down, and it must run EVERY night — a run whose snapshot is
+    //     missed can never be reconstructed, because upsertVariances has already
+    //     re-stamped run_id onto its rows.
+    const snapshotsWritten = await saveRunCitySnapshots(
+      db,
+      runId,
+      runDate,
+      runStartedAt,
+      buildRunCitySnapshots(run.perCity, reportedByCity, {
+        sheetTruncated: truncatedCities,
+        stale: stale.byCity,
+      })
+    ).catch((e) => {
+      console.warn("saveRunCitySnapshots failed:", e instanceof Error ? e.message : e);
+      return 0;
+    });
 
     // 5. Log ingestion health per source.
     await saveIngestionLogs(db, runId, results);
 
     // 6. Finalize — partial if any source didn't return or any city was skipped.
+    //    pipelineWarnings carries the sheet-truncation guard's findings, which
+    //    until now were console.warn only and gone within the day on Hobby.
     const status =
       presentSources === results.length && run.skipped.length === 0 ? "success" : "partial";
-    await finalizeRun(db, runId, run, status);
+    await finalizeRun(db, runId, run, status, pipelineWarnings);
 
-    // 7. Retention backstop.
-    await prune(db);
+    // 7. Retention backstop. WRAPPED, because it runs AFTER finalizeRun: an
+    //    un-caught failure here (a lock timeout, a permissions change) fell
+    //    through to the outer handler, which calls markRunFailed — overwriting a
+    //    fully SUCCESSFUL run's status with 'failed', discarding the warnings just
+    //    written, and making the run eligible for the 30-day failed-run delete
+    //    that cascades into its variances. A retention sweep must never fail a
+    //    completed reconcile.
+    await prune(db).catch((e) =>
+      console.warn("prune failed:", e instanceof Error ? e.message : e)
+    );
+    await pruneRunSnapshotKeys(db).catch(() => {});
 
     return {
       ok: true,
@@ -172,7 +233,8 @@ export async function runReconcilePipeline(
       sourceRowsStored,
       variancesUpserted,
       movementsLedgered,
-      stale,
+      stale: { superseded: stale.superseded, resolvedLate: stale.resolvedLate },
+      snapshotsWritten,
       combined: run.combined,
       guardOcr,
     };
