@@ -6,12 +6,7 @@ exports[`digest — model snapshot > richDay 1`] = `
     "blocks": [
       {
         "kind": "para",
-        "text": "26 July 2026 closed at 3pm today. 78 units moved without a full trail — those could mean missing stock. 305 more need a record fixed.",
-      },
-      {
-        "kind": "para",
-        "text": "995 open in total on the dashboard: 78 need a decision today, 305 are records to correct, 612 need nothing.",
-        "tone": "muted",
+        "text": "26 July 2026 closed at 3pm. 3,825 units moved and we cannot place 78 of them. Another 305 are on the floor but written up wrong.",
       },
     ],
     "id": "opening",
@@ -32,13 +27,13 @@ exports[`digest — model snapshot > richDay 1`] = `
             "label": "At risk",
           },
           {
-            "align": "right",
-            "label": "To fix",
+            "label": "vs last week",
           },
           {
             "label": "Guard register",
           },
         ],
+        "footnote": "Bangalore and Hyderabad were checked against three records, not four, so their at-risk numbers are not comparable with the rest.",
         "kind": "table",
         "rows": [
           [
@@ -56,9 +51,8 @@ exports[`digest — model snapshot > richDay 1`] = `
               "tone": "danger",
             },
             {
-              "align": "right",
-              "text": "96",
-              "tone": "warn",
+              "text": "—",
+              "tone": "muted",
             },
             {
               "text": "Received",
@@ -80,9 +74,8 @@ exports[`digest — model snapshot > richDay 1`] = `
               "tone": "danger",
             },
             {
-              "align": "right",
-              "text": "71",
-              "tone": "warn",
+              "text": "—",
+              "tone": "muted",
             },
             {
               "text": "Not received",
@@ -104,9 +97,8 @@ exports[`digest — model snapshot > richDay 1`] = `
               "tone": "danger",
             },
             {
-              "align": "right",
-              "text": "58",
-              "tone": "warn",
+              "text": "—",
+              "tone": "muted",
             },
             {
               "text": "Not read yet",
@@ -128,9 +120,8 @@ exports[`digest — model snapshot > richDay 1`] = `
               "tone": "danger",
             },
             {
-              "align": "right",
-              "text": "44",
-              "tone": "warn",
+              "text": "—",
+              "tone": "muted",
             },
             {
               "text": "Received",
@@ -152,12 +143,11 @@ exports[`digest — model snapshot > richDay 1`] = `
               "tone": "danger",
             },
             {
-              "align": "right",
-              "text": "36",
-              "tone": "warn",
+              "text": "—",
+              "tone": "muted",
             },
             {
-              "text": "Reading failed",
+              "text": "Unreadable",
               "tone": "danger",
             },
           ],
@@ -173,7 +163,7 @@ exports[`digest — model snapshot > richDay 1`] = `
         "items": [
           {
             "sub": "Warehouse team",
-            "text": "System-Only Entry — 56 units (Delhi 31, Bangalore 25). Confirm the unit moved, or cancel the Odoo entry.",
+            "text": "System-Only Entry — 56 units (Delhi 31, Bangalore 25). Odoo booked a customer movement today that nobody at the gate, on the sheet or in the app saw. Confirm the unit moved, or cancel the Odoo entry.",
             "tone": "danger",
           },
           {
@@ -202,13 +192,8 @@ exports[`digest — model snapshot > richDay 1`] = `
     "blocks": [
       {
         "kind": "para",
-        "text": "Also logged, no action needed: 123 odoo posting delay, 114 barcode read error, 26 late paperwork.",
+        "text": "The other 612 items open today need nothing from anyone.",
         "tone": "muted",
-      },
-      {
-        "kind": "para",
-        "text": "Bangalore, Hyderabad: the guard register did not arrive, so their numbers come from three records, not four.",
-        "tone": "warn",
       },
     ],
     "id": "footer",
@@ -218,7 +203,7 @@ exports[`digest — model snapshot > richDay 1`] = `
       {
         "href": "https://auto-reco.vercel.app/dashboard",
         "kind": "cta",
-        "label": "See every unit, city by city",
+        "label": "Open all 995 items on the dashboard",
       },
     ],
     "id": "link",

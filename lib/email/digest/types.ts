@@ -29,6 +29,15 @@ export interface ActionItem {
   tier: 1 | 2;
   count: number;
   action: string; // imperative
+  /**
+   * Why it matters, from the label module — e.g. "Odoo booked a customer
+   * movement today that nobody at the gate, on the sheet or in the app saw."
+   *
+   * Only the top tier-1 item renders it; three would cost a quarter of the word
+   * budget. Unambiguous per group because actions are grouped by (display,
+   * action) and risk travels with action on the same VarianceLabel.
+   */
+  risk: string;
   team: string;
   /** Largest contributing cities, biggest first, for the inline breakdown. */
   cities: { city: string; count: number }[];
@@ -59,6 +68,15 @@ export interface CityDigestRow {
   /** The largest tier-1 kind for this city, or null when there is none. */
   topRisk: { label: string; count: number; team: string } | null;
   counts?: CityMovementCounts;
+  /**
+   * How this city's at-risk count compares with its own recent comparable days.
+   *
+   * NULL means "not comparable", never "no change": fewer than two comparable
+   * prior days, or a day on which this city was short a source. A city that was
+   * missing its guard register has an understated count, and ranking it against
+   * days when all four books filed manufactures a "worse" verdict.
+   */
+  trend?: "worse" | "usual" | "better" | null;
 }
 
 export interface DigestData {
@@ -81,6 +99,16 @@ export interface DigestData {
   watch?: WatchItem[];
   /** True when no completed reconciliation exists for `date`. */
   runIncomplete?: boolean;
+  /**
+   * Today's at-risk RATE against the trailing week — the opening's lead clause.
+   *
+   * Only set when every live city reported all four sources today. One city
+   * short a book understates the day, and a headline ranking a day we could not
+   * fully see is the same error lib/stock/coverage.ts refuses for the analyser.
+   */
+  dayTrend?: "worst" | "usual" | "best" | null;
+  /** Consecutive clean days ending today, when the day itself is clean. */
+  cleanStreak?: number;
   /**
    * Natural keys of the flagged (tier 1 + 2) rows, for the follow-up snapshot.
    *

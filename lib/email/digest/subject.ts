@@ -29,7 +29,9 @@ export function digestSubject(data: DigestData): string {
     : "";
 
   if (data.runIncomplete) {
-    return `Stock check ${date} — did not finish, figures may be stale${suffix}`;
+    // An instruction, not a status. "figures may be stale" leaves the reader to
+    // decide what to do about it; this does not.
+    return `Stock check ${date} — the check did not finish, do not act on these figures`;
   }
 
   if (t1 === 0) {
@@ -37,9 +39,14 @@ export function digestSubject(data: DigestData): string {
     // That city ran on three sources, so its at-risk count is understated and
     // the clean headline would be a lie. Say what is actually known instead.
     if (shortCities.length) {
-      return `Stock check ${date} — nothing to confirm yet${suffix}`;
+      return `Stock check ${date} — nothing found yet${suffix}`;
     }
-    return `Stock check ${date} — all units accounted for`;
+    // With its denominator. "all units accounted for" is a slogan; "all 3,825
+    // units accounted for" is a fact the reader can weigh.
+    const moved = data.totals.movements;
+    return moved > 0
+      ? `Stock check ${date} — all ${moved.toLocaleString("en-IN")} units accounted for`
+      : `Stock check ${date} — all units accounted for`;
   }
 
   const withRisk = data.cities.filter((c) => c.tier1 > 0);
@@ -47,7 +54,13 @@ export function digestSubject(data: DigestData): string {
   const rest = withRisk.length - named.length;
   const restUnits = withRisk.slice(named.length).reduce((n, c) => n + c.tier1, 0);
 
-  const head = `Stock check ${date} — ${t1} ${t1 === 1 ? "unit" : "units"} to confirm: `;
+  // "to confirm" is the mildest possible verb for "we do not know where these
+  // are". Say the thing. The trend clause rides the same coverage gate as the
+  // opening line, so it is absent whenever a live city was short a book.
+  const verdict = data.dayTrend === "worst" ? ", worst rate this week"
+    : data.dayTrend === "best" ? ", best rate this week"
+    : "";
+  const head = `Stock check ${date} — ${t1} ${t1 === 1 ? "unit" : "units"} we cannot place${verdict}: `;
   const build = (cities: typeof named, tail: boolean) => {
     const parts = cities.map((c) => `${cityName(c.city)} ${c.tier1}`);
     if (tail && rest > 0) parts.push(`${rest} other ${rest === 1 ? "city" : "cities"} ${restUnits}`);

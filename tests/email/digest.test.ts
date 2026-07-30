@@ -41,6 +41,10 @@ const action = (over: Partial<DigestData["actions"][number]>) => ({
   tier: 1 as const,
   count: 56,
   action: "Confirm the unit moved, or cancel the Odoo entry.",
+  // The real risk sentence from lib/ui/variance-labels.ts. Only the top tier-1
+  // item renders it, so the fixtures below leave the default in place and the
+  // rendered output shows it exactly once.
+  risk: "Odoo booked a customer movement today that nobody at the gate, on the sheet or in the app saw.",
   team: "Warehouse team",
   cities: [{ city: "DELHI", count: 31 }, { city: "BANGALORE", count: 25 }],
   ...over,
@@ -201,13 +205,17 @@ describe("digest — escaping", () => {
 describe("digest — subject", () => {
   it("names the busiest cities when units are at risk", () => {
     const s = digestSubject(richDay);
-    expect(s).toContain("78 units to confirm");
+    // "we cannot place" rather than "to confirm": confirm is the mildest
+    // possible verb for "we do not know where these are".
+    expect(s).toContain("78 units we cannot place");
     expect(s).toMatch(/Delhi 34/);
     expect(s.indexOf("78")).toBeLessThan(45); // Gmail mobile truncates ~40
   });
 
   it("says all-clear only when every live city's register arrived", () => {
-    expect(digestSubject(quietDay)).toContain("all units accounted for");
+    // With its denominator: "all units accounted for" is a slogan, "all 2,100
+    // units accounted for" is a fact the reader can weigh.
+    expect(digestSubject(quietDay)).toContain("all 2,100 units accounted for");
   });
 
   it("refuses the all-clear while a register is missing", () => {
@@ -216,7 +224,7 @@ describe("digest — subject", () => {
       cities: [city({ register: "missing" })],
     });
     // That city ran on three sources, so a clean headline would be a lie.
-    expect(digestSubject(d)).not.toContain("all units accounted for");
+    expect(digestSubject(d)).not.toMatch(/all [\d,]* ?units accounted for/);
     expect(digestSubject(d)).toContain("no guard register");
   });
 

@@ -38,7 +38,9 @@ const REGISTER_TEXT: Record<RegisterState, string> = {
   // Three different asks of three different people, so three different words.
   missing: "Not received",
   pending: "Not read yet",
-  failed: "Reading failed",
+  // "Reading failed" reads as if the guard failed. It was our scanner, and
+  // the owner does not need to know which.
+  failed: "Unreadable",
   off: "Weekly off",
 };
 
@@ -53,38 +55,74 @@ function cityBreakdown(item: ActionItem): string {
   return parts.join(", ");
 }
 
-function openingLine(d: DigestData): string {
-  const { tier1, tier2 } = d.totals;
-  // "closed at 3pm today" is load-bearing: the digest goes out at 16:45 IST,
-  // an hour after the business day shut, so "today" is literally actionable —
-  // and it pre-empts "why am I reading about yesterday".
-  const head = `${fmtDate(d.date)} closed at 3pm today.`;
+function openingLine(d: DigestData, registerShort: boolean): string {
+  const { tier1, tier2, movements } = d.totals;
+  // "closed at 3pm" is load-bearing: the digest goes out at 16:45 IST, an hour
+  // after the business day shut. The year is dropped — it is in the masthead —
+  // and so is "today", which a deferred send turns into a lie.
+  const head = `${fmtDate(d.date)} closed at 3pm.`;
+  const moved = movements > 0 ? n(movements) : null;
+
   if (tier1 === 0 && tier2 === 0) {
-    return `${head} Every unit that moved can be traced.`;
+    // "All accounted for" is BLOCKED while any live city is short a book —
+    // the same rule subject.ts already applies, for the same reason: the clean
+    // headline would be a lie, and the caveat three lines below would contradict
+    // it in the same email.
+    if (registerShort) {
+      return moved
+        ? `${head} ${moved} units moved and nothing has been flagged so far — but not every record has arrived yet.`
+        : `${head} Nothing has been flagged so far — but not every record has arrived yet.`;
+    }
+    const all = moved ? `All ${moved} units that moved are accounted for.` : "Every unit that moved is accounted for.";
+    // Only claimed from 3 days up: "two clean days running" is a coincidence.
+    return (d.cleanStreak ?? 0) >= 3
+      ? `${head} ${all.slice(0, -1)} — ${n(d.cleanStreak!)} clean days running.`
+      : `${head} ${all}`;
   }
   if (tier1 === 0) {
-    return `${head} Every unit that moved can be traced. ${n(tier2)} records still need fixing.`;
+    if (registerShort) {
+      return `${head} ${moved ? `${moved} units moved. ` : ""}Nothing is unaccounted for so far, though not every record has arrived. ${n(tier2)} are written up wrong and need correcting.`;
+    }
+    const all = moved ? `All ${moved} units that moved are accounted for.` : "Every unit that moved is accounted for.";
+    return `${head} ${all} ${n(tier2)} of them are written up wrong and need correcting.`;
   }
-  return `${head} ${n(tier1)} ${tier1 === 1 ? "unit" : "units"} moved without a full trail — those could mean missing stock. ${n(tier2)} more need a record fixed.`;
+
+  // THE LEAD: rate first, so the reader knows in one clause whether today is
+  // unusual. "we cannot place" is the tier-1 rule in the owner's own words, and
+  // a plainer claim than "moved without a full trail".
+  const rate = movements > 0 ? Math.round(movements / tier1) : null;
+  const head2 = moved
+    ? `${moved} units moved and we cannot place ${n(tier1)} of them`
+    : `We cannot place ${n(tier1)} ${tier1 === 1 ? "unit" : "units"}`;
+
+  // The rate clause is suppressed whenever any live city was short a book: a day
+  // we could not fully see must not be ranked against days we could.
+  const verdict = d.dayTrend === "worst" ? ", the worst rate this week"
+    : d.dayTrend === "best" ? ", the best rate this week"
+    : d.dayTrend === "usual" ? ", in line with the week"
+    : "";
+  const lead = rate && verdict ? `${head2} — 1 in ${n(rate)}${verdict}.` : `${head2}.`;
+
+  const rest = tier2 > 0 ? ` Another ${n(tier2)} are on the floor but written up wrong.` : "";
+  return `${head} ${lead}${rest}`;
 }
 
-/**
- * The email counts by risk, the dashboard counts every open item. Those numbers
- * differ for the same run and the same day, so say why rather than leaving the
- * reader to notice.
- */
-function reconcilingLine(d: DigestData): string | null {
-  const { open, tier1, tier2, tier3 } = d.totals;
-  if (open === 0 || open === tier1) return null;
-  return `${n(open)} open in total on the dashboard: ${n(tier1)} need a decision today, ${n(tier2)} are records to correct, ${n(tier3)} need nothing.`;
-}
+const TREND_TEXT = { worse: "Worse", usual: "Usual", better: "Better" } as const;
 
-function citySnapshot(cities: CityDigestRow[]): Block {
+function citySnapshot(cities: CityDigestRow[], footnote: string | null): Block {
   const rows = cities.map((c) => [
     { text: cityName(c.city) },
     { text: n(c.movements), align: "right" as const },
     { text: n(c.tier1), align: "right" as const, tone: c.tier1 > 0 ? ("danger" as const) : undefined, strong: c.tier1 > 0 },
-    { text: n(c.tier2), align: "right" as const, tone: c.tier2 > 0 ? ("warn" as const) : undefined },
+    {
+      // An em dash means "not comparable", NEVER "no change" — the city was
+      // short a book, or has too little history. Rendering it as "Usual" would
+      // turn an outage into reassurance.
+      text: c.trend ? TREND_TEXT[c.trend] : "—",
+      tone: c.trend === "worse" ? ("danger" as const)
+        : c.trend === "better" ? ("good" as const)
+        : ("muted" as const),
+    },
     {
       text: REGISTER_TEXT[c.register],
       tone: c.register === "missing" || c.register === "failed" ? ("danger" as const)
@@ -98,10 +136,14 @@ function citySnapshot(cities: CityDigestRow[]): Block {
       { label: "City" },
       { label: "Units moved", align: "right" },
       { label: "At risk", align: "right" },
-      { label: "To fix", align: "right" },
+      { label: "vs last week" },
       { label: "Guard register" },
     ],
     rows,
+    // The caveat sits UNDER the rows it qualifies, not sixty words below in a
+    // footer. The slot already existed in the model and in both renderers and
+    // had never been used.
+    ...(footnote ? { footnote } : {}),
   };
 }
 
@@ -111,20 +153,27 @@ function actionList(actions: ActionItem[], limit: number): Block[] {
   const blocks: Block[] = [
     {
       kind: "list",
-      items: shown.map((a) => ({
-        // The ACTION, not the risk sentence. The risk copy ships in the label
-        // module and renders on the dashboard; carrying it here would cost
-        // roughly a third of the word budget to say what the label implies.
-        text: `${a.label} — ${n(a.count)} ${a.count === 1 ? "unit" : "units"} (${cityBreakdown(a)}). ${a.action}`,
+      items: shown.map((a, i) => ({
+        // ONE risk sentence, on the largest tier-1 job. It is the only place in
+        // the email where a label gets defined, and it is the sentence that makes
+        // an owner walk to the gate rather than forward the mail. Three would
+        // cost a quarter of the budget to justify work that gets delegated
+        // anyway; zero is what shipped, on the false premise that the dashboard
+        // was showing it.
+        text: i === 0 && a.tier === 1 && a.risk
+          ? `${a.label} — ${n(a.count)} ${a.count === 1 ? "unit" : "units"} (${cityBreakdown(a)}). ${a.risk} ${a.action}`
+          : `${a.label} — ${n(a.count)} ${a.count === 1 ? "unit" : "units"} (${cityBreakdown(a)}). ${a.action}`,
         sub: a.team,
         tone: a.tier === 1 ? "danger" : "warn",
       })),
     },
   ];
   if (hidden > 0) {
+    // "jobs", not "kinds of item": after the regrouping fix each line IS one job
+    // — one problem with one fix and one owner.
     blocks.push({
       kind: "para",
-      text: `+${hidden} more ${hidden === 1 ? "kind" : "kinds"} of item — see the dashboard.`,
+      text: `+${hidden} more ${hidden === 1 ? "job" : "jobs"}, all on the dashboard.`,
       tone: "muted",
     });
   }
@@ -135,18 +184,31 @@ function watchLines(d: DigestData): string[] {
   if (!d.watch?.length) return [];
   return d.watch.map((w) => {
     const where = `${w.label}, ${cityName(w.city)}`;
-    if (w.trend === "cleared") return `${where} — cleared after ${w.days} days.`;
+    if (w.trend === "cleared")
+      return `${where} — clear today after ${w.days} straight days.`;
     if (w.trend === "worsening")
-      return `${where} — ${w.days} of the last 7 days, ${n(w.median)} to ${n(w.today)} units.`;
-    return `${where} — ${w.days} days running at about ${n(w.today)} units.`;
+      // Both numbers are LABELLED. "40 to 61 units" never said which end was
+      // today, so the reader had to guess which direction it was moving.
+      return `${where} — ${w.days} of the last 7 days, and getting worse: ${n(w.median)} usually, ${n(w.today)} today.`;
+    return `${where} — ${n(w.today)} again today, the ${w.days}${ordinal(w.days)} day running.`;
   });
 }
 
+/** 1st, 2nd, 3rd, 4th — English, not a number followed by "th". */
+function ordinal(x: number): string {
+  const rem100 = x % 100;
+  if (rem100 >= 11 && rem100 <= 13) return "th";
+  return ["th", "st", "nd", "rd"][x % 10] ?? "th";
+}
+
 function informationalLine(d: DigestData): string | null {
-  const top = d.informational.slice(0, 3);
-  if (top.length === 0) return null;
-  const parts = top.map((i) => `${n(i.count)} ${i.label.toLowerCase()}`);
-  return `Also logged, no action needed: ${parts.join(", ")}.`;
+  // The tier-3 TOTAL, not the top three kinds. "123 odoo posting delay" is a
+  // count followed by a lower-cased singular proper noun — not English, and the
+  // labels have no plural form to fix it with. Using the full total is also what
+  // makes the arithmetic close: tier1 + tier2 + this = the number on the button.
+  const { tier3 } = d.totals;
+  if (tier3 === 0) return null;
+  return `The other ${n(tier3)} items open today need nothing from anyone.`;
 }
 
 /**
@@ -156,9 +218,21 @@ function informationalLine(d: DigestData): string | null {
 function threeSourceCaveat(d: DigestData): string | null {
   const short = d.cities.filter((c) => c.register === "missing" || c.register === "failed");
   if (short.length === 0) return null;
-  const names = short.map((c) => cityName(c.city)).join(", ");
-  const verb = short.length === 1 ? "did not arrive, so its numbers come" : "did not arrive, so their numbers come";
-  return `${names}: the guard register ${verb} from three records, not four.`;
+  const named = short.map((c) => cityName(c.city));
+  const names = named.length > 1
+    ? `${named.slice(0, -1).join(", ")} and ${named[named.length - 1]}`
+    : named[0];
+  // State the EFFECT, but do NOT claim a direction.
+  //
+  // "too low" was wrong in both directions. Missing the register HIDES items
+  // only it could raise (rung 4, "Off-System Movement" — a unit only the guard
+  // saw leave never enters the universe at all), and it PROMOTES others that the
+  // register's presence would have demoted (rung 8 fires DT-only as tier 1).
+  // The count is unreliable, not understated, and saying which way it leans
+  // would be a guess dressed as a finding.
+  return short.length === 1
+    ? `${names} was checked against three records, not four, so its at-risk number is not comparable with the rest.`
+    : `${names} were checked against three records, not four, so their at-risk numbers are not comparable with the rest.`;
 }
 
 export interface SectionOpts {
@@ -177,12 +251,20 @@ export const DIGEST_KICKER = "Daily stock check";
 export const WORD_BUDGET = 250;
 
 /**
- * Words the renderers add outside the section model — the masthead line and
- * the footer sentence. Reserved here so the trim measures what a recipient
- * actually receives; without it the ladder stops one section too late and the
- * budget is quietly exceeded.
+ * Words the renderers add outside the section model. Reserved here so the trim
+ * measures what a recipient actually receives; without it the ladder stops one
+ * section too late and the budget is quietly exceeded.
+ *
+ * MEASURED, not guessed, on a rendered rich day: masthead 9 + footer 13 + one
+ * table rule row (1 token per column, 5) + one "- " per list item (5) + the CTA
+ * URL (1) = 33. The reserve was 30, so the ladder believed it had three words it
+ * did not have — and a model that passed the gate could render at 251 and fail
+ * the budget test.
+ *
+ * 36, not 33, because the list-item and column terms GROW with the content: a
+ * fixed reserve has to cover the worst shape, not the measured one.
  */
-const BOILERPLATE_WORDS = 30;
+const BOILERPLATE_WORDS = 36;
 
 export function buildSections(data: DigestData, opts: SectionOpts = {}): Section[] {
   const sections: Section[] = [];
@@ -212,21 +294,35 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
       ],
     });
   } else {
-    const blocks: Block[] = [{ kind: "para", text: openingLine(data) }];
-    const rec = reconcilingLine(data);
-    if (rec) blocks.push({ kind: "para", text: rec, tone: "muted" });
-    sections.push({ id: "opening", blocks });
+    // One paragraph. The reconciling line that used to sit here spent 20 words —
+    // a tenth of the whole budget — explaining why two of our own screens count
+    // differently. The tier-3 total in the footer now closes the arithmetic
+    // without teaching anyone the word "tier", and those 20 words paid for the
+    // risk sentence in the action list.
+    sections.push({
+      id: "opening",
+      blocks: [{ kind: "para", text: openingLine(data, threeSourceCaveat(data) !== null) }],
+    });
   }
 
   if (data.cities.length > 0) {
-    sections.push({ id: "cities", title: "By city", blocks: [citySnapshot(data.cities)] });
+    sections.push({
+      id: "cities",
+      title: "By city",
+      blocks: [citySnapshot(data.cities, threeSourceCaveat(data))],
+    });
   }
 
   if (data.actions.length > 0) {
     sections.push({
       id: "actions",
       title: "Do this today",
-      blocks: actionList(data.actions, 5),
+      // FOUR, not five. The risk sentence on the top job is worth ~18 words, and
+      // with five actions the rich day rendered at 248 of 250 -- inside the
+      // budget but with no room for a future word. Four lands at ~233, and the
+      // "+N more jobs" pointer already carries the remainder. The trim ladder
+      // still protects the top three below this.
+      blocks: actionList(data.actions, 4),
     });
   }
 
@@ -242,8 +338,6 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
   const footer: Block[] = [];
   const info = informationalLine(data);
   if (info) footer.push({ kind: "para", text: info, tone: "muted" });
-  const caveat = threeSourceCaveat(data);
-  if (caveat) footer.push({ kind: "para", text: caveat, tone: "warn" });
   if (opts.attachmentNote) {
     footer.push({
       kind: "para",
@@ -256,7 +350,18 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
   if (opts.dashboardUrl) {
     sections.push({
       id: "link",
-      blocks: [{ kind: "cta", label: "See every unit, city by city", href: opts.dashboardUrl }],
+      blocks: [
+        {
+          kind: "cta",
+          // The button carries the total, which is what lets the reconciling
+          // line go: tier1 + tier2 + the footer's tier-3 count adds up to this
+          // number, without anyone being taught the word "tier".
+          label: data.totals.open > 0
+            ? `Open all ${n(data.totals.open)} items on the dashboard`
+            : "See the day, city by city",
+          href: opts.dashboardUrl,
+        },
+      ],
     });
   }
 
