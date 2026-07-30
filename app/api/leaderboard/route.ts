@@ -15,6 +15,9 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { CITIES } from "@/lib/sample-data";
+// One definition of the metric, shared with /api/analytics and the dashboard —
+// three roundings of the same ratio would let the pages disagree by 0.1pp.
+import { accuracyOf, aggregate, daysBefore } from "@/lib/stats/accuracy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,35 +46,6 @@ interface WindowOut {
   to: string | null;
   cities: LbRow[];
 }
-
-// YYYY-MM-DD string, n days before the given date (UTC-safe).
-function daysBefore(dateStr: string, n: number): string {
-  const d = new Date(dateStr + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() - n);
-  return d.toISOString().slice(0, 10);
-}
-
-function clampPct(x: number): number {
-  return Math.round(Math.max(0, Math.min(100, x)) * 10) / 10;
-}
-
-// Aggregate rows within [from, to] (inclusive, string comparison works for ISO
-// dates) into per-city totals.
-function aggregate(rows: StatRow[], from: string, to: string) {
-  const map = new Map<string, { movements: number; real: number; high: number }>();
-  for (const r of rows) {
-    if (r.business_date < from || r.business_date > to) continue;
-    const a = map.get(r.city) ?? { movements: 0, real: 0, high: 0 };
-    a.movements += r.movements;
-    a.real += r.real_count;
-    a.high += r.high_count;
-    map.set(r.city, a);
-  }
-  return map;
-}
-
-const accuracyOf = (movements: number, real: number): number | null =>
-  movements > 0 ? clampPct((1 - real / movements) * 100) : null;
 
 // Build a ranked window from a current aggregate + a previous-window aggregate
 // (for the trend arrow).

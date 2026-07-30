@@ -10,7 +10,9 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
-import { CITIES } from "@/lib/sample-data";
+import { CITIES, type City } from "@/lib/sample-data";
+import { isCityOff } from "@/lib/engine/schedule";
+import { accuracyOf, daysBefore } from "@/lib/stats/accuracy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,15 +25,6 @@ interface StatRow {
   high_count: number;
 }
 
-function daysBefore(dateStr: string, n: number): string {
-  const d = new Date(dateStr + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() - n);
-  return d.toISOString().slice(0, 10);
-}
-const clampPct = (x: number) => Math.round(Math.max(0, Math.min(100, x)) * 10) / 10;
-const accuracyOf = (movements: number, real: number): number | null =>
-  movements > 0 ? clampPct((1 - real / movements) * 100) : null;
-
 function cityAggregate(rows: StatRow[], from: string, to: string) {
   return CITIES.map((city) => {
     let movements = 0;
@@ -39,6 +32,10 @@ function cityAggregate(rows: StatRow[], from: string, to: string) {
     let high = 0;
     for (const r of rows) {
       if (r.city !== city || r.business_date < from || r.business_date > to) continue;
+      // Same exclusion as lib/stats/accuracy.ts aggregate(): a shut warehouse
+      // still books Odoo movements while its Odoo-only loss class is disabled,
+      // so leaving the day in inflates the rate rather than cancelling out.
+      if (isCityOff(city as City, r.business_date)) continue;
       movements += r.movements;
       real += r.real_count;
       high += r.high_count;
