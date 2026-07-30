@@ -22,7 +22,7 @@ import { errText, useToast } from "@/components/toast";
 import CloseVarianceModal from "./close-variance-modal";
 import VarianceDetailModal from "./variance-detail-modal";
 import VarianceListModal, { type ListModalRequest } from "./variance-list-modal";
-import { isCityOff } from "@/lib/engine/schedule";
+import { closedPartOfWindow, isCityOff } from "@/lib/engine/schedule";
 import { cityRateLine, queueCaption, rankLine, rateCaption } from "@/lib/ui/stat-captions";
 import {
   PRIORITY_BADGE,
@@ -537,6 +537,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               // Weekly holiday: the warehouse was closed — neutral border + OFF
               // badge so empty numbers read as "expected", not as a data gap.
               const off = isCityOff(c.city as City, stats.run?.business_date ?? "");
+              // A business date runs 3pm to 3pm, so a one-day closure lands
+              // inside TWO of them. isCityOff only sees the first; this catches
+              // the day BEFORE, whose morning half was the holiday.
+              const partial = closedPartOfWindow(c.city as City, stats.run?.business_date ?? "");
               return (
               <div
                 key={c.city}
@@ -570,6 +574,28 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     </>
                   )}
                 </div>
+                {/* WHO SAW THESE MOVEMENTS. Without it a reader assumes every
+                    movement was witnessed on the floor. Measured 2026-07-29:
+                    Mumbai 123 of 172 were seen by Odoo alone, while Pune's 33 of
+                    33 were the exact opposite — the floor logged them and Odoo
+                    has not posted them, which is a backlog, not missing stock. */}
+                {!off && c.ledgered > 0 && c.floorNotInOdoo > 0 && (
+                  <div className="text-xs text-status-warning">
+                    Waiting on Odoo — {c.floorNotInOdoo} of {c.ledgered} the floor
+                    recorded are not posted yet
+                  </div>
+                )}
+                {!off && c.ledgered > 0 && c.odooOnly > 0 && (
+                  <div className="text-xs text-text-muted">
+                    Only Odoo saw {c.odooOnly} of {c.ledgered} — no floor record
+                  </div>
+                )}
+                {!off && partial && (
+                  <div className="text-xs text-text-muted">
+                    Shut for part of this window — the day runs 3pm to 3pm, so the
+                    morning half was the weekly off
+                  </div>
+                )}
                 {!off && rankLine(c.city, stats?.byCity ?? []) && (
                   <div className="text-xs text-text-muted">
                     {rankLine(c.city, stats?.byCity ?? [])}

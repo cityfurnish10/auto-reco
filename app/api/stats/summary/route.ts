@@ -50,6 +50,23 @@ interface CityAgg {
   openOver3d: number;
   /** ISO timestamp of the oldest open loss, or null when none are open. */
   oldestOpenAt: string | null;
+  /**
+   * Movements ONLY Odoo saw — no gate register, no ops sheet, no delivery app.
+   *
+   * Measured 2026-07-29: Mumbai 123 of 172. Nothing on any screen said so, and
+   * without it a reader assumes a movement was witnessed on the floor.
+   */
+  odooOnly: number;
+  /**
+   * Movements the floor recorded that Odoo has NOT posted.
+   *
+   * The dominant story on most days and the opposite of the one above: Pune 33
+   * of 33 and Hyderabad 29 of 31 on 2026-07-29. Those are a posting backlog, not
+   * missing stock, and the D+3 re-check usually clears them.
+   */
+  floorNotInOdoo: number;
+  /** Movement rows found in the ledger for this date. 0 = ledger has no view. */
+  ledgered: number;
 }
 
 function emptyAgg(city: string): CityAgg {
@@ -72,6 +89,9 @@ function emptyAgg(city: string): CityAgg {
     movements: 0,
     openOver3d: 0,
     oldestOpenAt: null,
+    odooOnly: 0,
+    floorNotInOdoo: 0,
+    ledgered: 0,
   };
 }
 
@@ -207,6 +227,40 @@ export async function GET(req: NextRequest) {
     overall.ppBox += s.pp_box_count ?? 0;
     overall.consumable += s.consumable_count ?? 0;
     overall.movements += s.movements ?? 0;
+  }
+
+  // Which sources actually witnessed each movement (migration 0015). One paged
+  // read of the movement ledger for this date — ~900 rows, one page. Swallowed
+  // entirely if 0015 is not applied: the counts stay 0 and the UI says nothing
+  // rather than guessing.
+  try {
+    for (let from = 0; ; from += 1000) {
+      const { data: page, error } = await supabase
+        .from("movement_events")
+        .select("city, present_p, present_s, present_d, present_o, is_movement")
+        .eq("business_date", run.business_date)
+        .order("id", { ascending: true })
+        .range(from, from + 999);
+      if (error) throw error;
+      for (const m of page ?? []) {
+        if (!m.is_movement) continue;
+        const agg = byCityMap.get(m.city) ?? emptyAgg(m.city);
+        const floor = m.present_p || m.present_s || m.present_d;
+        agg.ledgered += 1;
+        overall.ledgered += 1;
+        if (m.present_o && !floor) {
+          agg.odooOnly += 1;
+          overall.odooOnly += 1;
+        } else if (floor && !m.present_o) {
+          agg.floorNotInOdoo += 1;
+          overall.floorNotInOdoo += 1;
+        }
+        byCityMap.set(m.city, agg);
+      }
+      if (!page || page.length < 1000) break;
+    }
+  } catch {
+    /* ledger unavailable — the source story is simply not shown */
   }
 
   return NextResponse.json({

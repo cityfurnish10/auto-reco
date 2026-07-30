@@ -277,6 +277,12 @@ export interface CityAgg {
   openOver3d: number;
   /** ISO timestamp of the oldest open loss, or null when none are open. */
   oldestOpenAt: string | null;
+  /** Movements only Odoo saw — no gate register, ops sheet or delivery app. */
+  odooOnly: number;
+  /** Movements the floor recorded that Odoo has not posted yet. */
+  floorNotInOdoo: number;
+  /** Movement rows in the ledger for this date; 0 means no ledger view. */
+  ledgered: number;
 }
 
 export interface StatsResponse {
