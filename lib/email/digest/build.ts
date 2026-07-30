@@ -4,6 +4,7 @@ import { flaggedKeyOf } from "../followup/snapshot";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isCityOff } from "../../engine/schedule";
 import { addDays } from "../../engine/dates";
+import { buildTrends, type CoverageRow } from "./trends";
 import { labelFor, teamFor, type Tier } from "../../ui/variance-labels";
 import type { City } from "../../sample-data";
 import type {
@@ -106,11 +107,27 @@ async function readVariances(
  * Only `variances` can answer this — source_rows is pruned at 7 days. Every
  * comparison is scoped to one run per date for the same reason readVariances is.
  */
+/**
+ * What the history read produced.
+ *
+ * The tier-1 counts come out alongside the watch list because they are derived
+ * from the SAME labelled prior rows — roughly 4,000 of them, the most expensive
+ * query in the digest. Returning them costs nothing; reading them again would
+ * double the cost of the email.
+ */
+interface History {
+  items: WatchItem[];
+  /** Tier-1 count per `${city}\0${date}`, today included. */
+  tier1: Map<string, number>;
+  /** Dates with a completed run, newest first, excluding today. */
+  priorDates: string[];
+}
+
 async function buildWatchList(
   db: SupabaseClient,
   businessDate: string,
   todayRows: VarianceRow[]
-): Promise<WatchItem[]> {
+): Promise<History> {
   const start = addDays(businessDate, -(WATCH_DAYS - 1));
   const { data: runs } = await db
     .from("reconciliation_runs")
@@ -129,7 +146,8 @@ async function buildWatchList(
     if (!runIdByDate.has(d)) runIdByDate.set(d, r.id as string);
   }
   const runIds = [...runIdByDate.values()];
-  if (runIds.length < 2) return [];
+  const empty: History = { items: [], tier1: new Map(), priorDates: [] };
+  if (runIds.length < 2) return empty;
 
   const prior: (VarianceRow & { business_date: string })[] = [];
   for (let from = 0; ; from += 1000) {
@@ -158,14 +176,35 @@ async function buildWatchList(
     m.set(date, (m.get(date) ?? 0) + 1);
     byDay.set(key(label, city), m);
   };
+  // Tier 1 only, per city per date — the quantity the "At risk" column shows, so
+  // the trend beside it compares like with like. Counted as-found regardless of
+  // status, exactly as the watch tally is: closing an item does not mean the
+  // pattern did not happen that day.
+  const tier1 = new Map<string, number>();
+  const bump = (city: string, date: string) =>
+    tier1.set(key(city, date), (tier1.get(key(city, date)) ?? 0) + 1);
+
   for (const r of prior) {
     const l = labelOfRow(r);
+    if (l.tier === 1) bump(r.city, r.business_date);
     if (l.tier === 3) continue; // tier 3 never earns a watch line
     if (isCityOff(r.city as City, r.business_date)) continue;
     add(l.display, r.city, r.business_date);
   }
+  // TODAY's rows are filtered for weekly-off exactly as the prior days are.
+  //
+  // Without this a shut warehouse reports zero of everything and falls straight
+  // into the "cleared" branch below (today === 0 && median >= WATCH_MIN_UNITS),
+  // so the Thursday digest congratulates a city for a pattern that stopped only
+  // because nobody was there. The real 23 July email carried "Register Gap, Pune
+  // — clear today after 3 straight days" for a warehouse that was closed.
+  //
+  // The tier-1 bump is skipped for the same reason: a structural zero must not
+  // become a data point in that city's own baseline.
   for (const r of todayRows) {
+    if (isCityOff(r.city as City, businessDate)) continue;
     const l = labelOfRow(r);
+    if (l.tier === 1) bump(r.city, businessDate);
     if (l.tier === 3) continue;
     add(l.display, r.city, businessDate);
   }
@@ -181,6 +220,9 @@ async function buildWatchList(
   const items: WatchItem[] = [];
   for (const [k, perDate] of byDay) {
     const [label, city] = k.split(SEP);
+    // A city shut today has nothing to say about today. Its history is still a
+    // valid baseline for the days it worked; only its own verdict is withheld.
+    if (isCityOff(city as City, businessDate)) continue;
     const today = perDate.get(businessDate) ?? 0;
     const priors = priorDates
       .filter((d) => !isCityOff(city as City, d))
@@ -211,7 +253,7 @@ async function buildWatchList(
 
   const rank = { worsening: 0, steady: 1, cleared: 2 } as const;
   items.sort((a, b) => rank[a.trend] - rank[b.trend] || b.today - a.today);
-  return items.slice(0, 2);
+  return { items: items.slice(0, 2), tier1, priorDates };
 }
 
 export async function buildDigestFromDb(
@@ -326,11 +368,28 @@ export async function buildDigestFromDb(
   for (const v of open) {
     const l = labelOfRow(v);
     if (l.tier === 3) continue;
-    const g = groups.get(l.display) ?? {
+    // GROUPED BY DISPLAY **AND** ACTION, not by display alone.
+    //
+    // One display name covers several engine names with DIFFERENT fixes:
+    // "Register Gap" is five of them, whose actions run from "Remind the guard
+    // post to write every unit in the book" to "Add the missing line to the ops
+    // sheet". Keyed on display only, whichever row happened to sort first
+    // dictated the instruction for the whole group — so the email routinely told
+    // the warehouse to chase the guard about an ops-sheet line.
+    //
+    // Splitting on the action also makes `team` right per group, and makes
+    // `risk` unambiguous for free: action and risk live on the same
+    // VarianceLabel, so a group with one action has exactly one risk sentence.
+    // Written as an ESCAPE, never a literal byte -- a raw NUL in the source
+    // makes git treat this file as binary: no diff, no blame, and an editor
+    // can silently mangle it. The watch tally below hit this exact trap.
+    const key = `${l.display}\u0000${l.action}`;
+    const g = groups.get(key) ?? {
       label: l.display,
       tier: l.tier as 1 | 2,
       count: 0,
       action: l.action,
+      risk: l.risk,
       team: teamFor(v.variance_name),
       cities: [],
     };
@@ -338,7 +397,7 @@ export async function buildDigestFromDb(
     const c = g.cities.find((x) => x.city === v.city);
     if (c) c.count++;
     else g.cities.push({ city: v.city, count: 1 });
-    groups.set(l.display, g);
+    groups.set(key, g);
   }
   const actions = [...groups.values()]
     .map((g) => ({ ...g, cities: g.cities.sort((a, b) => b.count - a.count).slice(0, MAX_CITIES_INLINE + 3) }))
@@ -356,7 +415,33 @@ export async function buildDigestFromDb(
 
   // Best-effort: a slow or failing history query must omit the section, never
   // stop the digest. The cron shares a 60s ceiling with the PDFs and the send.
-  const watch = await buildWatchList(db, businessDate, open).catch(() => undefined);
+  const history = await buildWatchList(db, businessDate, open).catch(() => undefined);
+  const watch = history?.items;
+
+  // ONE extra range read for the week's coverage: ~35 rows, a single page.
+  // Spent on honesty rather than novelty -- without reported_* per day there is
+  // no way to tell a quiet day from a day a book never filed, and the trend
+  // would call an outage an improvement. Best-effort, like the history above.
+  const trends = history
+    ? await (async () => {
+        const { data } = await db
+          .from("run_city_stats")
+          .select("business_date, city, movements, reported_p, reported_s, reported_d, reported_o")
+          .gte("business_date", addDays(businessDate, -(WATCH_DAYS - 1)))
+          .lte("business_date", businessDate);
+        return buildTrends({
+          businessDate,
+          tier1: history.tier1,
+          priorDates: history.priorDates,
+          coverage: (data ?? []) as CoverageRow[],
+          cities: cities.map((c) => c.city),
+          ratio: 1.5,
+          minUnits: WATCH_MIN_UNITS,
+        });
+      })().catch(() => undefined)
+    : undefined;
+
+  for (const c of cities) c.trend = trends?.byCity.get(c.city) ?? null;
 
   const sum = (f: (c: CityDigestRow) => number) => cities.reduce((n, c) => n + f(c), 0);
 
@@ -376,6 +461,8 @@ export async function buildDigestFromDb(
     flaggedKeys,
     date: businessDate,
     generatedAt: new Date().toISOString(),
+    dayTrend: trends?.dayTrend ?? null,
+    cleanStreak: trends?.cleanStreak ?? 0,
     totals: {
       movements: sum((c) => c.movements),
       tier1: sum((c) => c.tier1),
