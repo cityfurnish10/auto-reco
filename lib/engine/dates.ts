@@ -86,6 +86,21 @@ export function addDays(date: string, n: number): string {
   )}`;
 }
 
+/**
+ * Whole days from `from` to `to`, both YYYY-MM-DD. Negative when `to` is earlier.
+ *
+ * UTC midnights on both sides, so it is immune to DST and to the local clock —
+ * the same discipline addDays above uses. This is how the Stock Analyser derives a
+ * run's lag from its business date instead of hardcoding the cadence: the
+ * re-check moved from D+2 to D+3, and any literal would misclassify every run on
+ * one side of that change.
+ */
+export function daysBetween(from: string, to: string): number {
+  const [y1, m1, d1] = from.split("-").map(Number);
+  const [y2, m2, d2] = to.split("-").map(Number);
+  return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000);
+}
+
 // Section 3: take the most common parseable date across physical + DT rows.
 // Deterministic tie-break: higher count, then latest date.
 export function deriveRunDate(rows: SourceRow[]): string {
