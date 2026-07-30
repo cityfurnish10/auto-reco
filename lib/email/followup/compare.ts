@@ -36,6 +36,93 @@ export interface CurrentRow {
   status: string;
 }
 
+/** The unit a row belongs to — city|direction|barcode. */
+export function unitKeyOfRow(r: Pick<CurrentRow, "city" | "direction" | "barcode">): string {
+  return `${r.city}|${r.direction ?? ""}|${r.barcode}`;
+}
+
+export type UnitTier = 1 | 2 | 3;
+
+export interface RowClassification {
+  /** Open, tier 1 or 2 — the comparable population. One entry per unit. */
+  flagged: Map<string, CurrentRow>;
+  /** Open but tier 3: the engine has stopped asking for action on this unit. */
+  tier3: Map<string, CurrentRow>;
+  /** Settled by a person. Takes precedence over tier 3 — a decision outranks a downgrade. */
+  closed: Map<string, CurrentRow>;
+  /** The tier the winning row resolved to, keyed by unit. */
+  tierOf: Map<string, UnitTier>;
+}
+
+/**
+ * Sort variance rows into the three unit sets everything downstream compares.
+ *
+ * ONE definition, shared by the follow-up email and the Stock Analyser. If the
+ * two decided independently which rows count as "flagged", the page and the inbox
+ * would print different numbers for the same day — the exact failure
+ * `isStillOpen` above records having already happened once in this codebase.
+ *
+ * Two rules that are easy to get wrong:
+ *
+ *   * DE-DUPLICATED BY UNIT. classifyViews can push a ladder hit AND a
+ *     duplicate-scan hit for one unit, and counting both makes a set difference
+ *     report a change in rows while calling it a change in stock.
+ *
+ *   * WORST TIER WINS within a unit. A unit carrying both a "Records to fix" and
+ *     a "Stock at risk" row is stock at risk. This also keeps the email's tier
+ *     split identical to what run_city_snapshots stored for the same run, so the
+ *     two can be checked against each other.
+ *
+ * Precedence across the sets is flagged → closed → tier 3: an open actionable row
+ * outranks everything, and a human decision outranks an engine downgrade.
+ */
+export function classifyRows(rows: CurrentRow[]): RowClassification {
+  const tierOfRow = (r: CurrentRow): UnitTier =>
+    labelFor(r.variance_name, {
+      direction: (r.direction as "IN" | "OUT" | "CROSS" | null) ?? null,
+      jobType: r.job_type,
+      bucket: (r.bucket as "REAL" | "INFO" | null) ?? null,
+      note: r.note,
+    }).tier;
+
+  const flagged = new Map<string, CurrentRow>();
+  const tier3 = new Map<string, CurrentRow>();
+  const closed = new Map<string, CurrentRow>();
+  const tierOf = new Map<string, UnitTier>();
+
+  for (const r of rows) {
+    const k = unitKeyOfRow(r);
+    const tier = tierOfRow(r);
+    const open = isStillOpen(r.status);
+
+    if (open && tier < 3) {
+      const seen = tierOf.get(k);
+      if (!flagged.has(k) || (seen !== undefined && tier < seen)) {
+        flagged.set(k, r);
+        tierOf.set(k, tier);
+      }
+      // Now flagged, so it can no longer be reported as settled or downgraded.
+      closed.delete(k);
+      tier3.delete(k);
+      continue;
+    }
+    if (flagged.has(k)) continue;
+
+    if (!open) {
+      if (!closed.has(k)) closed.set(k, r);
+      tier3.delete(k);
+      if (!tierOf.has(k)) tierOf.set(k, tier);
+      continue;
+    }
+    if (!closed.has(k) && !tier3.has(k)) {
+      tier3.set(k, r);
+      tierOf.set(k, tier);
+    }
+  }
+
+  return { flagged, tier3, closed, tierOf };
+}
+
 export interface CityComparison {
   city: string;
   flagged: number;
@@ -81,27 +168,7 @@ export function compareToSnapshot(
   current: CurrentRow[]
 ): FollowUpComparison {
   const wasFlagged = new Set(snapshot.keys.map(unitKeyOf));
-
-  const tierOf = (r: CurrentRow) =>
-    labelFor(r.variance_name, {
-      direction: (r.direction as "IN" | "OUT" | "CROSS" | null) ?? null,
-      jobType: r.job_type,
-      bucket: (r.bucket as "REAL" | "INFO" | null) ?? null,
-      note: r.note,
-    }).tier;
-
-  // Only tier 1 and 2 are comparable: X is tier1 + tier2, and tier 3 is
-  // "no action" — an item that fell to tier 3 has been resolved, not lost.
-  const openFlagged = current.filter((r) => isStillOpen(r.status) && tierOf(r) < 3);
-
-  // De-duplicated by unit: one unit can raise two rows (a ladder hit and a
-  // duplicate-scan hit), and counting it twice would make Y exceed X for a
-  // reason that is an artefact rather than a fact about stock.
-  const openUnits = new Map<string, CurrentRow>();
-  for (const r of openFlagged) {
-    const k = `${r.city}|${r.direction ?? ""}|${r.barcode}`;
-    if (!openUnits.has(k)) openUnits.set(k, r);
-  }
+  const { flagged: openUnits, tierOf } = classifyRows(current);
 
   let stillOpen = 0;
   let newlyFlagged = 0;
@@ -118,7 +185,7 @@ export function compareToSnapshot(
     if (wasFlagged.has(k)) {
       stillOpen++;
       c.stillOpen++;
-      if (tierOf(r) === 1) stillOpenTier1++;
+      if (tierOf.get(k) === 1) stillOpenTier1++;
       else stillOpenTier2++;
     } else {
       newlyFlagged++;
