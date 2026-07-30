@@ -551,12 +551,22 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 <div className="flex justify-between items-start">
                   <h4 className="font-headline text-base text-text-primary flex items-center gap-2">
                     {c.city}
-                    {off && (
+                    {/* THE BADGE FIRES FOR BOTH SHAPES OF CLOSURE.
+                        A business date runs 3pm to 3pm, so a one-day holiday
+                        falls inside TWO of them — Thursday's own board, and the
+                        Wednesday board whose morning half IS that Thursday. Both
+                        deserve the marker; only the meaning of the numbers
+                        differs, which the line below the counts explains. */}
+                    {(off || partial) && (
                       <span
                         className="badge badge-suppressed uppercase"
-                        title="Weekly off — no operations; register / ops sheet / DT are not expected for this day"
+                        title={
+                          off
+                            ? "Weekly off — the warehouse was shut, so no gate register, ops sheet or delivery-app entries are expected for this day"
+                            : "The weekly off falls inside this business day. A business day runs 3pm to 3pm, so this window covers the morning of the holiday — the floor was shut for part of it."
+                        }
                       >
-                        OFF
+                        Week off
                       </span>
                     )}
                   </h4>
@@ -592,8 +602,9 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 )}
                 {!off && partial && (
                   <div className="text-xs text-text-muted">
-                    Shut for part of this window — the day runs 3pm to 3pm, so the
-                    morning half was the weekly off
+                    Weekly off falls in this window — the day runs 3pm to 3pm, so
+                    the morning half was the holiday. These numbers are real, but
+                    they cover the open half only.
                   </div>
                 )}
                 {!off && rankLine(c.city, stats?.byCity ?? []) && (

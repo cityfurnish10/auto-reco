@@ -11,7 +11,7 @@ import type { Bucket, Priority, VarianceDB, VarianceStatus } from "@/lib/db/sche
 import CloseVarianceModal, { type ClosureReason } from "./close-variance-modal";
 import VarianceDetailModal from "./variance-detail-modal";
 import VarianceListModal, { type ListModalRequest } from "./variance-list-modal";
-import { isCityOff } from "@/lib/engine/schedule";
+import { closedPartOfWindow, isCityOff } from "@/lib/engine/schedule";
 import { queueCaption, rateCaption } from "@/lib/ui/stat-captions";
 import {
   PRIORITY_BADGE,
@@ -299,12 +299,27 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
       )}
 
       {/* Weekly-off notice — the reported day was this warehouse's holiday */}
-      {stats?.run && isCityOff(city, stats.run.business_date) && (
+      {/* Fires on BOTH shapes of closure. A business day runs 3pm to 3pm, so the
+          weekly holiday falls inside two of them: its own board, and the board of
+          the day before, whose morning half is the holiday. The manager kept
+          seeing an unmarked Wednesday while half that window was their day off. */}
+      {stats?.run && (isCityOff(city, stats.run.business_date) ||
+        closedPartOfWindow(city, stats.run.business_date)) && (
         <div className="card p-4 flex items-center gap-3 border-l-[3px] border-l-border">
           <Icon name="event_busy" size={20} className="text-text-muted shrink-0" />
           <p className="text-sm text-text-secondary">
-            <b>{stats.run.business_date}</b> was your weekly off (Thursday) — no register, ops-sheet
-            or DT entries are expected for this day.
+            {isCityOff(city, stats.run.business_date) ? (
+              <>
+                <b>{stats.run.business_date}</b> was your weekly off — no gate register, ops sheet
+                or delivery-app entries are expected for this day.
+              </>
+            ) : (
+              <>
+                Your weekly off falls inside <b>{stats.run.business_date}</b>. A business day runs
+                3pm to 3pm, so this one covers the morning of your day off — the figures below cover
+                the open half only.
+              </>
+            )}
           </p>
         </div>
       )}
