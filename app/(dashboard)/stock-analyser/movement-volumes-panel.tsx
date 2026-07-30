@@ -90,6 +90,7 @@ export default function MovementVolumesPanel({ today }: { today: string }) {
   const [data, setData] = useState<MovementsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
   const seq = useRef(0);
 
   /* eslint-disable react-hooks/set-state-in-effect -- setLoading toggles the
@@ -327,30 +328,40 @@ export default function MovementVolumesPanel({ today }: { today: string }) {
                     </div>
                   ))}
                   <div className="absolute inset-0 flex items-end gap-2">
-                    {days.map((d) => (
+                    {days.map((d, i) => (
                       <div
                         key={d.date}
-                        className="flex-1 flex flex-col items-center justify-end h-full min-w-[28px]"
+                        // The whole column is the hover target, not the bar: a
+                        // short bar is a few pixels tall, and the days worth
+                        // asking about are often exactly the short ones.
+                        className={
+                          hover === i
+                            ? "relative flex-1 flex flex-col items-center justify-end h-full min-w-[28px] bg-surface-elevated/60 rounded-t"
+                            : "relative flex-1 flex flex-col items-center justify-end h-full min-w-[28px]"
+                        }
+                        onMouseEnter={() => setHover(i)}
+                        onMouseLeave={() => setHover((h) => (h === i ? null : h))}
                       >
+                        {hover === i ? <DayReadout d={d} /> : null}
+
+                        {/* Always-on numerals at readable widths, so the figure
+                            is not hostage to a hover the reader may not try. */}
+                        {days.length <= 14 && d.ledgered && d.total > 0 ? (
+                          <span className="text-[10px] text-text-muted tabular-nums leading-none mb-0.5">
+                            {nf(d.total)}
+                          </span>
+                        ) : null}
+
                         {!d.ledgered ? (
                           // A day nobody checked. NEVER a zero-height bar: that
                           // reads as "nothing moved", which is a different claim.
-                          <div
-                            className="w-full max-w-[34px] h-full rounded-t border border-dashed border-text-disabled/60 bg-surface-elevated/40 flex items-end justify-center pb-1"
-                            title={`${longDate(d.date)} — no check ran, so nothing was counted.`}
-                          >
+                          <div className="w-full max-w-[34px] h-full rounded-t border border-dashed border-text-disabled/60 bg-surface-elevated/40 flex items-end justify-center pb-1">
                             <Icon name="close" size={12} className="text-text-disabled" />
                           </div>
                         ) : d.total === 0 ? (
-                          <div
-                            className="w-full max-w-[34px] h-[2px] bg-text-disabled"
-                            title={`${longDate(d.date)} — checked, and nothing moved.`}
-                          />
+                          <div className="w-full max-w-[34px] h-[2px] bg-text-disabled" />
                         ) : (
-                          <div
-                            className="w-full max-w-[34px] flex items-end justify-center gap-[2px] h-full"
-                            title={`${longDate(d.date)} — ${nf(d.total)} units moved: ${nf(d.out)} out, ${nf(d.in)} in.${d.short ? " Counted from fewer than four books, so this is an undercount." : ""}`}
-                          >
+                          <div className="w-full max-w-[34px] flex items-end justify-center gap-[2px] h-full">
                             <div
                               className="flex-1 rounded-t"
                               style={{
@@ -508,6 +519,67 @@ export default function MovementVolumesPanel({ today }: { today: string }) {
 const SHORT_CAP: React.CSSProperties = {
   borderTop: "2px dashed var(--text-disabled)",
 };
+
+interface DayPoint {
+  date: string;
+  in: number;
+  out: number;
+  total: number;
+  ledgered: boolean;
+  short: boolean;
+  backfilled: boolean;
+}
+
+/**
+ * The figures for the hovered day.
+ *
+ * Pinned to the TOP of the chart area rather than floating above the bar, for
+ * one boring reason: the scroll container is `overflow-x-auto`, which computes
+ * overflow-y to `auto` as well, so anything drawn above the plot gets clipped.
+ * Inside the box it is always readable, and it never moves as the bar height
+ * changes.
+ *
+ * pointer-events-none so it cannot steal the hover from the column underneath
+ * and flicker.
+ */
+function DayReadout({ d }: { d: DayPoint }) {
+  return (
+    <div className="absolute top-0 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
+      <div className="bg-surface-card border border-border rounded-control shadow-card px-3 py-2 text-xs whitespace-nowrap">
+        <div className="font-semibold text-text-primary">{longDate(d.date)}</div>
+        {!d.ledgered ? (
+          <div className="text-text-muted mt-0.5">No check ran, so nothing was counted.</div>
+        ) : d.total === 0 ? (
+          <div className="text-text-muted mt-0.5">Checked, and nothing moved.</div>
+        ) : (
+          <>
+            <div className="text-text-primary tabular-nums mt-1">
+              {nf(d.total)} units moved
+            </div>
+            <div className="flex items-center gap-1.5 text-text-secondary tabular-nums mt-0.5">
+              <span className="w-2.5 h-2.5 rounded-sm inline-block" style={OUT_FILL} />
+              {nf(d.out)} out
+            </div>
+            <div className="flex items-center gap-1.5 text-text-secondary tabular-nums">
+              <span className="w-2.5 h-2.5 rounded-sm inline-block" style={IN_FILL} />
+              {nf(d.in)} in
+            </div>
+            {d.short ? (
+              <div className="text-status-warning mt-1 max-w-[13rem] whitespace-normal">
+                Counted from fewer than four books — an undercount.
+              </div>
+            ) : null}
+            {d.backfilled ? (
+              <div className="text-text-muted mt-1 max-w-[13rem] whitespace-normal">
+                Reconstructed afterwards, not recorded on the night.
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function chartLabel(
   days: { date: string; total: number; ledgered: boolean }[],
