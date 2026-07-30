@@ -193,11 +193,15 @@ function actionList(actions: ActionItem[], limit: number): Block[] {
 function informationalLine(d: DigestData): string | null {
   // The tier-3 TOTAL, not the top three kinds. "123 odoo posting delay" is a
   // count followed by a lower-cased singular proper noun — not English, and the
-  // labels have no plural form to fix it with. Using the full total is also what
-  // makes the arithmetic close: tier1 + tier2 + this = the number on the button.
-  const { tier3 } = d.totals;
+  // labels have no plural form to fix it with.
+  //
+  // Self-contained, and deliberately so. This line used to open "The other N"
+  // and borrowed its referent from the button underneath ("Open all 219 items").
+  // The button now only says where it goes, so the sentence names both numbers
+  // itself and the arithmetic still closes: tier1 + tier2 + this = open.
+  const { tier3, open } = d.totals;
   if (tier3 === 0) return null;
-  return `The other ${n(tier3)} items open today need nothing from anyone.`;
+  return `Of the ${n(open)} items open today, ${n(tier3)} need nothing from anyone.`;
 }
 
 /**
@@ -333,12 +337,10 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
       blocks: [
         {
           kind: "cta",
-          // The button carries the total, which is what lets the reconciling
-          // line go: tier1 + tier2 + the footer's tier-3 count adds up to this
-          // number, without anyone being taught the word "tier".
-          label: data.totals.open > 0
-            ? `Open all ${n(data.totals.open)} items on the dashboard`
-            : "See the day, city by city",
+          // A button says where it goes, not what is behind it. The counts it
+          // used to carry ("Open all 219 items on the dashboard") are now in
+          // the footer line above, which reads on its own.
+          label: "View in dashboard",
           href: opts.dashboardUrl,
         },
       ],
