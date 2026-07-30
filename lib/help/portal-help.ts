@@ -20,6 +20,7 @@ export type HelpTopic =
   | "pending_list"
   | "leaderboard"
   | "analytics"
+  | "stock_analyser"
   | "email_digest"
   | "users"
   | "system_health"
@@ -41,6 +42,17 @@ export const HELP_BY_ROUTE: Record<string, HelpEntry> = {
       "A clean scan matters: write barcodes and tickets one digit per box, and keep INWARD and OUTWARD on their labelled pages.",
       "Each PDF is also mirrored to the city's Google Drive folder for record-keeping.",
       "The nightly run then matches these rows against the ops sheet, the delivery app, and Odoo.",
+    ],
+  },
+  "/stock-analyser": {
+    title: "Stock Analyser",
+    blurb:
+      "Two views — how one day's flagged units changed when the day was checked again, and how much stock each warehouse handled over any stretch of time.",
+    points: [
+      "Day re-check: pick a business day and see what the first check flagged, what has cleared since, what is still open, and what was flagged later.",
+      "It says up front whether both checks read the same four books. If the second check could not read one of them it will find fewer problems for that reason alone, so no change is shown at all.",
+      "A day the second check has not reached yet is shown as exactly that — never as a day with nothing left to fix.",
+      "Movement volumes: choose any date range to see units in and out per day and per warehouse. Each chart states the date its records start on.",
     ],
   },
   "/leaderboard": {
@@ -184,6 +196,7 @@ export function helpForTopic(topic: string, role: string): HelpEntry | null {
 }
 
 export const HELP_TOPICS: HelpTopic[] = [
+  "stock_analyser",
   "dashboard",
   "filtering_and_search",
   "exports",

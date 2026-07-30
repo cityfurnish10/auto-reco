@@ -32,6 +32,8 @@ const NAV_ITEMS: {
   { href: "/users", label: "User Management", icon: "group", roles: ["ADMIN"] },
   { href: "/system-health", label: "System Health", icon: "health_and_safety", roles: ["ADMIN"] },
   { href: "/analytics", label: "Analytics", icon: "monitoring", roles: ["ADMIN"] },
+  // Straight after Analytics: the two are read together.
+  { href: "/stock-analyser", label: "Stock Analyser", icon: "inventory_2", roles: ["ADMIN"] },
   { href: "/email-digest", label: "Email Digest", icon: "mail", roles: ["ADMIN"] },
 ];
 

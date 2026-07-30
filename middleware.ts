@@ -3,7 +3,16 @@ import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, parseSessionCookie } from "@/lib/demo-auth";
 
 const PUBLIC_PATHS = ["/login"];
-const ADMIN_ONLY_PATHS = ["/users", "/system-health", "/analytics", "/email-digest"];
+const ADMIN_ONLY_PATHS = [
+  "/users",
+  "/system-health",
+  "/analytics",
+  "/email-digest",
+  // Inherently cross-city: it reads per-run coverage and the movement ledger for
+  // every warehouse at once, and a manager's slice of a global run's coverage
+  // would mislead rather than merely restrict.
+  "/stock-analyser",
+];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request: { headers: request.headers } });
