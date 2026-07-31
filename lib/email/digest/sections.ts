@@ -98,6 +98,7 @@ function coverageSection(data: DigestData): Section | null {
 
   const noGreen: string[] = [];
   const shut: string[] = [];
+  const skews: string[] = [];
 
   for (const c of ordered) {
     const off = isCityOff(c.city as City, cov.date);
@@ -157,6 +158,12 @@ function coverageSection(data: DigestData): Section | null {
       parts.push(
         `${skew.weak} units almost never do: ${n(skew.weakAll4)} of ${n(skew.weakTotal)}, against ${n(skew.strongAll4)} of ${n(skew.strongTotal)} the other way`
       );
+      // Also promoted to the legend. It is the one finding in this section a
+      // reader can act on, and with the captions gone from the HTML it would
+      // otherwise reach nobody who reads the email as designed.
+      skews.push(
+        `${cityName(c.city)} logs almost nothing ${skew.weak}: ${n(skew.weakAll4)} of ${n(skew.weakTotal)} reach all four, against ${n(skew.strongAll4)} of ${n(skew.strongTotal)} the other way.`
+      );
     }
     rows.push({
       label: cityName(c.city),
@@ -180,11 +187,10 @@ function coverageSection(data: DigestData): Section | null {
   // that answered with no movements at all. An absent claim beats an empty one.
   if (scored === 0 && noGreen.length === 0) return null;
 
+  // NO INTRO PARAGRAPH. The section heading, the key under the plot and the
+  // legend below it already say what is being counted; a sentence naming the
+  // four records was restating the key in prose.
   const blocks: Block[] = [
-    {
-      kind: "para",
-      text: `Every unit that moved on ${fmtDate(cov.date)}, checked against all four records: gate register, ops sheet, delivery app and Odoo.`,
-    },
     {
       kind: "bars",
       rows,
@@ -205,7 +211,8 @@ function coverageSection(data: DigestData): Section | null {
         (noGreen.length > 0
           ? `No green column for ${andList(noGreen)} — the gate register was not filed. `
           : "") +
-        "Three of four is usually a missing gate-register line: a paperwork gap, not missing stock. The units genuinely at risk are in the next section.",
+        "Three of four is usually a missing gate-register line: a paperwork gap, not missing stock. The units genuinely at risk are in the next section." +
+        (skews.length > 0 ? ` ${skews.join(" ")}` : ""),
     },
   ];
 

@@ -367,6 +367,37 @@ describe("digest — the founder's three parts", () => {
     expect(bars[0]).toBe(Math.max(...bars));
   });
 
+  it("keeps the per-city counts in the PLAINTEXT part only", () => {
+    // The captions were removed from the HTML — each column already prints its
+    // own value there, so restating them underneath was five paragraphs of
+    // numbers the reader had just looked at. In the text part the bar is block
+    // glyphs and carries nothing, so the caption is the only place the numbers
+    // exist. visibleStrings deliberately excludes it, which means the anti-drift
+    // test cannot guard it and THIS test has to.
+    const t = renderDigestText(threePart, URL);
+    expect(t).toContain("Delhi: 23 in all four · 62 in three · 29 in two · 36 in one");
+    expect(t).toContain("Bangalore: 39 in all four");
+
+    const html = stripTags(renderDigestHtml(threePart, URL));
+    expect(html).not.toContain("23 in all four");
+    // …but the values still reach the HTML, as labels on the columns.
+    expect(renderDigestHtml(threePart, URL)).toContain(">23<");
+  });
+
+  it("drops the intro sentence that restated the key in prose", () => {
+    for (const s of [renderDigestText(threePart, URL), stripTags(renderDigestHtml(threePart, URL))]) {
+      expect(s).not.toContain("checked against all four records");
+    }
+  });
+
+  it("promotes the one-direction finding into the legend", () => {
+    // With the captions gone from the HTML this would otherwise reach nobody
+    // who reads the email as designed — and it is the only line in the section
+    // somebody can act on.
+    const html = stripTags(renderDigestHtml(threePart, URL));
+    expect(html).toContain("Bangalore logs almost nothing arriving: 0 of 64 reach all four");
+  });
+
   it("never states a four-way pass RATE", () => {
     // 23 of 150 is 15%, while that same day put 9 units of 503 at risk. A
     // percentage here reads as "85% of stock is missing", which is false.

@@ -235,10 +235,6 @@ exports[`digest — model snapshot > threePart 1`] = `
   {
     "blocks": [
       {
-        "kind": "para",
-        "text": "Every unit that moved on 28 July 2026, checked against all four records: gate register, ops sheet, delivery app and Odoo.",
-      },
-      {
         "keys": [
           {
             "text": "All 4 records",
@@ -258,7 +254,7 @@ exports[`digest — model snapshot > threePart 1`] = `
           },
         ],
         "kind": "bars",
-        "legend": "No green column for Hyderabad — the gate register was not filed. Three of four is usually a missing gate-register line: a paperwork gap, not missing stock. The units genuinely at risk are in the next section.",
+        "legend": "No green column for Hyderabad — the gate register was not filed. Three of four is usually a missing gate-register line: a paperwork gap, not missing stock. The units genuinely at risk are in the next section. Bangalore logs almost nothing arriving: 0 of 64 reach all four, against 39 of 67 the other way.",
         "rows": [
           {
             "badge": {

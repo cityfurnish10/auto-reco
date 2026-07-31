@@ -150,20 +150,15 @@ function blockHtml(b: Block): string {
         ? `<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:12px auto 0;"><tr>${keys}</tr></table>`
         : "";
 
-      // Captions are the plaintext reader's whole chart and the anti-drift
-      // test's only handle, so they render here too — muted, under the plot.
-      const captions = b.rows
-        .map(
-          (r) =>
-            `<p style="margin:0 0 3px;font-size:11px;line-height:1.45;color:#9ca3af;">${esc(r.caption)}</p>`
-        )
-        .join("");
-
+      // NO CAPTIONS HERE. Each column already carries its own value above it,
+      // so restating them as prose underneath was five paragraphs of numbers
+      // the reader had just looked at. They render in the text part only, where
+      // the bar is block glyphs and carries nothing.
       const legend = b.legend
-        ? `<p style="margin:10px 0 0;font-size:12px;line-height:1.5;color:#6b7280;">${esc(b.legend)}</p>`
+        ? `<p style="margin:14px 0 0;font-size:12px;line-height:1.5;color:#6b7280;">${esc(b.legend)}</p>`
         : "";
 
-      return `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 6px;"><tr>${groups}</tr></table>${keyRow}<div style="margin-top:12px;">${captions}</div>${legend}`;
+      return `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 6px;"><tr>${groups}</tr></table>${keyRow}${legend}`;
     }
 
     case "cta":

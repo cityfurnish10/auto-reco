@@ -6,7 +6,12 @@ import {
   type CityCoverage,
   type FourWayCoverage,
 } from "../../lib/email/digest/coverage";
-import { buildSections, visibleStrings, type DigestData } from "../../lib/email/digest";
+import {
+  buildSections,
+  renderDigestText,
+  visibleStrings,
+  type DigestData,
+} from "../../lib/email/digest";
 
 const city = (over: Partial<CityCoverage> = {}): CityCoverage => ({
   city: "DELHI",
@@ -31,6 +36,11 @@ const digest = (coverage?: FourWayCoverage): DigestData => ({
 
 const textOf = (d: DigestData) =>
   visibleStrings(buildSections(d, { dashboardUrl: "https://x.test/dashboard" })).join(" | ");
+
+// The rendered PLAINTEXT part. Needed wherever an assertion is about a bar
+// caption: those render in the text body only and are deliberately absent from
+// visibleStrings, because the HTML chart prints each value on its own column.
+const plainOf = (d: DigestData) => renderDigestText(d, "https://x.test/dashboard");
 
 describe("fullyReported", () => {
   it("is true only when all four books filed", () => {
@@ -96,8 +106,9 @@ describe("the four-way section", () => {
   it("draws the split and never calls it a pass rate", () => {
     const t = textOf(digest({ date: "2026-07-30", cities: [city()] }));
     expect(t).toContain("1 · Four-way check");
-    expect(t).toContain("23 in all four");
-    expect(t).toContain("no gate register on 51 of them");
+    const plain = plainOf(digest({ date: "2026-07-30", cities: [city()] }));
+    expect(plain).toContain("23 in all four");
+    expect(plain).toContain("no gate register on 51 of them");
     // The line that stops 15% being read as "85% of stock is missing".
     expect(t).toContain("paperwork gap, not missing stock");
   });
@@ -124,10 +135,9 @@ describe("the four-way section", () => {
 
   it("marks a city shut for its weekly off and charts nothing for it", () => {
     // 2026-07-30 is a Thursday; Pune is closed.
-    const t = textOf(
-      digest({ date: "2026-07-30", cities: [city(), city({ city: "PUNE", total: 0 })] })
-    );
-    expect(t).toContain("Pune was shut — nothing expected.");
+    const d = digest({ date: "2026-07-30", cities: [city(), city({ city: "PUNE", total: 0 })] });
+    const t = textOf(d);
+    expect(plainOf(d)).toContain("Pune was shut — nothing expected.");
     // A shut city must not be blamed for a missing register.
     expect(t).not.toContain("No green column for Pune");
   });

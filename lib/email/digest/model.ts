@@ -49,6 +49,17 @@ export interface BarRow {
   sub?: string;
   /** A pill under the sub — "Guard ✓" / "No guard". */
   badge?: { text: string; tone: Tone };
+  /**
+   * PLAINTEXT ONLY. The HTML chart prints each value above its own column, so
+   * repeating them as prose underneath was noise on the surface people actually
+   * read. In the text part there is nothing but block glyphs, so this is the
+   * only place the numbers exist at all — which is why it is not simply deleted.
+   *
+   * Deliberately excluded from visibleStrings for that reason. It is the second
+   * such exclusion after cta.href, and it weakens the anti-drift guarantee in
+   * exactly one place, so tests/email/digest.test.ts asserts separately that the
+   * plaintext still carries every city's counts.
+   */
   caption: string;
   segments: { tone: Tone; value: number }[];
 }
@@ -109,9 +120,11 @@ export function visibleStrings(sections: Section[]): string[] {
           // spells them out, which is what lets the two renderers draw the same
           // data in completely different ways.
           for (const r of b.rows) {
-            out.push(r.label, r.caption);
+            out.push(r.label);
             if (r.sub) out.push(r.sub);
             if (r.badge) out.push(r.badge.text);
+            // NOT r.caption — see BarRow. It renders in the text part only,
+            // because the HTML chart already prints each value on its column.
           }
           for (const k of b.keys ?? []) out.push(k.text);
           if (b.legend) out.push(b.legend);
