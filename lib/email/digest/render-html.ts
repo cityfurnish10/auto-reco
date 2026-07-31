@@ -132,10 +132,22 @@ function blockHtml(b: Block): string {
           const sub = r.sub
             ? `<div style="font-size:11px;line-height:15px;color:#6b7280;">${esc(r.sub)}</div>`
             : "";
-          return `<td valign="bottom" style="padding:0 6px;text-align:center;">
-            <table role="presentation" cellpadding="0" cellspacing="0" align="center"><tr>${cols}</tr></table>
-            <div style="margin-top:6px;border-top:1px solid #e5e7eb;padding-top:5px;font-size:12px;font-weight:600;color:#111827;">${esc(r.label)}</div>
-            ${sub}${badge}
+          // A nested two-row table with a FIXED-HEIGHT plot row. The axis line
+          // is the border between the rows, and fixing the plot height puts
+          // that border at exactly the same y in every group — before this,
+          // each group bottom-aligned its whole stack, so a city with no
+          // columns (weekly off) or no badge had a shorter stack and its
+          // baseline floated above its neighbours'.
+          return `<td valign="top" style="padding:0 6px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+              <tr><td height="${PLOT + 14}" valign="bottom" align="center" style="height:${PLOT + 14}px;">
+                ${cols ? `<table role="presentation" cellpadding="0" cellspacing="0" align="center"><tr>${cols}</tr></table>` : `<div style="font-size:0;line-height:0;">&nbsp;</div>`}
+              </td></tr>
+              <tr><td align="center" style="border-top:1px solid #e5e7eb;padding-top:5px;text-align:center;">
+                <div style="font-size:12px;font-weight:600;color:#111827;">${esc(r.label)}</div>
+                ${sub}${badge}
+              </td></tr>
+            </table>
           </td>`;
         })
         .join("");
