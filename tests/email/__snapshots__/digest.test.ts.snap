@@ -484,7 +484,7 @@ exports[`digest — model snapshot > threePart 1`] = `
             },
             {
               "align": "right",
-              "heat": 2,
+              "heat": 1,
               "text": "3",
             },
             {
@@ -531,7 +531,7 @@ exports[`digest — model snapshot > threePart 1`] = `
             },
             {
               "align": "right",
-              "heat": 2,
+              "heat": 1,
               "text": "3",
             },
             {

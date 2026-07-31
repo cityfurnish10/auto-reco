@@ -36,14 +36,19 @@ describe("daysBetween", () => {
 });
 
 describe("summariseAgeing — the age rule", () => {
-  it("includes an item exactly two days old and excludes a one-day-old one", () => {
-    // "not closed within 2 days" is inclusive at 2: the item was reported in the
-    // digest two mornings ago and has had both days to be dealt with.
-    const two = summariseAgeing([row({ business_date: "2026-07-28" })], REPORT, FRESH);
-    expect(two.total).toBe(1);
+  it("counts every day in the window, including yesterday", () => {
+    // The grid is a seven-day trail now, not a cut-off. Excluding recent days
+    // left a seven-column table with one column in it, and a reader cannot tell
+    // a clean day from a day nobody looked at.
+    expect(summariseAgeing([row({ business_date: "2026-07-28" })], REPORT, FRESH).total).toBe(1);
+    expect(summariseAgeing([row({ business_date: "2026-07-29" })], REPORT, FRESH).total).toBe(1);
+  });
 
-    const one = summariseAgeing([row({ business_date: "2026-07-29" })], REPORT, FRESH);
-    expect(one.total).toBe(0);
+  it("ignores anything the dashboard would not call still open", () => {
+    // bucket REAL is the dashboard's own predicate for its "Still open" tile.
+    // Measured 27 Jul: 649 open units, 336 of them tier 1-2, 122 in REAL. The
+    // email used to print 336 beside a screen showing 122.
+    expect(summariseAgeing([row({ bucket: "INFO" })], REPORT, FRESH).total).toBe(0);
   });
 
   it("reports the age of the OLDEST day a unit appeared on", () => {
@@ -108,23 +113,17 @@ describe("summariseAgeing — what does not belong", () => {
 });
 
 describe("summariseAgeing — the freshness gate", () => {
-  it("excludes a date nobody re-checked, and names it", () => {
-    // The correctness requirement: "still open" is only true as of the last time
-    // that date was reconciled. resolveStaleOpenVariances runs only on a re-run.
+  it("RECORDS a date nobody re-checked rather than dropping it", () => {
+    // It used to be excluded outright, which is why a seven-day grid arrived
+    // with a single column. The pg_cron sweep now re-runs the whole window
+    // daily, so a stale day is the exception — worth naming, not hiding.
     const rows = [
       row({ business_date: "2026-07-27", barcode: "FRESH-1" }),
       row({ business_date: "2026-07-24", barcode: "STALE-1" }),
     ];
-    const stale = new Set(["2026-07-27"]); // 24th deliberately absent
-    const s = summariseAgeing(rows, REPORT, stale);
-    expect(s.total).toBe(1);
+    const s = summariseAgeing(rows, REPORT, new Set(["2026-07-27"]));
+    expect(s.total).toBe(2);
     expect(s.staleDates).toEqual(["2026-07-24"]);
-  });
-
-  it("reports nothing at all when no date was re-checked", () => {
-    const s = summariseAgeing([row()], REPORT, new Set());
-    expect(s.total).toBe(0);
-    expect(s.staleDates).toEqual(["2026-07-27"]);
   });
 });
 

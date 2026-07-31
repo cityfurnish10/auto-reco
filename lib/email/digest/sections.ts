@@ -212,16 +212,24 @@ function coverageSection(data: DigestData): Section | null {
 // ─── part three: what has been open too long ─────────────────────────────────
 
 /**
- * Severity bands for a heatmap cell, matching the key rendered beneath it.
+ * Severity bands for a heatmap cell, RELATIVE to the busiest cell in the grid.
  *
- * Bands, not a gradient: a reader compares cells against the key, and eleven
- * shades of red are indistinguishable at the size an email renders them.
+ * Fixed thresholds were the first attempt and were useless: they topped out at
+ * "11 or more", calibrated against a mockup whose numbers ran 1-12, while real
+ * counts run 22-118. Every single cell came out maximum red, so the heatmap
+ * carried no information at all — the reader saw a solid red block.
+ *
+ * Scaling to the grid's own maximum means the colour always says "hot FOR THIS
+ * WEEK", which is the only comparison a reader can act on. A quiet week is not
+ * painted red just for existing, and a catastrophic one still has a worst cell.
  */
-function heatOf(v: number): Heat {
+function heatOf(v: number, max: number): Heat {
   if (v <= 0) return 0;
-  if (v <= 2) return 1;
-  if (v <= 5) return 2;
-  if (v <= 10) return 3;
+  if (max <= 0) return 1;
+  const share = v / max;
+  if (share <= 0.25) return 1;
+  if (share <= 0.5) return 2;
+  if (share <= 0.75) return 3;
   return 4;
 }
 
@@ -243,6 +251,7 @@ function ageingSection(data: DigestData): Section | null {
     // tests/email/vocabulary.ts bans it from every surface, and the reader has
     // no use for it.
     const g = a.grid;
+    const hottest = Math.max(0, ...g.rows.flatMap((r) => r.counts));
     blocks.push({
       kind: "para",
       text: `Items raised in the last ${LOOKBACK_DAYS} days and still not settled, by the day they were raised.`,
@@ -260,7 +269,7 @@ function ageingSection(data: DigestData): Section | null {
           ...r.counts.map((v) => ({
             text: n(v),
             align: "right" as const,
-            heat: heatOf(v),
+            heat: heatOf(v, hottest),
           })),
           {
             text: n(r.total),

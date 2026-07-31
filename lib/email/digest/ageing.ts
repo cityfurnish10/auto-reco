@@ -118,14 +118,22 @@ export function summariseAgeing(
   for (const r of rows) {
     if (!isStillOpen(r.status)) continue;
 
-    const age = daysBetween(r.business_date, reportDate);
-    if (age < minAgeDays) continue;
+    // bucket = REAL, the SAME predicate /api/stats/summary uses for the
+    // dashboard's "Still open" tile. Three different populations were being
+    // called "pending" — 649 open units on 27 Jul, 336 of them tier 1 or 2, and
+    // 122 in the REAL bucket — and the email had picked a fourth reading of its
+    // own. A number in the inbox that disagrees with the screen is worse than
+    // no number, so this now matches the screen by construction.
+    if (r.bucket !== "REAL") continue;
 
-    // A date nobody re-checked cannot be claimed as still open.
-    if (!freshDates.has(r.business_date)) {
-      staleSeen.add(r.business_date);
-      continue;
-    }
+    const age = daysBetween(r.business_date, reportDate);
+    if (age < 0) continue;
+
+    // Staleness is RECORDED, not excluded. Dropping un-rechecked days left a
+    // seven-day grid with one column in it; the pg_cron sweep now re-runs the
+    // whole window every afternoon, so a stale day is the exception and worth
+    // naming rather than hiding.
+    if (!freshDates.has(r.business_date)) staleSeen.add(r.business_date);
 
     const label = labelFor(r.variance_name, {
       direction: (r.direction as "IN" | "OUT" | "CROSS" | null) ?? null,
@@ -208,12 +216,27 @@ export function summariseAgeing(
   // The heatmap. Columns are every date in the window that produced a unit,
   // oldest first; a date the sweep could not refresh contributes nothing and is
   // named separately rather than drawn as an empty column that reads as "clean".
-  const dates = [...new Set([...worst.values()].map((u) => u.date))].sort();
+  // EVERY day in the window gets a column, even an empty one. A grid that only
+  // shows days with data cannot be read as a trend: the reader cannot tell a
+  // clean Tuesday from a Tuesday nobody looked at.
+  //
+  // The window ENDS AT D-1, not D. The caller reads one run per business date
+  // strictly BEFORE the reported day (build.ts uses .lt), so a column for the
+  // report date could only ever be zero — and a zero column at the right-hand
+  // edge reads as "today is clean" rather than "today is not in this table".
+  // Part two already covers the reported day.
+  const dates: string[] = [];
+  for (let i = LOOKBACK_DAYS; i >= 1; i--) {
+    const t = new Date(Date.parse(`${reportDate}T00:00:00Z`) - i * 86400_000);
+    dates.push(t.toISOString().slice(0, 10));
+  }
   const idx = new Map(dates.map((d, i) => [d, i]));
   const gridByCity = new Map<string, number[]>();
   for (const u of worst.values()) {
+    const col = idx.get(u.date);
+    if (col === undefined) continue; // older than the window
     const counts = gridByCity.get(u.city) ?? new Array(dates.length).fill(0);
-    counts[idx.get(u.date)!]++;
+    counts[col]++;
     gridByCity.set(u.city, counts);
   }
   const gridRows = [...gridByCity.entries()]
