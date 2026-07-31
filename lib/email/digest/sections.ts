@@ -65,6 +65,64 @@ function andList(items: string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
+// ─── the movement summary ────────────────────────────────────────────────────
+
+/**
+ * What each book recorded, out and in, per city.
+ *
+ * The data has been reaching this file since migration 0012 and nothing ever
+ * rendered it: build.ts fills CityDigestRow.counts and every section ignored it.
+ *
+ * ONE CELL PER BOOK, "out / in", rather than the eight separate columns of the
+ * spreadsheet this mirrors. Eight numeric columns plus a city name does not fit
+ * a phone, and the block model has no colspan, so a two-row header naming each
+ * book above its own Out/In pair is not available. Combining the pair keeps all
+ * sixteen numbers and fits five columns.
+ *
+ * "NA" WHERE A BOOK DID NOT FILE, never 0. A zero here would say the warehouse
+ * moved nothing; the truth is that nobody told us — which is exactly the
+ * distinction `counts.reported` exists to preserve.
+ */
+function movementSummary(data: DigestData): Section | null {
+  const withCounts = data.cities.filter((c) => c.counts);
+  if (withCounts.length === 0) return null;
+
+  const pair = (out: number, inn: number, reported: boolean) =>
+    reported ? `${n(out)} / ${n(inn)}` : "NA";
+
+  return {
+    id: "movements",
+    title: `Movement summary · ${fmtDate(data.date)}`,
+    blocks: [
+      {
+        kind: "table",
+        columns: [
+          { label: "City" },
+          { label: "Register", align: "right" },
+          { label: "Odoo", align: "right" },
+          { label: "Delivery tracker", align: "right" },
+          { label: "Security guards", align: "right" },
+        ],
+        rows: withCounts.map((c) => {
+          const m = c.counts!;
+          return [
+            { text: cityName(c.city), strong: true },
+            { text: pair(m.sheetOut, m.sheetIn, m.reported.S), align: "right" as const },
+            { text: pair(m.odooOut, m.odooIn, m.reported.O), align: "right" as const },
+            { text: pair(m.dtOut, m.dtIn, m.reported.D), align: "right" as const },
+            {
+              text: pair(m.physOut, m.physIn, m.reported.P),
+              align: "right" as const,
+              tone: m.reported.P ? undefined : ("muted" as const),
+            },
+          ];
+        }),
+        footnote: "Each cell is out / in. NA means that book did not reach us.",
+      },
+    ],
+  };
+}
+
 // ─── part one: the four-way check ────────────────────────────────────────────
 
 /**
@@ -539,6 +597,12 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
       blocks: [{ kind: "para", text: openingLine(data, threeSourceCaveat(data) !== null) }],
     });
   }
+
+  // THE MOVEMENT SUMMARY, first. It is the raw count each book recorded, before
+  // any judgement is applied to it — so it belongs above the sections that
+  // interpret those counts.
+  const movements = movementSummary(data);
+  if (movements) sections.push(movements);
 
   // PART ONE. Before the at-risk detail, because it answers the prior question:
   // did the four records agree at all? Omitted entirely when it cannot be

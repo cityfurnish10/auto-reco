@@ -287,33 +287,16 @@ describe("digest — escaping", () => {
 });
 
 describe("digest — subject", () => {
-  it("names the busiest cities when units are at risk", () => {
-    const s = digestSubject(richDay);
-    // "we cannot place" rather than "to confirm": confirm is the mildest
-    // possible verb for "we do not know where these are".
-    expect(s).toContain("78 units we cannot place");
-    expect(s).toMatch(/Delhi 34/);
-    expect(s.indexOf("78")).toBeLessThan(45); // Gmail mobile truncates ~40
+  it("is the movement register and its date, nothing else", () => {
+    expect(digestSubject(richDay)).toBe("Movement Register- 26-July-2026");
+    expect(digestSubject(threePart)).toBe("Movement Register- 26-July-2026");
   });
 
-  it("says all-clear only when every live city's register arrived", () => {
-    // With its denominator: "all units accounted for" is a slogan, "all 2,100
-    // units accounted for" is a fact the reader can weigh.
-    expect(digestSubject(quietDay)).toContain("all 2,100 units accounted for");
-  });
-
-  it("refuses the all-clear while a register is missing", () => {
-    const d = digest({
-      totals: { movements: 10, tier1: 0, tier2: 0, tier3: 0, open: 0 },
-      cities: [city({ register: "missing" })],
-    });
-    // That city ran on three sources, so a clean headline would be a lie.
-    expect(digestSubject(d)).not.toMatch(/all [\d,]* ?units accounted for/);
-    expect(digestSubject(d)).toContain("no guard register");
-  });
-
-  it("flags an unfinished run instead of reporting its numbers", () => {
-    expect(digestSubject(incompleteRun)).toMatch(/did not finish/);
+  it("says the same thing on an unfinished run", () => {
+    // Recorded, not asserted as good: the subject used to replace everything
+    // with "the check did not finish, do not act on these figures". A broken
+    // run is now indistinguishable from a clean one until the mail is opened.
+    expect(digestSubject(incompleteRun)).toBe("Movement Register- 26-July-2026");
   });
 
   it("stays inside a readable length", () => {
