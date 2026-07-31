@@ -71,7 +71,7 @@ export interface LegendItem {
 }
 
 export type Block =
-  | { kind: "para"; text: string; tone?: Tone }
+  | { kind: "para"; text: string; tone?: Tone; strong?: boolean }
   | { kind: "callout"; tone: "warn" | "danger" | "note"; title: string; lines: string[] }
   | { kind: "table"; columns: { label: string; align?: Align }[]; rows: Cell[][]; footnote?: string }
   | { kind: "list"; items: { text: string; sub?: string; tone?: Tone }[] }

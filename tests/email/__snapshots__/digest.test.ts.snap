@@ -27,9 +27,6 @@ exports[`digest — model snapshot > richDay 1`] = `
             "label": "At risk",
           },
           {
-            "label": "vs last week",
-          },
-          {
             "label": "Guard register",
           },
         ],
@@ -49,10 +46,6 @@ exports[`digest — model snapshot > richDay 1`] = `
               "strong": true,
               "text": "34",
               "tone": "danger",
-            },
-            {
-              "text": "—",
-              "tone": "muted",
             },
             {
               "text": "Received",
@@ -75,10 +68,6 @@ exports[`digest — model snapshot > richDay 1`] = `
               "tone": "danger",
             },
             {
-              "text": "—",
-              "tone": "muted",
-            },
-            {
               "text": "Not received",
               "tone": "danger",
             },
@@ -97,10 +86,6 @@ exports[`digest — model snapshot > richDay 1`] = `
               "strong": true,
               "text": "12",
               "tone": "danger",
-            },
-            {
-              "text": "—",
-              "tone": "muted",
             },
             {
               "text": "Not read yet",
@@ -123,10 +108,6 @@ exports[`digest — model snapshot > richDay 1`] = `
               "tone": "danger",
             },
             {
-              "text": "—",
-              "tone": "muted",
-            },
-            {
               "text": "Received",
               "tone": "muted",
             },
@@ -145,10 +126,6 @@ exports[`digest — model snapshot > richDay 1`] = `
               "strong": true,
               "text": "4",
               "tone": "danger",
-            },
-            {
-              "text": "—",
-              "tone": "muted",
             },
             {
               "text": "Unreadable",
@@ -316,9 +293,6 @@ exports[`digest — model snapshot > threePart 1`] = `
             "label": "At risk",
           },
           {
-            "label": "vs last week",
-          },
-          {
             "label": "Guard register",
           },
         ],
@@ -338,10 +312,6 @@ exports[`digest — model snapshot > threePart 1`] = `
               "strong": true,
               "text": "5",
               "tone": "danger",
-            },
-            {
-              "text": "—",
-              "tone": "muted",
             },
             {
               "text": "Received",
@@ -364,10 +334,6 @@ exports[`digest — model snapshot > threePart 1`] = `
               "tone": "danger",
             },
             {
-              "text": "—",
-              "tone": "muted",
-            },
-            {
               "text": "Received",
               "tone": "muted",
             },
@@ -386,10 +352,6 @@ exports[`digest — model snapshot > threePart 1`] = `
               "strong": false,
               "text": "0",
               "tone": undefined,
-            },
-            {
-              "text": "—",
-              "tone": "muted",
             },
             {
               "text": "Weekly off",

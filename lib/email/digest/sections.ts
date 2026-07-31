@@ -126,7 +126,14 @@ function movementSummary(data: DigestData): Section | null {
             },
           ];
         }),
-        footnote: "Each cell is out / in. NA means that book did not reach us.",
+      },
+      {
+        kind: "para",
+        // Owner's spec: capitalised and bold. It is the one line that stops a
+        // reader dividing an out/in pair, or reading NA as zero.
+        text: "EACH CELL IS OUT / IN. NA MEANS THAT BOOK DID NOT REACH US.",
+        tone: "muted",
+        strong: true,
       },
     ],
   };
@@ -415,7 +422,6 @@ function openingLine(d: DigestData, registerShort: boolean): string {
   return `${head} ${lead}${rest}`;
 }
 
-const TREND_TEXT = { worse: "Worse", usual: "Usual", better: "Better" } as const;
 
 function citySnapshot(
   cities: CityDigestRow[],
@@ -437,15 +443,6 @@ function citySnapshot(
     { text: n(c.movements), align: "right" as const },
     { text: n(c.tier1), align: "right" as const, tone: c.tier1 > 0 ? ("danger" as const) : undefined, strong: c.tier1 > 0 },
     {
-      // An em dash means "not comparable", NEVER "no change" — the city was
-      // short a book, or has too little history. Rendering it as "Usual" would
-      // turn an outage into reassurance.
-      text: c.trend ? TREND_TEXT[c.trend] : "—",
-      tone: c.trend === "worse" ? ("danger" as const)
-        : c.trend === "better" ? ("good" as const)
-        : ("muted" as const),
-    },
-    {
       // "delayed" names the actual handover day: the city's weekly off sits
       // between this board and the register, so Wednesday's book from a
       // Thursday-off warehouse is DUE FRIDAY — a schedule, not an alarm, which
@@ -465,7 +462,6 @@ function citySnapshot(
       { label: "City" },
       { label: "Units moved", align: "right" },
       { label: "At risk", align: "right" },
-      { label: "vs last week" },
       { label: "Guard register" },
     ],
     rows,

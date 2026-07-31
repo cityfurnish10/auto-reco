@@ -57,7 +57,7 @@ function cellHtml(c: Cell): string {
 function blockHtml(b: Block): string {
   switch (b.kind) {
     case "para":
-      return `<p style="margin:0 0 10px;font-size:14px;line-height:1.55;color:${TONE_COLOR[b.tone ?? "normal"]};">${esc(b.text)}</p>`;
+      return `<p style="margin:0 0 10px;font-size:14px;line-height:1.55;color:${TONE_COLOR[b.tone ?? "normal"]};${b.strong ? "font-weight:700;" : ""}">${esc(b.text)}</p>`;
 
     case "callout": {
       const c = CALLOUT[b.tone];
@@ -183,14 +183,18 @@ export function renderHtml(sections: Section[], date: string, kicker: string): s
     })
     .join("");
 
-  // Brand as a text wordmark, not an image: Gmail strips inline/base64, and a
-  // hosted icon on a protected deployment URL 403s into a broken image.
+  // Brand logo from the public CDN. The old objection to images was specific:
+  // inline/base64 (stripped by Gmail) and the deployment-protected Vercel URL
+  // (403s into a broken frame). media.cityfurnish.com is public, so a plain
+  // remote <img> works; the alt text keeps the wordmark for clients that block
+  // remote images until the reader opts in. Height only, so clients scale the
+  // width proportionally — Outlook honours the attribute where it ignores CSS.
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f3f4f6;padding:24px 12px;"><tr><td align="center">
     <table role="presentation" cellpadding="0" cellspacing="0" width="600" style="width:100%;max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;">
       <tr><td style="padding:22px 28px 0;">
-        <p style="margin:0;font-size:15px;font-weight:800;letter-spacing:-.2px;color:#111827;">CITYFURNISH</p>
+        <img src="https://media.cityfurnish.com/sagepilot/png/cityfurnish-logo-purple.png" alt="CITYFURNISH" height="28" style="height:28px;display:block;border:0;" />
         <p style="margin:2px 0 0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.4px;color:#9ca3af;">${esc(kicker)} &middot; ${esc(date)}</p>
       </td></tr>
       <tr><td style="padding:16px 28px 26px;">${body}</td></tr>
