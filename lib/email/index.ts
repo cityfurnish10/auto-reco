@@ -82,11 +82,42 @@ export function digestRecipients(): string[] {
 // for a future custom domain.
 const PROD_APP_URL = "https://auto-reco.vercel.app";
 
+/**
+ * Is this a link a RECIPIENT could actually open?
+ *
+ * NEXT_PUBLIC_APP_URL is "http://localhost:3000" in .env.local — correct for a
+ * browser on the dev machine, useless in an inbox. Every send path shares this
+ * function, so one stray override put a dead link in front of eight people:
+ * an email sent from a local run, or from a deployment whose env was pasted
+ * wrong, carried "http://localhost:3000/dashboard" as its only call to action.
+ *
+ * An override is honoured ONLY when it is a public https origin. A future
+ * custom domain passes; localhost, a LAN address and plain http do not, and
+ * fall back to the production domain rather than shipping something unopenable.
+ */
+function isPublicOrigin(raw: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:") return false;
+  const h = u.hostname.toLowerCase();
+  if (h === "localhost" || h.endsWith(".localhost") || h === "::1") return false;
+  // Loopback, link-local and the RFC1918 ranges — a colleague's laptop is not
+  // a place the founder's phone can reach.
+  if (/^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h)) return false;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return false;
+  return true;
+}
+
 // Exported so the preview route renders with the SAME link the real send uses
 // (it previously kept its own stale copy of this logic and drifted).
 export function dashboardUrl(): string {
-  const base = process.env.NEXT_PUBLIC_APP_URL?.trim() || PROD_APP_URL;
-  return `${base.replace(/\/$/, "")}/dashboard`;
+  const override = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "");
+  const base = override && isPublicOrigin(override) ? override : PROD_APP_URL;
+  return `${base}/dashboard`;
 }
 
 export async function sendReconciliationDigest(
