@@ -230,9 +230,16 @@ function coverageSection(data: DigestData): Section | null {
     rows.push({
       label: cityName(c.city),
       sub: `${n(c.total)} moved`,
-      badge: down.includes("P")
-        ? { text: "No guard", tone: "muted" }
-        : { text: "Guard ✓", tone: "good" },
+      // Three guard states, matching part two's register column. "Guard due
+      // Fri" is a schedule — the city's weekly off sits between this board and
+      // the register handover; "No guard" is a problem. The chart said "No
+      // guard" for all three off-day cities every single week, which is an
+      // alarm that cries wolf on schedule.
+      badge: !down.includes("P")
+        ? { text: "Guard ✓", tone: "good" }
+        : closedPartOfWindow(c.city as City, cov.date)
+          ? { text: `Guard due ${weekdayName(addDays(cov.date, 2)).slice(0, 3)}`, tone: "muted" }
+          : { text: "No guard", tone: "muted" },
       caption: parts.join(" · "),
       segments: [
         { tone: "good", value: four },
