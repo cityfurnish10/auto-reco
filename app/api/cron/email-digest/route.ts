@@ -127,6 +127,13 @@ async function handle(req: NextRequest) {
     businessDate: date,
     status: result.sent ? "sent" : result.error ? "failed" : "skipped",
     recipients: result.recipients ?? [],
+    // Cc/Bcc were being dropped here while the scheduled-send path recorded
+    // them (lib/email/scheduled.ts). The 29 Jul digest reached one To and seven
+    // Cc, and its audit row showed a single recipient — so System Health, and
+    // anyone asking "who was told about this", read a company-wide email as
+    // having gone to one person.
+    cc: result.cc ?? [],
+    bcc: result.bcc ?? [],
     messageId: result.messageId ?? null,
     // Frozen at the wire; the follow-up's X can come from nowhere else.
     totals: result.totals ?? null,

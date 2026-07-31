@@ -73,6 +73,41 @@ export function fullyReported(c: CityCoverage): boolean {
   return c.reported.P && c.reported.S && c.reported.D && c.reported.O;
 }
 
+/** Below this a leg is too small for its rate to mean anything. */
+const MIN_LEG = 20;
+/** A leg this bad, against a sibling this good, is a pattern not noise. */
+const LEG_BAD = 0.05;
+const LEG_GOOD = 0.25;
+
+/**
+ * One direction failing while the other passes — the finding a per-city total
+ * hides completely.
+ *
+ * Measured on Bangalore: 29 Jul inward reached all four records on 0 of 64
+ * units and outward on 39 of 67; 28 Jul, 1 of 60 against 41 of 74. The absent
+ * source is the gate register in 54 of those 64. The city's overall split looks
+ * merely mediocre; the truth is that one whole direction is unlogged.
+ *
+ * Both legs must clear MIN_LEG, so a warehouse with three inward movements
+ * cannot manufacture a headline. Returns the facts only — which record is
+ * missing is already in the caption, and WHY is not something this can know.
+ */
+export function directionSkew(
+  c: CityCoverage
+): { weak: "arriving" | "leaving"; weakAll4: number; weakTotal: number; strongAll4: number; strongTotal: number } | null {
+  const { inbound: i, outbound: o } = c;
+  if (i.total < MIN_LEG || o.total < MIN_LEG) return null;
+  const ri = i.all4 / i.total;
+  const ro = o.all4 / o.total;
+  if (ri <= LEG_BAD && ro >= LEG_GOOD) {
+    return { weak: "arriving", weakAll4: i.all4, weakTotal: i.total, strongAll4: o.all4, strongTotal: o.total };
+  }
+  if (ro <= LEG_BAD && ri >= LEG_GOOD) {
+    return { weak: "leaving", weakAll4: o.all4, weakTotal: o.total, strongAll4: i.all4, strongTotal: i.total };
+  }
+  return null;
+}
+
 /** The source most often absent, or null when nothing is missing. */
 export function topMissing(c: CityCoverage): { source: SourceKey; count: number } | null {
   const ranked = (Object.keys(c.missing) as SourceKey[])

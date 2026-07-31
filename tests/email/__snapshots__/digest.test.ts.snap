@@ -244,7 +244,7 @@ exports[`digest — model snapshot > threePart 1`] = `
         "rows": [
           {
             "caption": "23 in all four · 62 in three · 29 in two · 36 in one · no gate register on 51 of them",
-            "label": "Delhi — 150 units",
+            "label": "Delhi — 150 movements checked",
             "segments": [
               {
                 "pct": 15.333333333333332,
@@ -265,8 +265,8 @@ exports[`digest — model snapshot > threePart 1`] = `
             ],
           },
           {
-            "caption": "39 in all four · 56 in three · 18 in two · 18 in one · no delivery app on 61 of them",
-            "label": "Bangalore — 131 units",
+            "caption": "39 in all four · 56 in three · 18 in two · 18 in one · no delivery app on 61 of them · arriving units almost never do: 0 of 64, against 39 of 67 the other way",
+            "label": "Bangalore — 131 movements checked",
             "segments": [
               {
                 "pct": 29.770992366412212,
@@ -429,17 +429,18 @@ exports[`digest — model snapshot > threePart 1`] = `
           },
           {
             "align": "right",
-            "label": "Items",
+            "label": "At risk",
+          },
+          {
+            "align": "right",
+            "label": "To fix",
           },
           {
             "align": "right",
             "label": "Oldest",
           },
-          {
-            "label": "What",
-          },
         ],
-        "footnote": "23 in total, 11 of them older than a week.",
+        "footnote": "12 still unaccounted for, 11 records to correct, 11 of them older than a week.",
         "kind": "table",
         "rows": [
           [
@@ -449,14 +450,16 @@ exports[`digest — model snapshot > threePart 1`] = `
             {
               "align": "right",
               "strong": true,
-              "text": "14",
+              "text": "8",
+              "tone": "danger",
+            },
+            {
+              "align": "right",
+              "text": "6",
             },
             {
               "align": "right",
               "text": "9d",
-            },
-            {
-              "text": "System-Only Entry (8), Register Gap (6)",
             },
           ],
           [
@@ -466,14 +469,16 @@ exports[`digest — model snapshot > threePart 1`] = `
             {
               "align": "right",
               "strong": true,
-              "text": "6",
+              "text": "4",
+              "tone": "danger",
+            },
+            {
+              "align": "right",
+              "text": "2",
             },
             {
               "align": "right",
               "text": "4d",
-            },
-            {
-              "text": "Unclosed Return (4), +2 more",
             },
           ],
           [
@@ -482,22 +487,24 @@ exports[`digest — model snapshot > threePart 1`] = `
             },
             {
               "align": "right",
-              "strong": true,
+              "strong": false,
+              "text": "0",
+              "tone": "muted",
+            },
+            {
+              "align": "right",
               "text": "3",
             },
             {
               "align": "right",
               "text": "3d",
             },
-            {
-              "text": "Odoo Entry Missing (3)",
-            },
           ],
         ],
       },
       {
         "kind": "para",
-        "text": "23 Jul could not be re-checked today, so anything still open there is not counted above.",
+        "text": "23 Jul could not be re-checked today, so anything still open then is not counted above.",
         "tone": "warn",
       },
     ],

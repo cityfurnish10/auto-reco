@@ -166,7 +166,7 @@ async function buildWatchList(
     if (!runIdByDate.has(d)) runIdByDate.set(d, r.id as string);
   }
   const runIds = [...runIdByDate.values()];
-  const noAgeing: AgeingSummary = { cities: [], total: 0, overAWeek: 0, staleDates: [] };
+  const noAgeing: AgeingSummary = { cities: [], total: 0, atRisk: 0, toFix: 0, overAWeek: 0, staleDates: [] };
   const empty: History = { tier1: new Map(), priorDates: [], ageing: noAgeing };
   if (runIds.length < 2) return empty;
 

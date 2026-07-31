@@ -146,12 +146,14 @@ const threePart = digest({
   },
   ageing: {
     total: 23,
+    atRisk: 12,
+    toFix: 11,
     overAWeek: 11,
     staleDates: ["2026-07-23"],
     cities: [
-      { city: "DELHI", items: 14, oldestDays: 9, kinds: [{ label: "System-Only Entry", count: 8 }, { label: "Register Gap", count: 6 }], otherKinds: 0 },
-      { city: "BANGALORE", items: 6, oldestDays: 4, kinds: [{ label: "Unclosed Return", count: 4 }], otherKinds: 2 },
-      { city: "PUNE", items: 3, oldestDays: 3, kinds: [{ label: "Odoo Entry Missing", count: 3 }], otherKinds: 0 },
+      { city: "DELHI", items: 14, atRisk: 8, toFix: 6, oldestDays: 9, kinds: [{ label: "System-Only Entry", count: 8 }, { label: "Register Gap", count: 6 }], otherKinds: 0 },
+      { city: "BANGALORE", items: 6, atRisk: 4, toFix: 2, oldestDays: 4, kinds: [{ label: "Unclosed Return", count: 4 }], otherKinds: 2 },
+      { city: "PUNE", items: 3, atRisk: 0, toFix: 3, oldestDays: 3, kinds: [{ label: "Odoo Entry Missing", count: 3 }], otherKinds: 0 },
     ],
   },
 });
@@ -363,10 +365,15 @@ describe("digest — the founder's three parts", () => {
     expect(text()).toContain("23 Jul could not be re-checked today");
   });
 
-  it("keeps the ageing counts and their ages", () => {
+  it("splits at-risk from records-to-fix, and never reports one total", () => {
+    // Measured across 27-28 Jul 2026: 188 units at risk against 535 records to
+    // fix. A single "683 still open" reads as 683 pieces of missing stock when
+    // three quarters of it is a missing register line.
     const t = text();
-    expect(t).toContain("23 in total, 11 of them older than a week.");
-    expect(t).toMatch(/Delhi\s+14\s+9d/);
+    expect(t).toContain("12 still unaccounted for, 11 records to correct");
+    expect(t).toMatch(/AT RISK\s+TO FIX\s+OLDEST/);
+    expect(t).toMatch(/Delhi\s+8\s+6\s+9d/);
+    expect(t).not.toContain("23 in total");
   });
 });
 

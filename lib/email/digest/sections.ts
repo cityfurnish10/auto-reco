@@ -20,8 +20,9 @@
 // than a section in the one they already open.
 
 import type { BarRow, Block, Section } from "./model";
+import { renderText } from "./render-text";
 import type { ActionItem, CityDigestRow, DigestData, RegisterState } from "./types";
-import { fullyReported, SOURCE_NAME, topMissing, type SourceKey } from "./coverage";
+import { directionSkew, fullyReported, SOURCE_NAME, topMissing, type SourceKey } from "./coverage";
 import { isCityOff } from "../../engine/schedule";
 import type { City } from "../../sample-data";
 
@@ -90,7 +91,15 @@ function coverageSection(data: DigestData): Section | null {
 
   for (const c of ordered) {
     const off = isCityOff(c.city as City, cov.date);
-    const label = `${cityName(c.city)} — ${n(c.total)} ${c.total === 1 ? "unit" : "units"}`;
+    // "movements checked", NOT "units". Part 2's city table says "Units moved"
+    // from run_city_stats, and the two counters legitimately disagree: the
+    // ledger holds one row per barcode PER DIRECTION and records a
+    // direction-conflict unit against BOTH legs (migration 0015:41-43), so it
+    // runs slightly higher. Measured 29 Jul: Delhi 150 vs 147, Bangalore 131 vs
+    // 121, and exact agreement for the three cities that were shut. Normally the
+    // two sections report different DATES so nobody sees them together — but
+    // when they coincide, two numbers for one word reads as an error.
+    const label = `${cityName(c.city)} — ${n(c.total)} ${c.total === 1 ? "movement" : "movements"} checked`;
 
     if (off) {
       rows.push({ label: cityName(c.city), caption: "Weekly off — nothing expected.", segments: [] });
@@ -125,6 +134,15 @@ function coverageSection(data: DigestData): Section | null {
     // number sitting in the same list reads as though it were one.
     if (miss) {
       parts.push(`no ${SOURCE_NAME[miss.source]} on ${n(miss.count)} of them`);
+    }
+    // One direction unlogged while the other is fine — invisible in the city
+    // total, and the most actionable thing this section can say. Measured on
+    // Bangalore: 0 of 64 arriving reached all four, against 39 of 67 leaving.
+    const skew = directionSkew(c);
+    if (skew) {
+      parts.push(
+        `${skew.weak} units almost never do: ${n(skew.weakAll4)} of ${n(skew.weakTotal)}, against ${n(skew.strongAll4)} of ${n(skew.strongTotal)} the other way`
+      );
     }
     rows.push({
       label,
@@ -178,38 +196,48 @@ function ageingSection(data: DigestData): Section | null {
   if (a.total === 0) {
     blocks.push({ kind: "para", text: "Nothing raised more than two days ago is still open." });
   } else {
+    // TWO COLUMNS, NEVER ONE TOTAL. Measured across 27-28 Jul: 188 units at
+    // risk against 535 records to fix. "683 still open" reads as 683 pieces of
+    // missing stock, and three quarters of it is a missing register line.
     blocks.push({
       kind: "table",
       columns: [
         { label: "City" },
-        { label: "Items", align: "right" },
+        { label: "At risk", align: "right" },
+        { label: "To fix", align: "right" },
         { label: "Oldest", align: "right" },
-        { label: "What" },
       ],
       rows: a.cities.map((c) => [
         { text: cityName(c.city) },
-        { text: n(c.items), align: "right" as const, strong: true },
-        { text: `${c.oldestDays}d`, align: "right" as const },
         {
-          text:
-            c.kinds.map((k) => `${k.label} (${n(k.count)})`).join(", ") +
-            (c.otherKinds > 0 ? `, +${c.otherKinds} more` : ""),
+          text: n(c.atRisk),
+          align: "right" as const,
+          strong: c.atRisk > 0,
+          tone: c.atRisk > 0 ? ("danger" as const) : ("muted" as const),
         },
+        { text: n(c.toFix), align: "right" as const },
+        { text: `${c.oldestDays}d`, align: "right" as const },
       ]),
       footnote:
-        a.overAWeek > 0
-          ? `${n(a.total)} in total, ${n(a.overAWeek)} of them older than a week.`
-          : `${n(a.total)} in total.`,
+        `${n(a.atRisk)} still unaccounted for, ${n(a.toFix)} records to correct` +
+        (a.overAWeek > 0 ? `, ${n(a.overAWeek)} of them older than a week.` : "."),
     });
   }
 
   // Never fold an un-rechecked day into the counts silently. "Still open" is
   // only true as of the last time that day was reconciled.
   if (a.staleDates.length > 0) {
+    // Named while the list is short, counted once it is not. Spelling out five
+    // dates costs ten words of a 450-word email to tell the reader something a
+    // single number says better — and the list can reach seven.
+    const which =
+      a.staleDates.length <= 2
+        ? a.staleDates.map(fmtDateShort).join(" and ")
+        : `${a.staleDates.length} earlier days`;
     blocks.push({
       kind: "para",
       tone: "warn",
-      text: `${a.staleDates.map(fmtDateShort).join(", ")} could not be re-checked today, so anything still open there is not counted above.`,
+      text: `${which} could not be re-checked today, so anything still open then is not counted above.`,
     });
   }
 
@@ -421,31 +449,6 @@ export const DIGEST_KICKER = "Daily stock check";
  */
 export const WORD_BUDGET = 450;
 
-/**
- * Words the renderers add outside the section model, COMPUTED rather than
- * reserved as a constant.
- *
- * This was a fixed 36, measured on one fixture: masthead 9 + footer 13 + one
- * table rule row (1 token per column) + one "- " per list item + the CTA URL.
- * The trouble is that three of those five terms GROW with the content, so a
- * constant is either wrong-and-generous on a quiet day or wrong-and-dangerous on
- * a busy one — and wrong-and-dangerous means a model that passes this gate and
- * then fails the budget test. Counting the actual blocks costs nothing and
- * cannot drift as sections are added.
- */
-function renderOverhead(sections: Section[]): number {
-  let words = 9 + 13; // masthead line, footer line — both fixed strings
-  for (const s of sections) {
-    for (const b of s.blocks) {
-      if (b.kind === "table") words += b.columns.length; // the "---  ---" rule row
-      else if (b.kind === "list") words += b.items.length; // one "- " per item
-      else if (b.kind === "bars") words += b.rows.length; // one glyph run per row
-      else if (b.kind === "cta") words += 1; // the href, printed in plaintext
-    }
-  }
-  return words;
-}
-
 export function buildSections(data: DigestData, opts: SectionOpts = {}): Section[] {
   const sections: Section[] = [];
 
@@ -557,12 +560,17 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
  * actions, the link, and the incomplete-run banner.
  */
 export function trimToBudget(sections: Section[]): Section[] {
+  // MEASURE THE ACTUAL RENDER, not an estimate of it.
+  //
+  // This used to count the model's words and add a reserve for what the
+  // renderer adds on top. Every version of that reserve has been wrong: first a
+  // constant (36), then a computed one — and the computed one still missed by
+  // three, so a model that passed this gate rendered at 453 against a budget of
+  // 450 and failed the very test the gate exists to satisfy. Rendering the
+  // candidate is a few string joins and makes the gate and the test measure the
+  // identical string, so they cannot disagree again.
   const words = (s: Section[]) =>
-    s.flatMap((sec) => [
-      ...(sec.title ? [sec.title] : []),
-      ...sec.blocks.flatMap(blockText),
-    ]).join(" ").trim().split(/\s+/).filter(Boolean).length +
-    renderOverhead(s);
+    renderText(s, "1 January 2026", DIGEST_KICKER).trim().split(/\s+/).filter(Boolean).length;
 
   let out = sections;
   if (words(out) <= WORD_BUDGET) return out;
@@ -618,6 +626,30 @@ export function trimToBudget(sections: Section[]): Section[] {
             }
           : b
       ),
+    };
+  });
+  if (words(out) <= WORD_BUDGET) return out;
+
+  // 3. The ageing table keeps its worst three cities.
+  //
+  // Rows, only after columns, because a city's two numbers are worth more than
+  // any single column of them — and this is last because it is the only rung
+  // that removes a whole city from view. The footnote still totals ALL cities,
+  // so the count stays honest; the extra clause says how many are hidden, since
+  // a truncated table that does not admit it reads as the complete list.
+  out = out.map((s) => {
+    if (s.id !== "ageing") return s;
+    return {
+      ...s,
+      blocks: s.blocks.map((b) => {
+        if (b.kind !== "table" || b.rows.length <= 3) return b;
+        const hidden = b.rows.length - 3;
+        return {
+          ...b,
+          rows: b.rows.slice(0, 3),
+          footnote: `${b.footnote ?? ""} +${hidden} more ${hidden === 1 ? "city" : "cities"}.`.trim(),
+        };
+      }),
     };
   });
   return out;

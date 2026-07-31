@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  directionSkew,
   fullyReported,
   topMissing,
   type CityCoverage,
@@ -54,6 +55,43 @@ describe("topMissing", () => {
   });
 });
 
+describe("directionSkew", () => {
+  it("catches one direction failing while the other passes", () => {
+    // Bangalore, 29 Jul: arriving reached all four on 0 of 64 while leaving
+    // managed 39 of 67. The city total looks merely mediocre and hides it.
+    const s = directionSkew(
+      city({ inbound: { total: 64, all4: 0 }, outbound: { total: 67, all4: 39 } })
+    );
+    expect(s).toEqual({ weak: "arriving", weakAll4: 0, weakTotal: 64, strongAll4: 39, strongTotal: 67 });
+  });
+
+  it("works in the other direction too", () => {
+    const s = directionSkew(
+      city({ inbound: { total: 60, all4: 30 }, outbound: { total: 40, all4: 1 } })
+    );
+    expect(s?.weak).toBe("leaving");
+  });
+
+  it("stays silent when both directions are similar", () => {
+    expect(
+      directionSkew(city({ inbound: { total: 60, all4: 20 }, outbound: { total: 60, all4: 25 } }))
+    ).toBeNull();
+  });
+
+  it("refuses to headline a leg too small to mean anything", () => {
+    // Three inward movements, none complete, must not become a finding.
+    expect(
+      directionSkew(city({ inbound: { total: 3, all4: 0 }, outbound: { total: 67, all4: 39 } }))
+    ).toBeNull();
+  });
+
+  it("stays silent when BOTH directions are bad — that is not a skew", () => {
+    expect(
+      directionSkew(city({ inbound: { total: 60, all4: 0 }, outbound: { total: 60, all4: 1 } }))
+    ).toBeNull();
+  });
+});
+
 describe("the four-way section", () => {
   it("draws the split and never calls it a pass rate", () => {
     const t = textOf(digest({ date: "2026-07-30", cities: [city()] }));
@@ -74,7 +112,7 @@ describe("the four-way section", () => {
       })
     );
     expect(t).toContain("Not comparable — the ops sheet did not file.");
-    expect(t).not.toContain("Bangalore — 150 units");
+    expect(t).not.toContain("Bangalore — 150 movements checked");
   });
 
   it("marks a city shut for its weekly off", () => {

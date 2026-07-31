@@ -35,6 +35,10 @@ export interface AgeingRow extends CurrentRow {
 export interface AgeingCity {
   city: string;
   items: number;
+  /** Tier 1 — units we cannot account for. */
+  atRisk: number;
+  /** Tier 2 — records that disagree, where the stock itself is not in doubt. */
+  toFix: number;
   oldestDays: number;
   /** Most common kinds, largest first. */
   kinds: { label: string; count: number }[];
@@ -45,6 +49,16 @@ export interface AgeingCity {
 export interface AgeingSummary {
   cities: AgeingCity[];
   total: number;
+  /**
+   * Split, deliberately, and never reported as one number.
+   *
+   * Measured across 27-28 Jul 2026: 188 units at risk against 535 records to
+   * fix. A single "683 still open" headline reads as 683 pieces of missing
+   * stock when three quarters of it is a missing register line — the same trap
+   * the four-way section refuses by showing a split instead of a pass rate.
+   */
+  atRisk: number;
+  toFix: number;
   /** Of `total`, how many are older than a week. */
   overAWeek: number;
   /** Business dates that could not be re-checked; their rows are NOT counted. */
@@ -79,7 +93,7 @@ export function summariseAgeing(
   // Keyed city|direction|barcode with NO date, deliberately: the same unit still
   // broken on three consecutive days is ONE unresolved problem, and it is dated
   // by the OLDEST day it appeared on — which is how long it has really been open.
-  const worst = new Map<string, { city: string; label: string; date: string }>();
+  const worst = new Map<string, { city: string; label: string; date: string; tier: number }>();
   const staleSeen = new Set<string>();
 
   for (const r of rows) {
@@ -106,22 +120,42 @@ export function summariseAgeing(
 
     const key = unitKeyOfRow(r);
     const prev = worst.get(key);
-    // Oldest date wins; on a tie the first label seen is kept, which is stable
-    // because the caller reads rows in a deterministic id order.
-    if (!prev || r.business_date < prev.date) {
-      worst.set(key, { city: r.city, label: label.display, date: r.business_date });
+    // Oldest date wins, then WORST tier — a unit carrying both a stock-at-risk
+    // row and a records-to-fix row is stock at risk, the same precedence
+    // classifyRows applies. Otherwise the split below would depend on which row
+    // happened to be read first.
+    if (!prev || r.business_date < prev.date || (r.business_date === prev.date && label.tier < prev.tier)) {
+      worst.set(key, {
+        city: r.city,
+        label: label.display,
+        date: prev && r.business_date > prev.date ? prev.date : r.business_date,
+        tier: prev ? Math.min(prev.tier, label.tier) : label.tier,
+      });
     }
   }
 
-  const byCity = new Map<string, { count: number; oldest: number; kinds: Map<string, number> }>();
+  const byCity = new Map<
+    string,
+    { count: number; atRisk: number; toFix: number; oldest: number; kinds: Map<string, number> }
+  >();
   let overAWeek = 0;
+  let atRisk = 0;
+  let toFix = 0;
 
   for (const u of worst.values()) {
     const age = daysBetween(u.date, reportDate);
     if (age > 7) overAWeek++;
     const c =
-      byCity.get(u.city) ?? { count: 0, oldest: 0, kinds: new Map<string, number>() };
+      byCity.get(u.city) ??
+      { count: 0, atRisk: 0, toFix: 0, oldest: 0, kinds: new Map<string, number>() };
     c.count++;
+    if (u.tier === 1) {
+      c.atRisk++;
+      atRisk++;
+    } else {
+      c.toFix++;
+      toFix++;
+    }
     if (age > c.oldest) c.oldest = age;
     c.kinds.set(u.label, (c.kinds.get(u.label) ?? 0) + 1);
     byCity.set(u.city, c);
@@ -135,17 +169,28 @@ export function summariseAgeing(
       return {
         city,
         items: c.count,
+        atRisk: c.atRisk,
+        toFix: c.toFix,
         oldestDays: c.oldest,
         kinds: ranked.slice(0, MAX_KINDS_INLINE),
         otherKinds: Math.max(0, ranked.length - MAX_KINDS_INLINE),
       };
     })
-    // Worst first: most items, then oldest, then name so the order is total.
-    .sort((a, b) => b.items - a.items || b.oldestDays - a.oldestDays || a.city.localeCompare(b.city));
+    // AT RISK first, not total. A city with 4 units nobody can find outranks one
+    // with 200 missing register lines, and sorting on the total buries it.
+    .sort(
+      (a, b) =>
+        b.atRisk - a.atRisk ||
+        b.toFix - a.toFix ||
+        b.oldestDays - a.oldestDays ||
+        a.city.localeCompare(b.city)
+    );
 
   return {
     cities,
     total: cities.reduce((n, c) => n + c.items, 0),
+    atRisk,
+    toFix,
     overAWeek,
     staleDates: [...staleSeen].sort(),
   };
