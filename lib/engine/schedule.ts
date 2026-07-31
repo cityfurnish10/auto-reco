@@ -28,6 +28,85 @@ export function isCityOff(city: City, businessDate: string): boolean {
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay() === off;
 }
 
+// ─── the data-driven calendar ────────────────────────────────────────────────
+
+/**
+ * The closures actually configured in the delivery app, when we have them.
+ *
+ * WEEKLY_OFF_DAY above is a literal, written from a conversation. The delivery
+ * app carries the same fact as editable ops data plus a holiday list — see
+ * lib/connectors/warehouse-calendar.ts. Verified live: the two agree exactly on
+ * the weekly rule for all five cities, so this is not a correction, it is a
+ * source upgrade — and it brings 29 one-off closures the system has never known.
+ *
+ * Passed in rather than fetched, so every function here stays pure and usable
+ * in the browser. Absent = fall back to the literal map, which is what a fresh
+ * install, a Mongo outage or a pre-sync database all get.
+ */
+export interface ClosureCalendar {
+  weeklyOff: Partial<Record<City, number[]>>;
+  holidays: Partial<Record<City, string[]>>;
+}
+
+function weekdayOf(businessDate: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate ?? "")) return null;
+  const [y, m, d] = businessDate.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+/**
+ * Was this city shut on this business date — weekly off OR public holiday?
+ *
+ * Supersedes isCityOff wherever a calendar is available. isCityOff stays as the
+ * pure, zero-argument form the engine and the browser already call in a dozen
+ * places; this is the same question asked with better information.
+ */
+export function isCityClosed(
+  city: City,
+  businessDate: string,
+  cal?: ClosureCalendar | null
+): boolean {
+  const wd = weekdayOf(businessDate);
+  if (wd === null) return false;
+  if (cal?.holidays?.[city]?.includes(businessDate)) return true;
+  const weekly = cal?.weeklyOff?.[city];
+  if (weekly) return weekly.includes(wd);
+  return isCityOff(city, businessDate);
+}
+
+/** How far back lastWorkingDay will walk before giving up. */
+const MAX_CLOSURE_RUN = 14;
+
+/**
+ * The most recent business date on or before `asOf` that this city worked.
+ *
+ * THIS IS THE WHOLE REGISTER-HANDOVER MODEL. A city hands over the register for
+ * its own last working day, and that day differs per city: on a Friday, Delhi
+ * and Bangalore hand over Thursday's book while Mumbai, Pune and Hyderabad —
+ * shut on Thursday — hand over Wednesday's. Treating every city as if it owed
+ * yesterday's register raises a missing-register alarm against three warehouses
+ * every single week, on schedule, for a book nobody was ever going to hand over.
+ *
+ * Walks back rather than subtracting one, so a public holiday butting against
+ * the weekly off (or two holidays in a row) resolves correctly. Bounded at
+ * MAX_CLOSURE_RUN: a city closed a fortnight is a data problem, and returning
+ * null says so instead of looping.
+ */
+export function lastWorkingDay(
+  city: City,
+  asOf: string,
+  cal?: ClosureCalendar | null
+): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf ?? "")) return null;
+  const start = Date.parse(`${asOf}T00:00:00Z`);
+  if (!Number.isFinite(start)) return null;
+  for (let i = 0; i <= MAX_CLOSURE_RUN; i++) {
+    const d = new Date(start - i * 86400_000).toISOString().slice(0, 10);
+    if (!isCityClosed(city, d, cal)) return d;
+  }
+  return null;
+}
+
 /**
  * Was this city shut for PART of the business window, without the window itself
  * being its off day?

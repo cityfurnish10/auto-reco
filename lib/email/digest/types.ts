@@ -91,6 +91,17 @@ export interface CityDigestRow {
   trend?: "worse" | "usual" | "better" | null;
 }
 
+/** One city's register-handover position on the reported day. */
+export interface HandoverRow {
+  city: string;
+  /** The most recent business date this city actually worked. */
+  lastWorkingDay: string;
+  /** True when that is not the reported date — the city was shut since. */
+  shutSince: boolean;
+  /** Whether that day's register has reached us. */
+  state: RegisterState;
+}
+
 export interface DigestData {
   date: string; // business date reconciled (YYYY-MM-DD)
   generatedAt: string; // ISO timestamp
@@ -109,6 +120,16 @@ export interface DigestData {
   informational: { label: string; count: number }[];
   /** True when no completed reconciliation exists for `date`. */
   runIncomplete?: boolean;
+  /**
+   * Register handover, per city — its own table in the email.
+   *
+   * Each warehouse hands over the register for ITS OWN last working day, and
+   * that day differs per city: on a Friday, Delhi and Bangalore hand over
+   * Thursday's book while Mumbai, Pune and Hyderabad — shut on Thursday — hand
+   * over Wednesday's. Without this, three warehouses are accused of a missing
+   * register every week, on schedule, for a book nobody was going to hand over.
+   */
+  handover?: HandoverRow[];
   /**
    * The four-way check — part one of the email.
    *

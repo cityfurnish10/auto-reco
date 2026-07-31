@@ -808,3 +808,74 @@ function warnNo0015(): void {
     "[upsertMovementEvents] migration 0015 not applied — the movement ledger was not written. Clean movements for these dates cannot be recovered later; apply supabase/migrations/0015_movement_events.sql."
   );
 }
+
+// ---------------------------------------------------------------------------
+// The warehouse closure calendar (migration 0019).
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirror the delivery app's weekly_off + holiday master data into Supabase.
+ *
+ * Only the reconcile pipeline can reach Mongo; the digest and both dashboards
+ * are Supabase-only and all three need this calendar. Refreshed wholesale each
+ * run — the source is ~60 rows, so a diff would be more code than it saves, and
+ * a full replace cannot leave a deleted holiday behind.
+ *
+ * DEGRADES ON A MISSING TABLE (42P01 / PGRST205). Migrations are applied by
+ * hand here, so a deploy can precede its migration; every reader already falls
+ * back to WEEKLY_OFF_DAY, which makes an unapplied 0019 a no-op rather than a
+ * failed run.
+ */
+export async function syncWarehouseCalendar(
+  db: DB,
+  cal: { weeklyOff: Partial<Record<string, number[]>>; holidays: Partial<Record<string, string[]>> }
+): Promise<number> {
+  const rows: { city: string; weekday: number | null; holiday_date: string | null }[] = [];
+  for (const [city, days] of Object.entries(cal.weeklyOff)) {
+    for (const d of days ?? []) rows.push({ city, weekday: d, holiday_date: null });
+  }
+  for (const [city, dates] of Object.entries(cal.holidays)) {
+    for (const d of dates ?? []) rows.push({ city, weekday: null, holiday_date: d });
+  }
+  // Nothing to write is a legitimate answer (Mongo unreachable, master empty).
+  // Wiping the table on that would throw away a good calendar for a bad read.
+  if (rows.length === 0) return 0;
+
+  const { error: delErr } = await db
+    .from("warehouse_calendar")
+    .delete()
+    .not("id", "is", null);
+  if (delErr) {
+    if (delErr.code === "42P01" || delErr.code === "PGRST205") return 0;
+    throw new Error(`syncWarehouseCalendar delete failed: ${delErr.message}`);
+  }
+  const { error } = await db.from("warehouse_calendar").insert(rows);
+  if (error) {
+    if (error.code === "42P01" || error.code === "PGRST205") return 0;
+    throw new Error(`syncWarehouseCalendar insert failed: ${error.message}`);
+  }
+  return rows.length;
+}
+
+/**
+ * Read the calendar back. Null when the table is absent or empty, which every
+ * caller treats as "use the hardcoded map".
+ */
+export async function readWarehouseCalendarRows(
+  db: DB
+): Promise<{ weeklyOff: Record<string, number[]>; holidays: Record<string, string[]> } | null> {
+  const { data, error } = await db
+    .from("warehouse_calendar")
+    .select("city, weekday, holiday_date");
+  if (error || !data || data.length === 0) return null;
+  const weeklyOff: Record<string, number[]> = {};
+  const holidays: Record<string, string[]> = {};
+  for (const r of data as { city: string; weekday: number | null; holiday_date: string | null }[]) {
+    if (r.weekday !== null && r.weekday !== undefined) {
+      (weeklyOff[r.city] ??= []).push(r.weekday);
+    } else if (r.holiday_date) {
+      (holidays[r.city] ??= []).push(r.holiday_date);
+    }
+  }
+  return { weeklyOff, holidays };
+}

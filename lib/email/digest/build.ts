@@ -2,10 +2,16 @@
 
 import { flaggedKeyOf } from "../followup/snapshot";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { closedPartOfWindow, isCityOff } from "../../engine/schedule";
+import {
+  closedPartOfWindow,
+  isCityClosed,
+  isCityOff,
+  lastWorkingDay,
+} from "../../engine/schedule";
 import { addDays } from "../../engine/dates";
 import { buildTrends, type CoverageRow } from "./trends";
 import { isRerunFresh } from "../followup/build";
+import { readWarehouseCalendarRows } from "../../db/persist";
 import { LOOKBACK_DAYS, summariseAgeing, type AgeingSummary } from "./ageing";
 import {
   latestFullyCoveredDate,
@@ -18,11 +24,19 @@ import type {
   ActionItem,
   CityDigestRow,
   DigestData,
+  HandoverRow,
   RegisterState,
 } from "./types";
 
 /** How many reconciled business days the watch list looks back over. */
 const WATCH_DAYS = 7;
+/**
+ * How far back the handover table will look for a city's last working day.
+ *
+ * Comfortably past a weekly off stacked against a public holiday, and bounded
+ * so a misconfigured calendar cannot make this read the whole table.
+ */
+const HANDOVER_LOOKBACK_DAYS = 14;
 /** A (label, city) pattern below this on the reporting day is noise. */
 const WATCH_MIN_UNITS = 5;
 /** Cities named inline on an action line before it collapses to "+N cities". */
@@ -274,15 +288,27 @@ export async function buildDigestFromDb(
   }
   const statByCity = new Map(stats.map((s) => [s.city, s]));
 
+  // A WINDOW, not a single date. The reported day's own uploads drive
+  // registerOf() below, but the handover table asks about each city's OWN last
+  // working day, which is an earlier date for any city shut since — and on a
+  // Friday that is three of the five. One read serves both.
   const { data: uploads } = await db
     .from("guard_uploads")
-    .select("city, status")
-    .eq("business_date", businessDate);
+    .select("city, status, business_date")
+    .gte("business_date", addDays(businessDate, -HANDOVER_LOOKBACK_DAYS))
+    .lte("business_date", businessDate);
   const uploadByCity = new Map<string, string[]>();
+  const uploadByCityDate = new Map<string, string[]>();
   for (const u of uploads ?? []) {
-    const list = uploadByCity.get(u.city as string) ?? [];
+    const city = u.city as string;
+    const date = u.business_date as string;
+    const keyed = uploadByCityDate.get(`${city}|${date}`) ?? [];
+    keyed.push(u.status as string);
+    uploadByCityDate.set(`${city}|${date}`, keyed);
+    if (date !== businessDate) continue;
+    const list = uploadByCity.get(city) ?? [];
     list.push(u.status as string);
-    uploadByCity.set(u.city as string, list);
+    uploadByCity.set(city, list);
   }
 
   const byCity = new Map<string, VarianceRow[]>();
@@ -454,6 +480,29 @@ export async function buildDigestFromDb(
   // four-way check would score 0/N for every city, every day. This walks back to
   // the newest day whose four sources all reported, and moves forward on its own
   // once register timing improves.
+  // The closure calendar, mirrored from the delivery app by the reconcile
+  // pipeline (migration 0019). Null is a first-class answer — every consumer
+  // falls back to the hardcoded WEEKLY_OFF_DAY map, which is what an unapplied
+  // migration, a fresh install or a Mongo outage all produce.
+  const calendar = await readWarehouseCalendarRows(db).catch(() => null);
+
+  // REGISTER HANDOVER, per city. Each warehouse owes the register for its own
+  // last working day; on a Friday that is Thursday for Delhi and Bangalore and
+  // Wednesday for the three cities shut on Thursday.
+  const handover: HandoverRow[] = [...byCity.keys()].sort().map((city) => {
+    const lwd = lastWorkingDay(city as City, businessDate, calendar) ?? businessDate;
+    const statuses = uploadByCityDate.get(`${city}|${lwd}`) ?? [];
+    const state: RegisterState =
+      statuses.includes("processed") ? "received"
+      : statuses.includes("failed") ? "failed"
+      : statuses.length > 0 ? "pending"
+      // Nothing yet. If the city has been shut since that day, the book could
+      // not have been handed over — that is a schedule, not a missing register.
+      : lwd !== businessDate ? "delayed"
+      : "missing";
+    return { city, lastWorkingDay: lwd, shutSince: lwd !== businessDate, state };
+  });
+
   const coverage = await (async () => {
     const date = await latestFullyCoveredDate(db, businessDate);
     if (!date) return undefined;
@@ -491,6 +540,7 @@ export async function buildDigestFromDb(
     actions,
     informational,
     coverage,
+    handover,
     // Absent, not empty, when the history read failed: "we did not look" and
     // "we looked and found nothing outstanding" are different claims and the
     // section renders them differently.

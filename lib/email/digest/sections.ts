@@ -6,7 +6,7 @@
 // drifted far enough that the plaintext reader got no dashboard link at all.
 //
 // Audience: the owner, who wants one question answered — can we still account
-// for every unit that moved? Everything is written to that. Budget is 550 words
+// for every unit that moved? Everything is written to that. Budget is 650 words
 // of rendered text, enforced by a test, with a deterministic degradation ladder
 // (see trimToBudget) so a busy day drops the least important section rather than
 // truncating mid-sentence.
@@ -21,7 +21,7 @@
 
 import type { BarRow, Block, Heat, Section } from "./model";
 import { renderText } from "./render-text";
-import type { ActionItem, CityDigestRow, DigestData, RegisterState } from "./types";
+import type { ActionItem, CityDigestRow, DigestData, HandoverRow, RegisterState } from "./types";
 import { directionSkew, fullyReported, SOURCE_NAME, topMissing, type SourceKey } from "./coverage";
 import { closedPartOfWindow, isCityOff } from "../../engine/schedule";
 import { addDays } from "../../engine/dates";
@@ -134,6 +134,63 @@ function movementSummary(data: DigestData): Section | null {
         text: "EACH CELL IS OUT / IN. NA MEANS THAT BOOK DID NOT REACH US.",
         tone: "muted",
         strong: true,
+      },
+    ],
+  };
+}
+
+// ─── register handover ───────────────────────────────────────────────────────
+
+/**
+ * Which day's register each city owes, and whether it has arrived.
+ *
+ * ITS OWN TABLE, because it answers a question the by-city table cannot: not
+ * "did the register arrive for the reported day" but "did the register arrive
+ * for the last day this warehouse actually worked". Those are the same question
+ * for Delhi and Bangalore and a different one for Mumbai, Pune and Hyderabad,
+ * and collapsing them accused three warehouses of a missing book every Friday.
+ *
+ * A LATE REGISTER AND A SCHEDULED ONE MUST NEVER READ ALIKE. "Due after day
+ * off" is the warehouse doing exactly what it is supposed to; "Not received" is
+ * a book somebody owes us today. The colour follows: only the second is danger.
+ */
+function handoverSection(data: DigestData): Section | null {
+  const rows = data.handover ?? [];
+  if (rows.length === 0) return null;
+
+  const label = (h: HandoverRow): { text: string; tone: "danger" | "warn" | "good" | "muted" } => {
+    if (h.state === "received") return { text: "Received", tone: "good" };
+    if (h.state === "failed") return { text: "Unreadable", tone: "danger" };
+    if (h.state === "pending") return { text: "Not read yet", tone: "warn" };
+    if (h.state === "delayed") return { text: "Due after day off", tone: "muted" };
+    return { text: "Not received", tone: "danger" };
+  };
+
+  return {
+    id: "handover",
+    title: "Register handover",
+    blocks: [
+      {
+        kind: "table",
+        columns: [
+          { label: "City" },
+          { label: "Last working day" },
+          { label: "Register for that day" },
+        ],
+        rows: rows.map((h) => {
+          const st = label(h);
+          return [
+            { text: cityName(h.city), strong: true },
+            {
+              // The weekday, not just the date: "Wed 29 Jul" is the whole point
+              // of the row — it says which day this warehouse last opened, and
+              // that it is not the same day as its neighbour's.
+              text: `${weekdayName(h.lastWorkingDay).slice(0, 3)} ${fmtDateShort(h.lastWorkingDay)}`,
+              tone: h.shutSince ? ("muted" as const) : undefined,
+            },
+            { text: st.text, tone: st.tone },
+          ];
+        }),
       },
     ],
   };
@@ -565,14 +622,15 @@ export const DIGEST_KICKER = "Daily stock check";
 /**
  * Rendered-word budget for the whole email. A test asserts the worst case.
  *
- * 550. It was 250 for a one-screen note, then 450 for the founder's three-part
- * structure, and 550 once that structure became a per-city column chart with a
- * key and a seven-column grid. Each rise bought content that was asked for; the
- * alternative each time was a degradation ladder quietly deleting it. Measured
- * on live data at 550: a busy day renders ~500 with every rung unused, so the
- * ladder is a backstop again rather than a permanent state.
+ * 650. It was 250 for a one-screen note, then 450 for the founder's three-part
+ * structure, 550 once that became a column chart plus a seven-column grid, and
+ * 650 with the movement summary and the register-handover table on top. Each
+ * rise bought content that was asked for; the alternative each time was a
+ * degradation ladder quietly deleting it. Measured live at 550 the Thursday
+ * board rendered 548 — two words of headroom, with the ladder already trimming
+ * to get there, which is a budget doing harm rather than good.
  */
-export const WORD_BUDGET = 550;
+export const WORD_BUDGET = 650;
 
 export function buildSections(data: DigestData, opts: SectionOpts = {}): Section[] {
   const sections: Section[] = [];
@@ -613,11 +671,16 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
     });
   }
 
+  // REGISTER HANDOVER, right under the movement summary: the summary says what
+  // each book recorded, this says which day's book we are even entitled to.
+  const handover = handoverSection(data);
+
   // THE MOVEMENT SUMMARY, first. It is the raw count each book recorded, before
   // any judgement is applied to it — so it belongs above the sections that
   // interpret those counts.
   const movements = movementSummary(data);
   if (movements) sections.push(movements);
+  if (handover) sections.push(handover);
 
   // PART ONE. Before the at-risk detail, because it answers the prior question:
   // did the four records agree at all? Omitted entirely when it cannot be

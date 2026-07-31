@@ -565,9 +565,9 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     {!off && registerDue && (
                       <span
                         className="badge badge-suppressed uppercase"
-                        title="Tomorrow is this warehouse's weekly off, so today's guard register is handed over the day after — the numbers here fill in then."
+                        title="Tomorrow is this warehouse's weekly off, so today's guard register is handed over the day AFTER the holiday — not tomorrow. The numbers here fill in then; an absent register today is on schedule, not overdue."
                       >
-                        Register due +2d
+                        Register after day off
                       </span>
                     )}
                   </h4>
@@ -604,7 +604,8 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 {!off && registerDue && (
                   <div className="text-xs text-text-muted">
                     Tomorrow is this warehouse&apos;s weekly off, so today&apos;s guard
-                    register arrives the day after — these numbers fill in then.
+                    register is handed over the day after the holiday — these numbers
+                    fill in then. Absent today is on schedule, not overdue.
                   </div>
                 )}
                 <div className="text-xs text-text-disabled">

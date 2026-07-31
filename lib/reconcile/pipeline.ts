@@ -15,6 +15,7 @@ import { runAllCities, type MultiCityRun } from "../engine/run";
 import { guardTruncatedSheet } from "./sheet-guard";
 import { pullAll } from "../connectors";
 import { processPendingGuardUploads } from "../connectors/ocr/process";
+import { readWarehouseCalendar } from "../connectors/warehouse-calendar";
 import { buildRunCitySnapshots } from "./run-snapshot";
 import type { City } from "../sample-data";
 import {
@@ -28,6 +29,7 @@ import {
   saveRunCitySnapshots,
   pruneRunSnapshotKeys,
   saveIngestionLogs,
+  syncWarehouseCalendar,
   finalizeRun,
   markRunFailed,
   prune,
@@ -129,6 +131,18 @@ export async function runReconcilePipeline(
       truncatedCities
     ).catch(() => pulledReported);
     for (const w of pipelineWarnings) console.warn(`[reconcile] ${w}`);
+
+    // 1b. Mirror the delivery app's closure calendar into Supabase.
+    //
+    //     Only this pipeline can reach Mongo, and the digest and both
+    //     dashboards all need to know when a warehouse is shut — that is what
+    //     decides whether an absent register is a schedule or an alarm.
+    //     Best-effort by design: every reader falls back to WEEKLY_OFF_DAY, so
+    //     a Mongo hiccup costs the holiday list for a day and nothing else.
+    const calendarRows = await readWarehouseCalendar()
+      .then((cal) => (cal ? syncWarehouseCalendar(db, cal) : 0))
+      .catch(() => 0);
+    if (calendarRows > 0) console.log(`[reconcile] warehouse calendar: ${calendarRows} rows`);
 
     // 2. Persist the complete raw feed (pruned after 7 days).
     const sourceRowsStored = await saveSourceRows(db, runId, runDate, rowsByCity);
