@@ -74,10 +74,10 @@ function andList(items: string[]): string {
  * four sources live: Delhi reached all four on 23 of 150 units, Bangalore 39 of
  * 131 — while the engine put NINE units of 503 at risk that day. "15% passed"
  * and "98% fine" describe the same day, and only the second is true in the sense
- * a reader will take. So the bar shows the distribution, the caption names the
- * source that is actually missing, and the legend says in one line that three of
- * four is a paperwork gap rather than lost stock. Without that line this section
- * is actively misleading, which is why it is not optional.
+ * a reader will take. So the chart shows the DISTRIBUTION, never a rate, and the
+ * key names each band. The explanatory legend that used to sit underneath was
+ * cut at the owner's request; the per-city badges now carry the reason a green
+ * column is missing.
  */
 function coverageSection(data: DigestData): Section | null {
   const cov = data.coverage;
@@ -96,9 +96,9 @@ function coverageSection(data: DigestData): Section | null {
     return sb - sa || b.total - a.total || a.city.localeCompare(b.city);
   });
 
+  // Cities that could not reach all four. Only the return guard reads this now
+  // — the explanatory legend it used to feed was cut from the email.
   const noGreen: string[] = [];
-  const shut: string[] = [];
-  const skews: string[] = [];
 
   for (const c of ordered) {
     const off = isCityOff(c.city as City, cov.date);
@@ -134,7 +134,7 @@ function coverageSection(data: DigestData): Section | null {
       // Two different reasons for a missing column, and they must not be
       // conflated: a shut warehouse SHOULD have no register, an open one that
       // did not file has a problem.
-      (partly ? shut : noGreen).push(cityName(c.city));
+      if (!partly) noGreen.push(cityName(c.city));
     } else scored++;
 
     const miss = topMissing(c);
@@ -157,12 +157,6 @@ function coverageSection(data: DigestData): Section | null {
     if (skew) {
       parts.push(
         `${skew.weak} units almost never do: ${n(skew.weakAll4)} of ${n(skew.weakTotal)}, against ${n(skew.strongAll4)} of ${n(skew.strongTotal)} the other way`
-      );
-      // Also promoted to the legend. It is the one finding in this section a
-      // reader can act on, and with the captions gone from the HTML it would
-      // otherwise reach nobody who reads the email as designed.
-      skews.push(
-        `${cityName(c.city)} logs almost nothing ${skew.weak}: ${n(skew.weakAll4)} of ${n(skew.weakTotal)} reach all four, against ${n(skew.strongAll4)} of ${n(skew.strongTotal)} the other way.`
       );
     }
     rows.push({
@@ -200,19 +194,6 @@ function coverageSection(data: DigestData): Section | null {
         { tone: "warn", text: "2 of 4" },
         { tone: "danger", text: "1 of 4" },
       ],
-      // Two sentences that stop this being read as a catastrophe. The first
-      // explains the hole where a green column should be; without it a reader
-      // concludes those cities lost everything. The second explains why the
-      // green column is short even where it exists.
-      legend:
-        (shut.length > 0
-          ? `${andList(shut)} shut partway through the day, so nothing there could reach all four. `
-          : "") +
-        (noGreen.length > 0
-          ? `No green column for ${andList(noGreen)} — the gate register was not filed. `
-          : "") +
-        "Three of four is usually a missing gate-register line: a paperwork gap, not missing stock. The units genuinely at risk are in the next section." +
-        (skews.length > 0 ? ` ${skews.join(" ")}` : ""),
     },
   ];
 
@@ -299,26 +280,6 @@ function ageingSection(data: DigestData): Section | null {
           { text: n(g.grandTotal), align: "right" as const, strong: true },
         ],
       ],
-      footnote:
-        `${n(a.atRisk)} still unaccounted for, ${n(a.toFix)} records to correct` +
-        (a.overAWeek > 0 ? `, ${n(a.overAWeek)} of them older than a week.` : "."),
-    });
-  }
-
-  // Never fold an un-rechecked day into the counts silently. "Still open" is
-  // only true as of the last time that day was reconciled.
-  if (a.staleDates.length > 0) {
-    // Named while the list is short, counted once it is not. Spelling out five
-    // dates costs ten words of a 450-word email to tell the reader something a
-    // single number says better — and the list can reach seven.
-    const which =
-      a.staleDates.length <= 2
-        ? a.staleDates.map(fmtDateShort).join(" and ")
-        : `${a.staleDates.length} earlier days`;
-    blocks.push({
-      kind: "para",
-      tone: "warn",
-      text: `${which} could not be re-checked today, so anything still open then is not counted above.`,
     });
   }
 
@@ -580,7 +541,7 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
     sections.push({
       id: "cities",
       title: "2 · At risk, by city",
-      blocks: [citySnapshot(data.cities, threeSourceCaveat(data))],
+      blocks: [citySnapshot(data.cities, null)],
     });
   }
 
@@ -604,8 +565,6 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
   if (ageing) sections.push(ageing);
 
   const footer: Block[] = [];
-  const info = informationalLine(data);
-  if (info) footer.push({ kind: "para", text: info, tone: "muted" });
   if (opts.attachmentNote) {
     footer.push({
       kind: "para",

@@ -33,7 +33,6 @@ exports[`digest — model snapshot > richDay 1`] = `
             "label": "Guard register",
           },
         ],
-        "footnote": "Bangalore and Hyderabad were checked against three records, not four, so their at-risk numbers are not comparable with the rest.",
         "kind": "table",
         "rows": [
           [
@@ -201,16 +200,6 @@ exports[`digest — model snapshot > richDay 1`] = `
   {
     "blocks": [
       {
-        "kind": "para",
-        "text": "Of the 995 items open today, 612 need nothing from anyone.",
-        "tone": "muted",
-      },
-    ],
-    "id": "footer",
-  },
-  {
-    "blocks": [
-      {
         "href": "https://auto-reco.vercel.app/dashboard",
         "kind": "cta",
         "label": "View in dashboard",
@@ -254,7 +243,6 @@ exports[`digest — model snapshot > threePart 1`] = `
           },
         ],
         "kind": "bars",
-        "legend": "No green column for Hyderabad — the gate register was not filed. Three of four is usually a missing gate-register line: a paperwork gap, not missing stock. The units genuinely at risk are in the next section. Bangalore logs almost nothing arriving: 0 of 64 reach all four, against 39 of 67 the other way.",
         "rows": [
           {
             "badge": {
@@ -502,7 +490,6 @@ exports[`digest — model snapshot > threePart 1`] = `
             "label": "Total",
           },
         ],
-        "footnote": "12 still unaccounted for, 11 records to correct, 11 of them older than a week.",
         "kind": "table",
         "rows": [
           [
@@ -659,24 +646,9 @@ exports[`digest — model snapshot > threePart 1`] = `
           ],
         ],
       },
-      {
-        "kind": "para",
-        "text": "23 Jul could not be re-checked today, so anything still open then is not counted above.",
-        "tone": "warn",
-      },
     ],
     "id": "ageing",
     "title": "3 · Open more than two days",
-  },
-  {
-    "blocks": [
-      {
-        "kind": "para",
-        "text": "Of the 341 items open today, 145 need nothing from anyone.",
-        "tone": "muted",
-      },
-    ],
-    "id": "footer",
   },
   {
     "blocks": [

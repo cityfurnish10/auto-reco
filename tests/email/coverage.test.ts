@@ -109,8 +109,6 @@ describe("the four-way section", () => {
     const plain = plainOf(digest({ date: "2026-07-30", cities: [city()] }));
     expect(plain).toContain("23 in all four");
     expect(plain).toContain("no gate register on 51 of them");
-    // The line that stops 15% being read as "85% of stock is missing".
-    expect(t).toContain("paperwork gap, not missing stock");
   });
 
   it("still charts a city whose guard register did not file, and says why", () => {
@@ -129,7 +127,6 @@ describe("the four-way section", () => {
       })
     );
     expect(t).toContain("No guard");
-    expect(t).toContain("No green column for Bangalore");
     expect(t).toContain("Guard ✓"); // Delhi keeps its badge
   });
 
@@ -138,8 +135,6 @@ describe("the four-way section", () => {
     const d = digest({ date: "2026-07-30", cities: [city(), city({ city: "PUNE", total: 0 })] });
     const t = textOf(d);
     expect(plainOf(d)).toContain("Pune was shut — nothing expected.");
-    // A shut city must not be blamed for a missing register.
-    expect(t).not.toContain("No green column for Pune");
   });
 
   it("says which day it measured when that is not the day reported", () => {

@@ -390,14 +390,6 @@ describe("digest — the founder's three parts", () => {
     }
   });
 
-  it("promotes the one-direction finding into the legend", () => {
-    // With the captions gone from the HTML this would otherwise reach nobody
-    // who reads the email as designed — and it is the only line in the section
-    // somebody can act on.
-    const html = stripTags(renderDigestHtml(threePart, URL));
-    expect(html).toContain("Bangalore logs almost nothing arriving: 0 of 64 reach all four");
-  });
-
   it("never states a four-way pass RATE", () => {
     // 23 of 150 is 15%, while that same day put 9 units of 503 at risk. A
     // percentage here reads as "85% of stock is missing", which is false.
@@ -406,20 +398,6 @@ describe("digest — the founder's three parts", () => {
 
   it("names the day it measured when it is not the day reported", () => {
     expect(text()).toContain("28 July 2026 is the most recent day with all four records in");
-  });
-
-  it("excludes a day the sweep could not re-check, and says so", () => {
-    // Silence here would let an un-rechecked day read as "nothing outstanding".
-    expect(text()).toContain("23 Jul could not be re-checked today");
-  });
-
-  it("splits at-risk from records-to-fix, and never reports one total", () => {
-    // Measured across 27-28 Jul 2026: 188 units at risk against 535 records to
-    // fix. A single "683 still open" reads as 683 pieces of missing stock when
-    // three quarters of it is a missing register line.
-    const t = text();
-    expect(t).toContain("12 still unaccounted for, 11 records to correct");
-    expect(t).not.toContain("23 in total");
   });
 
   it("lays part three out as a city-by-date grid with both totals", () => {
