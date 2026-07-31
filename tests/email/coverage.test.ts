@@ -102,25 +102,34 @@ describe("the four-way section", () => {
     expect(t).toContain("paperwork gap, not missing stock");
   });
 
-  it("refuses to score a city whose source did not file", () => {
-    // Scoring against the books that DID file would draw a longer bar than a
-    // city with all four — an outage rendering as an improvement.
+  it("still charts a city whose guard register did not file, and says why", () => {
+    // The counts of "in three / two / one" are real measurements either way,
+    // and the MISSING GREEN COLUMN is the most legible thing on the page. What
+    // must never happen is scoring such a city as a RATE against one with all
+    // four — agreeing across two records is easier than across four, so a rate
+    // would render an outage as an improvement. Counts do not have that flaw.
     const t = textOf(
       digest({
         date: "2026-07-30",
-        cities: [city(), city({ city: "BANGALORE", reported: { P: true, S: false, D: true, O: true } })],
+        cities: [
+          city(),
+          city({ city: "BANGALORE", reported: { P: false, S: true, D: true, O: true } }),
+        ],
       })
     );
-    expect(t).toContain("Not comparable — the ops sheet did not file.");
-    expect(t).not.toContain("Bangalore — 150 movements checked");
+    expect(t).toContain("No guard");
+    expect(t).toContain("No green column for Bangalore");
+    expect(t).toContain("Guard ✓"); // Delhi keeps its badge
   });
 
-  it("marks a city shut for its weekly off", () => {
+  it("marks a city shut for its weekly off and charts nothing for it", () => {
     // 2026-07-30 is a Thursday; Pune is closed.
     const t = textOf(
       digest({ date: "2026-07-30", cities: [city(), city({ city: "PUNE", total: 0 })] })
     );
-    expect(t).toContain("Weekly off — nothing expected.");
+    expect(t).toContain("Pune was shut — nothing expected.");
+    // A shut city must not be blamed for a missing register.
+    expect(t).not.toContain("No green column for Pune");
   });
 
   it("says which day it measured when that is not the day reported", () => {
@@ -133,12 +142,17 @@ describe("the four-way section", () => {
     expect(t).not.toContain("most recent day with all four records in");
   });
 
-  it("omits the whole section when no city can be scored", () => {
-    // An absent claim beats an unevidenced one: no heading, no empty table.
+  it("omits the section when every city was shut", () => {
+    // An absent claim beats an unevidenced one: no heading, no empty chart.
+    // 2026-07-30 is a Thursday, so all three of these are closed.
     const t = textOf(
       digest({
         date: "2026-07-30",
-        cities: [city({ reported: { P: false, S: false, D: true, O: true } })],
+        cities: [
+          city({ city: "MUMBAI", total: 0 }),
+          city({ city: "PUNE", total: 0 }),
+          city({ city: "HYDERABAD", total: 0 }),
+        ],
       })
     );
     expect(t).not.toContain("Four-way check");

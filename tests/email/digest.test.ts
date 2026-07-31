@@ -150,6 +150,18 @@ const threePart = digest({
     toFix: 11,
     overAWeek: 11,
     staleDates: ["2026-07-23"],
+    // The heatmap: a hot row (Delhi accumulating since the 24th) and a hot
+    // column (the 24th, bad everywhere) so both readings are exercised.
+    grid: {
+      dates: ["2026-07-24", "2026-07-25", "2026-07-26", "2026-07-27", "2026-07-28"],
+      rows: [
+        { city: "DELHI", counts: [12, 0, 1, 0, 1], total: 14 },
+        { city: "BANGALORE", counts: [3, 1, 0, 2, 0], total: 6 },
+        { city: "PUNE", counts: [0, 0, 3, 0, 0], total: 3 },
+      ],
+      dailyTotals: [15, 1, 4, 2, 1],
+      grandTotal: 23,
+    },
     cities: [
       { city: "DELHI", items: 14, atRisk: 8, toFix: 6, oldestDays: 9, kinds: [{ label: "System-Only Entry", count: 8 }, { label: "Register Gap", count: 6 }], otherKinds: 0 },
       { city: "BANGALORE", items: 6, atRisk: 4, toFix: 2, oldestDays: 4, kinds: [{ label: "Unclosed Return", count: 4 }], otherKinds: 2 },
@@ -340,14 +352,19 @@ describe("digest — the founder's three parts", () => {
     expect(three).toBeGreaterThan(two);
   });
 
-  it("draws a bar whose segments sum to the full width", () => {
-    // The plaintext bar is structure, so no test can read its meaning — but a
-    // bar that does not fill its width is a rounding bug that shows on screen.
+  it("scales every city's bar against the SAME maximum", () => {
+    // A shared scale is the point of the chart: per-city percentages would draw
+    // Hyderabad's 18 movements the same size as Mumbai's 172. So the widest bar
+    // belongs to whichever city holds the single largest value, and no bar may
+    // exceed it.
     const bars = text()
       .split("\n")
-      .filter((l) => /^\s+[█▓▒░]+$/.test(l));
-    expect(bars.length).toBeGreaterThan(0);
-    for (const b of bars) expect(b.trim().length).toBe(44);
+      .filter((l) => /^\s+[█▓▒░]+$/.test(l))
+      .map((l) => l.trim().length);
+    expect(bars.length).toBeGreaterThan(1);
+    expect(Math.max(...bars)).toBeLessThanOrEqual(40 * 4);
+    // Delhi holds the largest single segment (62) so it must draw the longest.
+    expect(bars[0]).toBe(Math.max(...bars));
   });
 
   it("never states a four-way pass RATE", () => {
@@ -371,9 +388,17 @@ describe("digest — the founder's three parts", () => {
     // three quarters of it is a missing register line.
     const t = text();
     expect(t).toContain("12 still unaccounted for, 11 records to correct");
-    expect(t).toMatch(/AT RISK\s+TO FIX\s+OLDEST/);
-    expect(t).toMatch(/Delhi\s+8\s+6\s+9d/);
     expect(t).not.toContain("23 in total");
+  });
+
+  it("lays part three out as a city-by-date grid with both totals", () => {
+    // A run of hot cells along one row is a city accumulating since a given
+    // day; a hot column is a bad day nobody has cleared. Per-city totals show
+    // neither, which is why the grid replaced the list.
+    const t = text();
+    expect(t).toMatch(/CITY\s+24 JUL\s+25 JUL\s+26 JUL\s+27 JUL\s+28 JUL\s+TOTAL/);
+    expect(t).toMatch(/Delhi\s+12\s+0\s+1\s+0\s+1\s+14/); // the hot row
+    expect(t).toMatch(/All cities\s+15\s+1\s+4\s+2\s+1\s+23/); // the column totals
   });
 });
 

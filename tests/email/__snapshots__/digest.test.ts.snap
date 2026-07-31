@@ -239,57 +239,107 @@ exports[`digest — model snapshot > threePart 1`] = `
         "text": "Every unit that moved on 28 July 2026, checked against all four records: gate register, ops sheet, delivery app and Odoo.",
       },
       {
+        "keys": [
+          {
+            "text": "All 4 records",
+            "tone": "good",
+          },
+          {
+            "text": "3 of 4",
+            "tone": "normal",
+          },
+          {
+            "text": "2 of 4",
+            "tone": "warn",
+          },
+          {
+            "text": "1 of 4",
+            "tone": "danger",
+          },
+        ],
         "kind": "bars",
-        "legend": "Three of four is usually a missing gate-register line — a paperwork gap, not missing stock. The units genuinely at risk are in the next section.",
+        "legend": "No green column for Hyderabad — the gate register was not filed. Three of four is usually a missing gate-register line: a paperwork gap, not missing stock. The units genuinely at risk are in the next section.",
         "rows": [
           {
-            "caption": "23 in all four · 62 in three · 29 in two · 36 in one · no gate register on 51 of them",
-            "label": "Delhi — 150 movements checked",
+            "badge": {
+              "text": "Guard ✓",
+              "tone": "good",
+            },
+            "caption": "Delhi: 23 in all four · 62 in three · 29 in two · 36 in one · no gate register on 51 of them",
+            "label": "Delhi",
             "segments": [
               {
-                "pct": 15.333333333333332,
                 "tone": "good",
+                "value": 23,
               },
               {
-                "pct": 41.333333333333336,
-                "tone": "muted",
+                "tone": "normal",
+                "value": 62,
               },
               {
-                "pct": 19.333333333333332,
                 "tone": "warn",
+                "value": 29,
               },
               {
-                "pct": 24,
                 "tone": "danger",
+                "value": 36,
               },
             ],
+            "sub": "150 moved",
           },
           {
-            "caption": "39 in all four · 56 in three · 18 in two · 18 in one · no delivery app on 61 of them · arriving units almost never do: 0 of 64, against 39 of 67 the other way",
-            "label": "Bangalore — 131 movements checked",
+            "badge": {
+              "text": "Guard ✓",
+              "tone": "good",
+            },
+            "caption": "Bangalore: 39 in all four · 56 in three · 18 in two · 18 in one · no delivery app on 61 of them · arriving units almost never do: 0 of 64, against 39 of 67 the other way",
+            "label": "Bangalore",
             "segments": [
               {
-                "pct": 29.770992366412212,
                 "tone": "good",
+                "value": 39,
               },
               {
-                "pct": 42.74809160305343,
-                "tone": "muted",
+                "tone": "normal",
+                "value": 56,
               },
               {
-                "pct": 13.740458015267176,
                 "tone": "warn",
+                "value": 18,
               },
               {
-                "pct": 13.740458015267176,
                 "tone": "danger",
+                "value": 18,
               },
             ],
+            "sub": "131 moved",
           },
           {
-            "caption": "Not comparable — the gate register and ops sheet did not file.",
+            "badge": {
+              "text": "No guard",
+              "tone": "muted",
+            },
+            "caption": "Hyderabad: 0 in all four · 0 in three · 20 in two · 11 in one · no gate register on 31 of them",
             "label": "Hyderabad",
-            "segments": [],
+            "segments": [
+              {
+                "tone": "good",
+                "value": 0,
+              },
+              {
+                "tone": "normal",
+                "value": 0,
+              },
+              {
+                "tone": "warn",
+                "value": 20,
+              },
+              {
+                "tone": "danger",
+                "value": 11,
+              },
+            ],
+            "sub": "31 moved",
           },
         ],
       },
@@ -423,21 +473,37 @@ exports[`digest — model snapshot > threePart 1`] = `
   {
     "blocks": [
       {
+        "kind": "para",
+        "text": "Items raised in the last 7 days and still not settled, by the day they were raised.",
+      },
+      {
         "columns": [
           {
             "label": "City",
           },
           {
             "align": "right",
-            "label": "At risk",
+            "label": "24 Jul",
           },
           {
             "align": "right",
-            "label": "To fix",
+            "label": "25 Jul",
           },
           {
             "align": "right",
-            "label": "Oldest",
+            "label": "26 Jul",
+          },
+          {
+            "align": "right",
+            "label": "27 Jul",
+          },
+          {
+            "align": "right",
+            "label": "28 Jul",
+          },
+          {
+            "align": "right",
+            "label": "Total",
           },
         ],
         "footnote": "12 still unaccounted for, 11 records to correct, 11 of them older than a week.",
@@ -445,59 +511,154 @@ exports[`digest — model snapshot > threePart 1`] = `
         "rows": [
           [
             {
+              "strong": true,
               "text": "Delhi",
             },
             {
               "align": "right",
+              "heat": 4,
+              "text": "12",
+            },
+            {
+              "align": "right",
+              "heat": 0,
+              "text": "0",
+            },
+            {
+              "align": "right",
+              "heat": 1,
+              "text": "1",
+            },
+            {
+              "align": "right",
+              "heat": 0,
+              "text": "0",
+            },
+            {
+              "align": "right",
+              "heat": 1,
+              "text": "1",
+            },
+            {
+              "align": "right",
               "strong": true,
-              "text": "8",
+              "text": "14",
               "tone": "danger",
-            },
-            {
-              "align": "right",
-              "text": "6",
-            },
-            {
-              "align": "right",
-              "text": "9d",
             },
           ],
           [
             {
+              "strong": true,
               "text": "Bangalore",
+            },
+            {
+              "align": "right",
+              "heat": 2,
+              "text": "3",
+            },
+            {
+              "align": "right",
+              "heat": 1,
+              "text": "1",
+            },
+            {
+              "align": "right",
+              "heat": 0,
+              "text": "0",
+            },
+            {
+              "align": "right",
+              "heat": 1,
+              "text": "2",
+            },
+            {
+              "align": "right",
+              "heat": 0,
+              "text": "0",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "6",
+              "tone": "danger",
+            },
+          ],
+          [
+            {
+              "strong": true,
+              "text": "Pune",
+            },
+            {
+              "align": "right",
+              "heat": 0,
+              "text": "0",
+            },
+            {
+              "align": "right",
+              "heat": 0,
+              "text": "0",
+            },
+            {
+              "align": "right",
+              "heat": 2,
+              "text": "3",
+            },
+            {
+              "align": "right",
+              "heat": 0,
+              "text": "0",
+            },
+            {
+              "align": "right",
+              "heat": 0,
+              "text": "0",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "3",
+              "tone": "danger",
+            },
+          ],
+          [
+            {
+              "text": "All cities",
+              "tone": "muted",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "15",
+              "tone": "muted",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "1",
+              "tone": "muted",
             },
             {
               "align": "right",
               "strong": true,
               "text": "4",
-              "tone": "danger",
-            },
-            {
-              "align": "right",
-              "text": "2",
-            },
-            {
-              "align": "right",
-              "text": "4d",
-            },
-          ],
-          [
-            {
-              "text": "Pune",
-            },
-            {
-              "align": "right",
-              "strong": false,
-              "text": "0",
               "tone": "muted",
             },
             {
               "align": "right",
-              "text": "3",
+              "strong": true,
+              "text": "2",
+              "tone": "muted",
             },
             {
               "align": "right",
-              "text": "3d",
+              "strong": true,
+              "text": "1",
+              "tone": "muted",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "23",
             },
           ],
         ],

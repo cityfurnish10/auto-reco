@@ -32,11 +32,26 @@ const CALLOUT: Record<"warn" | "danger" | "note", { bg: string; border: string; 
   note: { bg: "#f9fafb", border: "#e5e7eb", fg: "#374151" },
 };
 
+// Heat 0-4 as a filled cell. Light enough at every step that the number on top
+// stays readable — a heatmap that has to be squinted through is decoration.
+const HEAT: Record<number, { bg: string; fg: string }> = {
+  0: { bg: "#f9fafb", fg: "#d1d5db" },
+  1: { bg: "#dcfce7", fg: "#166534" },
+  2: { bg: "#fef3c7", fg: "#92400e" },
+  3: { bg: "#fecaca", fg: "#991b1b" },
+  4: { bg: "#dc2626", fg: "#ffffff" },
+};
+
 function cellHtml(c: Cell): string {
-  const color = TONE_COLOR[c.tone ?? "normal"];
-  const weight = c.strong ? "600" : "400";
+  const heat = c.heat === undefined ? null : HEAT[c.heat];
+  const color = heat ? heat.fg : TONE_COLOR[c.tone ?? "normal"];
+  const weight = c.strong || (c.heat ?? 0) >= 3 ? "600" : "400";
   const align = c.align ?? "left";
-  return `<td style="padding:8px 10px;border-top:1px solid #f3f4f6;font-size:13px;color:${color};font-weight:${weight};text-align:${align};">${esc(c.text)}</td>`;
+  const bg = heat ? `background:${heat.bg};` : "";
+  // A filled cell gets a white hairline instead of a top border, so the grid
+  // reads as separate tiles rather than a table that happens to be coloured.
+  const border = heat ? "border:2px solid #ffffff;" : "border-top:1px solid #f3f4f6;";
+  return `<td style="padding:8px 10px;${border}${bg}font-size:13px;color:${color};font-weight:${weight};text-align:${align};">${esc(c.text)}</td>`;
 }
 
 function blockHtml(b: Block): string {
@@ -83,39 +98,72 @@ function blockHtml(b: Block): string {
     }
 
     case "bars": {
-      // Percentage-width <td>s inside a fixed-layout table — the one bar
-      // technique that survives both Gmail and Outlook. No div, no flex, no
-      // background-image, no SVG: Outlook's Word engine drops all four.
+      // A grouped column chart, built from nested tables with FIXED PIXEL
+      // HEIGHTS. No div, no flex, no background-image, no SVG, and above all no
+      // CSS transform — Outlook's Word engine drops every one of them, which is
+      // why the value sits ABOVE each column rather than rotated inside it.
       //
-      // font-size:0/line-height:0 with a &nbsp; is what gives a <td> a reliable
-      // height in Outlook; an empty <td> collapses there.
-      const rows = b.rows
+      // One shared scale across every city: heights are measured against the
+      // largest value in the whole chart, so Mumbai's 107 towers over
+      // Hyderabad's 13 exactly as the numbers do. Scaling per city would draw
+      // two very different days as the same picture.
+      const PLOT = 120; // px for the tallest column
+      const max = Math.max(1, ...b.rows.flatMap((r) => r.segments.map((s) => s.value)));
+
+      const groups = b.rows
         .map((r) => {
-          const segs = r.segments
-            // A zero-width <td> still renders a 1px hairline in Outlook, so
-            // empty segments are dropped rather than emitted at width="0%".
-            .filter((s) => s.pct > 0)
-            .map(
-              (s) =>
-                `<td width="${s.pct.toFixed(2)}%" style="width:${s.pct.toFixed(2)}%;background:${TONE_COLOR[s.tone]};font-size:0;line-height:0;height:10px;">&nbsp;</td>`
-            )
+          const cols = r.segments
+            .map((s) => {
+              // Zero keeps its slot — the gap where Mumbai's green bar should
+              // be is the whole point of the chart — but draws no block.
+              const h = s.value <= 0 ? 0 : Math.max(3, Math.round((s.value / max) * PLOT));
+              const cap = s.value > 0
+                ? `<div style="font-size:10px;line-height:12px;color:#6b7280;">${esc(String(s.value))}</div>`
+                : `<div style="font-size:10px;line-height:12px;color:#ffffff;">&nbsp;</div>`;
+              const block = h > 0
+                ? `<div style="width:16px;height:${h}px;background:${TONE_COLOR[s.tone]};border-radius:2px 2px 0 0;font-size:0;line-height:0;">&nbsp;</div>`
+                : "";
+              return `<td valign="bottom" style="padding:0 3px;text-align:center;">${cap}${block}</td>`;
+            })
             .join("");
-          // The whole caption in ONE cell — stripTags() in the anti-drift test
-          // turns every tag into a space, so a caption split across cells could
-          // never be matched.
-          const bar = segs
-            ? `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="table-layout:fixed;border-collapse:collapse;border-radius:3px;overflow:hidden;margin:4px 0 3px;"><tr>${segs}</tr></table>`
+          const badge = r.badge
+            ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:3px auto 0;"><tr><td style="padding:2px 7px;border-radius:9px;background:${r.badge.tone === "good" ? "#dcfce7" : "#f3f4f6"};font-size:10px;color:${r.badge.tone === "good" ? "#166534" : "#6b7280"};">${esc(r.badge.text)}</td></tr></table>`
             : "";
-          return `<tr><td style="padding:0 0 12px;">
-            <p style="margin:0;font-size:13px;font-weight:600;color:#111827;">${esc(r.label)}</p>${bar}
-            <p style="margin:0;font-size:12px;line-height:1.45;color:#6b7280;">${esc(r.caption)}</p>
-          </td></tr>`;
+          const sub = r.sub
+            ? `<div style="font-size:11px;line-height:15px;color:#6b7280;">${esc(r.sub)}</div>`
+            : "";
+          return `<td valign="bottom" style="padding:0 6px;text-align:center;">
+            <table role="presentation" cellpadding="0" cellspacing="0" align="center"><tr>${cols}</tr></table>
+            <div style="margin-top:6px;border-top:1px solid #e5e7eb;padding-top:5px;font-size:12px;font-weight:600;color:#111827;">${esc(r.label)}</div>
+            ${sub}${badge}
+          </td>`;
         })
         .join("");
-      const legend = b.legend
-        ? `<p style="margin:2px 0 10px;font-size:12px;line-height:1.5;color:#6b7280;">${esc(b.legend)}</p>`
+
+      const keys = (b.keys ?? [])
+        .map(
+          (k) =>
+            `<td style="padding:0 8px;font-size:11px;color:#6b7280;white-space:nowrap;"><span style="display:inline-block;width:9px;height:9px;background:${TONE_COLOR[k.tone]};border-radius:2px;">&nbsp;</span> ${esc(k.text)}</td>`
+        )
+        .join("");
+      const keyRow = keys
+        ? `<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:12px auto 0;"><tr>${keys}</tr></table>`
         : "";
-      return `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 4px;">${rows}</table>${legend}`;
+
+      // Captions are the plaintext reader's whole chart and the anti-drift
+      // test's only handle, so they render here too — muted, under the plot.
+      const captions = b.rows
+        .map(
+          (r) =>
+            `<p style="margin:0 0 3px;font-size:11px;line-height:1.45;color:#9ca3af;">${esc(r.caption)}</p>`
+        )
+        .join("");
+
+      const legend = b.legend
+        ? `<p style="margin:10px 0 0;font-size:12px;line-height:1.5;color:#6b7280;">${esc(b.legend)}</p>`
+        : "";
+
+      return `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 6px;"><tr>${groups}</tr></table>${keyRow}<div style="margin-top:12px;">${captions}</div>${legend}`;
     }
 
     case "cta":

@@ -6,7 +6,7 @@
 // drifted far enough that the plaintext reader got no dashboard link at all.
 //
 // Audience: the owner, who wants one question answered — can we still account
-// for every unit that moved? Everything is written to that. Budget is 450 words
+// for every unit that moved? Everything is written to that. Budget is 550 words
 // of rendered text, enforced by a test, with a deterministic degradation ladder
 // (see trimToBudget) so a busy day drops the least important section rather than
 // truncating mid-sentence.
@@ -19,12 +19,13 @@
 // after each digest; a second mail nobody had asked for was worse at the job
 // than a section in the one they already open.
 
-import type { BarRow, Block, Section } from "./model";
+import type { BarRow, Block, Heat, Section } from "./model";
 import { renderText } from "./render-text";
 import type { ActionItem, CityDigestRow, DigestData, RegisterState } from "./types";
 import { directionSkew, fullyReported, SOURCE_NAME, topMissing, type SourceKey } from "./coverage";
-import { isCityOff } from "../../engine/schedule";
+import { closedPartOfWindow, isCityOff } from "../../engine/schedule";
 import type { City } from "../../sample-data";
+import { LOOKBACK_DAYS } from "./ageing";
 
 /** Cities are stored upper-case; humans read title case. */
 function cityName(city: string): string {
@@ -58,6 +59,12 @@ const REGISTER_TEXT: Record<RegisterState, string> = {
 
 const n = (x: number) => x.toLocaleString("en-IN");
 
+/** "Mumbai, Pune and Hyderabad" — never a bare comma list. */
+function andList(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
 // ─── part one: the four-way check ────────────────────────────────────────────
 
 /**
@@ -89,42 +96,49 @@ function coverageSection(data: DigestData): Section | null {
     return sb - sa || b.total - a.total || a.city.localeCompare(b.city);
   });
 
+  const noGreen: string[] = [];
+  const shut: string[] = [];
+
   for (const c of ordered) {
     const off = isCityOff(c.city as City, cov.date);
-    // "movements checked", NOT "units". Part 2's city table says "Units moved"
-    // from run_city_stats, and the two counters legitimately disagree: the
-    // ledger holds one row per barcode PER DIRECTION and records a
-    // direction-conflict unit against BOTH legs (migration 0015:41-43), so it
-    // runs slightly higher. Measured 29 Jul: Delhi 150 vs 147, Bangalore 131 vs
-    // 121, and exact agreement for the three cities that were shut. Normally the
-    // two sections report different DATES so nobody sees them together — but
-    // when they coincide, two numbers for one word reads as an error.
-    const label = `${cityName(c.city)} — ${n(c.total)} ${c.total === 1 ? "movement" : "movements"} checked`;
-
+    // A business day runs 3pm to 3pm, so a one-day closure lands inside TWO
+    // business dates and a city can be shut for HALF the window while still
+    // moving stock in the other half. Part 2's table already marks those
+    // "(week off)"; without the same test here the same city is charted as a
+    // working warehouse that lost its register, and one email describes it two
+    // different ways.
+    const partly = closedPartOfWindow(c.city as City, cov.date);
     if (off) {
-      rows.push({ label: cityName(c.city), caption: "Weekly off — nothing expected.", segments: [] });
-      continue;
-    }
-    // A city short a source gets NO bar. Scoring it against the books that did
-    // file would draw a LONGER bar than a city with all four, because agreeing
-    // against two records is easier than four — an outage rendering as an
-    // improvement, the flattering-direction error this codebase refuses.
-    if (!fullyReported(c)) {
-      const down = (["P", "S", "D", "O"] as SourceKey[]).filter((k) => !c.reported[k]);
       rows.push({
         label: cityName(c.city),
-        caption: `Not comparable — the ${down.map((k) => SOURCE_NAME[k]).join(" and ")} did not file.`,
+        sub: "weekly off",
+        caption: `${cityName(c.city)} was shut — nothing expected.`,
         segments: [],
       });
       continue;
     }
 
-    scored++;
+    const down = (["P", "S", "D", "O"] as SourceKey[]).filter((k) => !c.reported[k]);
     const [four, three, two, one] = c.byCount;
-    const pct = (x: number) => (c.total > 0 ? (x / c.total) * 100 : 0);
+
+    // A city short a book STILL GETS ITS COLUMNS. The counts of "in three", "in
+    // two" and "in one" are real measurements either way, and the missing green
+    // column is the most legible thing on the page: it says, without a sentence,
+    // that nothing here could pass. What must never happen is scoring such a
+    // city as a RATE against one with all four — agreeing across two records is
+    // easier than across four, so a rate would render an outage as an
+    // improvement. This chart shows counts, names the absent book on the city
+    // itself, and repeats the reason under the plot.
+    if (!fullyReported(c)) {
+      // Two different reasons for a missing column, and they must not be
+      // conflated: a shut warehouse SHOULD have no register, an open one that
+      // did not file has a problem.
+      (partly ? shut : noGreen).push(cityName(c.city));
+    } else scored++;
+
     const miss = topMissing(c);
     const parts = [
-      `${n(four)} in all four`,
+      `${cityName(c.city)}: ${n(four)} in all four`,
       `${n(three)} in three`,
       `${n(two)} in two`,
       `${n(one)} in one`,
@@ -145,18 +159,26 @@ function coverageSection(data: DigestData): Section | null {
       );
     }
     rows.push({
-      label,
+      label: cityName(c.city),
+      sub: `${n(c.total)} moved`,
+      badge: partly
+        ? { text: "Week off", tone: "muted" }
+        : down.includes("P")
+          ? { text: "No guard", tone: "muted" }
+          : { text: "Guard ✓", tone: "good" },
       caption: parts.join(" · "),
       segments: [
-        { tone: "good", pct: pct(four) },
-        { tone: "muted", pct: pct(three) },
-        { tone: "warn", pct: pct(two) },
-        { tone: "danger", pct: pct(one) },
+        { tone: "good", value: four },
+        { tone: "normal", value: three },
+        { tone: "warn", value: two },
+        { tone: "danger", value: one },
       ],
     });
   }
 
-  if (scored === 0) return null;
+  // Nothing scoreable AND nothing measurable — every city shut, or a ledger
+  // that answered with no movements at all. An absent claim beats an empty one.
+  if (scored === 0 && noGreen.length === 0) return null;
 
   const blocks: Block[] = [
     {
@@ -166,9 +188,24 @@ function coverageSection(data: DigestData): Section | null {
     {
       kind: "bars",
       rows,
-      // The sentence that stops this section being read as a catastrophe.
+      keys: [
+        { tone: "good", text: "All 4 records" },
+        { tone: "normal", text: "3 of 4" },
+        { tone: "warn", text: "2 of 4" },
+        { tone: "danger", text: "1 of 4" },
+      ],
+      // Two sentences that stop this being read as a catastrophe. The first
+      // explains the hole where a green column should be; without it a reader
+      // concludes those cities lost everything. The second explains why the
+      // green column is short even where it exists.
       legend:
-        "Three of four is usually a missing gate-register line — a paperwork gap, not missing stock. The units genuinely at risk are in the next section.",
+        (shut.length > 0
+          ? `${andList(shut)} shut partway through the day, so nothing there could reach all four. `
+          : "") +
+        (noGreen.length > 0
+          ? `No green column for ${andList(noGreen)} — the gate register was not filed. `
+          : "") +
+        "Three of four is usually a missing gate-register line: a paperwork gap, not missing stock. The units genuinely at risk are in the next section.",
     },
   ];
 
@@ -186,6 +223,20 @@ function coverageSection(data: DigestData): Section | null {
 
 // ─── part three: what has been open too long ─────────────────────────────────
 
+/**
+ * Severity bands for a heatmap cell, matching the key rendered beneath it.
+ *
+ * Bands, not a gradient: a reader compares cells against the key, and eleven
+ * shades of red are indistinguishable at the size an email renders them.
+ */
+function heatOf(v: number): Heat {
+  if (v <= 0) return 0;
+  if (v <= 2) return 1;
+  if (v <= 5) return 2;
+  if (v <= 10) return 3;
+  return 4;
+}
+
 function ageingSection(data: DigestData): Section | null {
   const a = data.ageing;
   if (!a) return null;
@@ -196,28 +247,51 @@ function ageingSection(data: DigestData): Section | null {
   if (a.total === 0) {
     blocks.push({ kind: "para", text: "Nothing raised more than two days ago is still open." });
   } else {
-    // TWO COLUMNS, NEVER ONE TOTAL. Measured across 27-28 Jul: 188 units at
-    // risk against 535 records to fix. "683 still open" reads as 683 pieces of
-    // missing stock, and three quarters of it is a missing register line.
+    // A GRID, city x date, not a list of totals. A run of hot cells along one
+    // row is a city that has been accumulating since a particular day; a hot
+    // column is a bad day nobody has cleared. Per-city totals show neither.
+    //
+    // "Still open" and "not settled", never the internal word for these rows —
+    // tests/email/vocabulary.ts bans it from every surface, and the reader has
+    // no use for it.
+    const g = a.grid;
+    blocks.push({
+      kind: "para",
+      text: `Items raised in the last ${LOOKBACK_DAYS} days and still not settled, by the day they were raised.`,
+    });
     blocks.push({
       kind: "table",
       columns: [
         { label: "City" },
-        { label: "At risk", align: "right" },
-        { label: "To fix", align: "right" },
-        { label: "Oldest", align: "right" },
+        ...g.dates.map((d) => ({ label: fmtDateShort(d), align: "right" as const })),
+        { label: "Total", align: "right" as const },
       ],
-      rows: a.cities.map((c) => [
-        { text: cityName(c.city) },
-        {
-          text: n(c.atRisk),
-          align: "right" as const,
-          strong: c.atRisk > 0,
-          tone: c.atRisk > 0 ? ("danger" as const) : ("muted" as const),
-        },
-        { text: n(c.toFix), align: "right" as const },
-        { text: `${c.oldestDays}d`, align: "right" as const },
-      ]),
+      rows: [
+        ...g.rows.map((r) => [
+          { text: cityName(r.city), strong: true },
+          ...r.counts.map((v) => ({
+            text: n(v),
+            align: "right" as const,
+            heat: heatOf(v),
+          })),
+          {
+            text: n(r.total),
+            align: "right" as const,
+            strong: true,
+            tone: r.total > 0 ? ("danger" as const) : ("muted" as const),
+          },
+        ]),
+        [
+          { text: "All cities", tone: "muted" as const },
+          ...g.dailyTotals.map((v) => ({
+            text: n(v),
+            align: "right" as const,
+            tone: "muted" as const,
+            strong: true,
+          })),
+          { text: n(g.grandTotal), align: "right" as const, strong: true },
+        ],
+      ],
       footnote:
         `${n(a.atRisk)} still unaccounted for, ${n(a.toFix)} records to correct` +
         (a.overAWeek > 0 ? `, ${n(a.overAWeek)} of them older than a week.` : "."),
@@ -441,13 +515,14 @@ export const DIGEST_KICKER = "Daily stock check";
 /**
  * Rendered-word budget for the whole email. A test asserts the worst case.
  *
- * 450, raised from 250 when the founder's three-part structure landed. The old
- * figure was set for a one-screen note; this is a structured report with a
- * coverage section, a per-city visual and an ageing table, and the rich-day
- * fixture rendered 245 of 250 before any of that existed. Raising the ceiling is
- * deliberate — the alternative was cutting detail the previous rewrite added.
+ * 550. It was 250 for a one-screen note, then 450 for the founder's three-part
+ * structure, and 550 once that structure became a per-city column chart with a
+ * key and a seven-column grid. Each rise bought content that was asked for; the
+ * alternative each time was a degradation ladder quietly deleting it. Measured
+ * on live data at 550: a busy day renders ~500 with every rung unused, so the
+ * ladder is a backstop again rather than a permanent state.
  */
-export const WORD_BUDGET = 450;
+export const WORD_BUDGET = 550;
 
 export function buildSections(data: DigestData, opts: SectionOpts = {}): Section[] {
   const sections: Section[] = [];
@@ -604,52 +679,74 @@ export function trimToBudget(sections: Section[]): Section[] {
   });
   if (words(out) <= WORD_BUDGET) return out;
 
-  // 2. The ageing table drops its "What" column and keeps the counts.
+  // 2. Part three loses its explanatory sentence.
   //
-  // This rung REPLACED a dead one. The old rung matched a footer para starting
-  // "Also logged", and no builder has emitted that string since the copy
-  // rewrite — a grep for it returned exactly one hit, the matcher itself. So the
-  // ladder has been running on a single live rung for some time.
+  // NEVER ITS COLUMNS. An earlier rung sliced the table to three columns, which
+  // was harmless on the old four-column list and destroys the grid that replaced
+  // it: the columns ARE the dates, oldest first, so slicing from the left
+  // deletes exactly the days that have been outstanding longest. The heading and
+  // the column labels already say what the grid is.
   //
-  // The kinds are the widest thing on the page and the least load-bearing: which
-  // city has how many, and how old the oldest is, is what earns the section.
+  // Only the sentence BEFORE the table. Everything after it must survive: that
+  // is where the un-rechecked-days warning lives, and dropping the one line
+  // admitting the grid is incomplete would turn a partial answer into a
+  // confident wrong one. A first pass at this rung filtered every para in the
+  // section and did exactly that.
   out = out.map((s) => {
     if (s.id !== "ageing") return s;
-    return {
-      ...s,
-      blocks: s.blocks.map((b) =>
-        b.kind === "table" && b.columns.length > 3
-          ? {
-              ...b,
-              columns: b.columns.slice(0, 3),
-              rows: b.rows.map((r) => r.slice(0, 3)),
-            }
-          : b
-      ),
-    };
+    const table = s.blocks.findIndex((b) => b.kind === "table");
+    if (table < 0) return s;
+    return { ...s, blocks: s.blocks.filter((b, i) => i >= table || b.kind !== "para") };
   });
   if (words(out) <= WORD_BUDGET) return out;
 
-  // 3. The ageing table keeps its worst three cities.
+  // 3. The grid keeps its worst three cities, plus the all-cities row.
   //
-  // Rows, only after columns, because a city's two numbers are worth more than
-  // any single column of them — and this is last because it is the only rung
-  // that removes a whole city from view. The footnote still totals ALL cities,
-  // so the count stays honest; the extra clause says how many are hidden, since
-  // a truncated table that does not admit it reads as the complete list.
+  // Rows, not columns, and last, because it is the only rung that removes a
+  // city from view. The totals row and the footnote still cover EVERY city, so
+  // the arithmetic stays honest; the extra clause says how many are hidden,
+  // since a truncated table that does not admit it reads as the whole list.
   out = out.map((s) => {
     if (s.id !== "ageing") return s;
     return {
       ...s,
       blocks: s.blocks.map((b) => {
-        if (b.kind !== "table" || b.rows.length <= 3) return b;
-        const hidden = b.rows.length - 3;
+        if (b.kind !== "table" || b.rows.length <= 4) return b;
+        // The last row is "All cities" — keep it, it is the column totals.
+        const cities = b.rows.slice(0, -1);
+        const totals = b.rows[b.rows.length - 1];
+        const hidden = cities.length - 3;
         return {
           ...b,
-          rows: b.rows.slice(0, 3),
+          rows: [...cities.slice(0, 3), totals],
           footnote: `${b.footnote ?? ""} +${hidden} more ${hidden === 1 ? "city" : "cities"}.`.trim(),
         };
       }),
+    };
+  });
+  if (words(out) <= WORD_BUDGET) return out;
+
+  // 4. The four-way captions keep their four counts and shed the commentary.
+  //
+  // Last of all, because these captions ARE the chart for a plaintext reader —
+  // the columns are pixels and carry nothing they can read. The four counts are
+  // the measurement; the missing-source and one-direction clauses are the
+  // interpretation, and the legend underneath still carries the general point.
+  out = out.map((s) => {
+    if (s.id !== "coverage") return s;
+    return {
+      ...s,
+      blocks: s.blocks.map((b) =>
+        b.kind === "bars"
+          ? {
+              ...b,
+              rows: b.rows.map((r) => ({
+                ...r,
+                caption: r.caption.split(" · ").slice(0, 4).join(" · "),
+              })),
+            }
+          : b
+      ),
     };
   });
   return out;
@@ -670,10 +767,14 @@ function blockText(b: Block): string[] {
     case "list":
       return b.items.flatMap((i) => (i.sub ? [i.text, i.sub] : [i.text]));
     case "bars":
-      // Labels, captions, legend. The bar itself costs no words in either
-      // renderer — it is one line of block glyphs in plaintext and a table row
-      // in HTML — so counting only the copy keeps the budget honest.
-      return [...b.rows.flatMap((r) => [r.label, r.caption]), ...(b.legend ? [b.legend] : [])];
+      // All the copy; the columns themselves cost nothing in either renderer.
+      return [
+        ...b.rows.flatMap((r) =>
+          [r.label, r.sub, r.badge?.text, r.caption].filter((x): x is string => !!x)
+        ),
+        ...(b.keys ?? []).map((k) => k.text),
+        ...(b.legend ? [b.legend] : []),
+      ];
     case "cta":
       return [b.label];
     default: {

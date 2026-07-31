@@ -46,6 +46,16 @@ export interface AgeingCity {
   otherKinds: number;
 }
 
+export interface AgeingGrid {
+  /** Business dates, oldest first — the heatmap's columns. */
+  dates: string[];
+  /** Per city, one count per date in `dates` order. */
+  rows: { city: string; counts: number[]; total: number }[];
+  /** Column totals, same order as `dates`. */
+  dailyTotals: number[];
+  grandTotal: number;
+}
+
 export interface AgeingSummary {
   cities: AgeingCity[];
   total: number;
@@ -63,6 +73,15 @@ export interface AgeingSummary {
   overAWeek: number;
   /** Business dates that could not be re-checked; their rows are NOT counted. */
   staleDates: string[];
+  /**
+   * The same units, arranged city x date — the heatmap.
+   *
+   * Dated by the day a unit was FIRST seen unresolved, so a run of hot cells
+   * along one row is a city that has been accumulating since a particular day,
+   * and a hot column is a bad day nobody has cleared. A per-city total cannot
+   * show either.
+   */
+  grid: AgeingGrid;
 }
 
 /** Whole days between two ISO dates. Both are IST business dates, never times. */
@@ -186,6 +205,22 @@ export function summariseAgeing(
         a.city.localeCompare(b.city)
     );
 
+  // The heatmap. Columns are every date in the window that produced a unit,
+  // oldest first; a date the sweep could not refresh contributes nothing and is
+  // named separately rather than drawn as an empty column that reads as "clean".
+  const dates = [...new Set([...worst.values()].map((u) => u.date))].sort();
+  const idx = new Map(dates.map((d, i) => [d, i]));
+  const gridByCity = new Map<string, number[]>();
+  for (const u of worst.values()) {
+    const counts = gridByCity.get(u.city) ?? new Array(dates.length).fill(0);
+    counts[idx.get(u.date)!]++;
+    gridByCity.set(u.city, counts);
+  }
+  const gridRows = [...gridByCity.entries()]
+    .map(([city, counts]) => ({ city, counts, total: counts.reduce((a, b) => a + b, 0) }))
+    .sort((a, b) => b.total - a.total || a.city.localeCompare(b.city));
+  const dailyTotals = dates.map((_, i) => gridRows.reduce((s, r) => s + r.counts[i], 0));
+
   return {
     cities,
     total: cities.reduce((n, c) => n + c.items, 0),
@@ -193,5 +228,11 @@ export function summariseAgeing(
     toFix,
     overAWeek,
     staleDates: [...staleSeen].sort(),
+    grid: {
+      dates,
+      rows: gridRows,
+      dailyTotals,
+      grandTotal: dailyTotals.reduce((a, b) => a + b, 0),
+    },
   };
 }

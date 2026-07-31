@@ -24,31 +24,35 @@ function tableLines(b: Extract<Block, { kind: "table" }>): string[] {
   return lines;
 }
 
-// Shading for a plaintext bar, densest first. Four steps because the coverage
-// bar has four segments (all four / three / two / one source); a caller with
-// more wraps around, which degrades the shading rather than the meaning — the
-// caption carries the numbers regardless.
+// Shading for a plaintext bar, densest first — one glyph per series, matching
+// the order of the HTML chart's key.
 const BAR_GLYPHS = ["█", "▓", "▒", "░"];
-const BAR_WIDTH = 44; // fits the 72-column plaintext part with room to indent
+const BAR_WIDTH = 40; // fits a 72-column part with room to indent
 
+/**
+ * The column chart, laid down on its side.
+ *
+ * A vertical chart cannot exist in monospace text, so each city becomes one
+ * horizontal bar scaled against the SAME maximum the HTML renderer uses. That
+ * keeps the two pictures telling the same story even though they look nothing
+ * alike, and the caption underneath carries every number regardless.
+ */
 function barLines(b: Extract<Block, { kind: "bars" }>): string[] {
   const out: string[] = [];
+  const max = Math.max(1, ...b.rows.flatMap((r) => r.segments.map((s) => s.value)));
   for (const r of b.rows) {
-    out.push(r.label);
-    // Round each segment down and hand the remainder to the largest, so the bar
-    // is always exactly BAR_WIDTH wide. Rounding each independently drifts by a
-    // character or two and the bars stop lining up down the page.
-    const cells = r.segments.map((s) => Math.floor((Math.max(0, s.pct) / 100) * BAR_WIDTH));
-    const used = cells.reduce((a, c) => a + c, 0);
-    if (cells.length > 0 && used < BAR_WIDTH && used > 0) {
-      let big = 0;
-      for (let i = 1; i < cells.length; i++) if (cells[i] > cells[big]) big = i;
-      cells[big] += BAR_WIDTH - used;
-    }
-    const bar = cells.map((n, i) => BAR_GLYPHS[i % BAR_GLYPHS.length].repeat(n)).join("");
+    out.push([r.label, r.sub, r.badge?.text].filter(Boolean).join(" · "));
+    const bar = r.segments
+      .map((s, i) =>
+        BAR_GLYPHS[i % BAR_GLYPHS.length].repeat(
+          s.value <= 0 ? 0 : Math.max(1, Math.round((s.value / max) * BAR_WIDTH))
+        )
+      )
+      .join("");
     if (bar) out.push(`  ${bar}`);
     out.push(`  ${r.caption}`);
   }
+  if (b.keys?.length) out.push("", b.keys.map((k, i) => `${BAR_GLYPHS[i % BAR_GLYPHS.length]} ${k.text}`).join("   "));
   if (b.legend) out.push("", b.legend);
   return out;
 }
