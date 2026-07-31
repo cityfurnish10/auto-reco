@@ -164,42 +164,6 @@ exports[`digest — model snapshot > richDay 1`] = `
   {
     "blocks": [
       {
-        "items": [
-          {
-            "sub": "Warehouse team",
-            "text": "System-Only Entry — 56 units (Delhi 31, Bangalore 25). Odoo booked a customer movement today that nobody at the gate, on the sheet or in the app saw. Confirm the unit moved, or cancel the Odoo entry.",
-            "tone": "danger",
-          },
-          {
-            "sub": "Warehouse team",
-            "text": "Off-System Movement — 11 units (Delhi 7, Mumbai 4). Trace the unit, then record it on the sheet, the app and Odoo.",
-            "tone": "danger",
-          },
-          {
-            "sub": "Ops team",
-            "text": "Unclosed Return — 6 units (Pune 4). Find the unit and write it into the inward register.",
-            "tone": "danger",
-          },
-          {
-            "sub": "Ops team",
-            "text": "Ghost Dispatch — 3 units (Mumbai 3). Establish whether the unit left, then correct the record that is wrong.",
-            "tone": "danger",
-          },
-        ],
-        "kind": "list",
-      },
-      {
-        "kind": "para",
-        "text": "+2 more jobs, all on the dashboard.",
-        "tone": "muted",
-      },
-    ],
-    "id": "actions",
-    "title": "Do this today",
-  },
-  {
-    "blocks": [
-      {
         "href": "https://auto-reco.vercel.app/dashboard",
         "kind": "cta",
         "label": "View in dashboard",
@@ -437,22 +401,6 @@ exports[`digest — model snapshot > threePart 1`] = `
     ],
     "id": "cities",
     "title": "2 · At risk, by city",
-  },
-  {
-    "blocks": [
-      {
-        "items": [
-          {
-            "sub": "Warehouse team",
-            "text": "Off-System Movement — 7 units (Delhi 5, Bangalore 2). Odoo booked a customer movement today that nobody at the gate, on the sheet or in the app saw. Confirm the unit moved, or cancel the Odoo entry.",
-            "tone": "danger",
-          },
-        ],
-        "kind": "list",
-      },
-    ],
-    "id": "actions",
-    "title": "Do this today",
   },
   {
     "blocks": [

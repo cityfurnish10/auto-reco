@@ -545,19 +545,6 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
     });
   }
 
-  if (data.actions.length > 0) {
-    sections.push({
-      id: "actions",
-      title: "Do this today",
-      // FOUR, not five. The risk sentence on the top job is worth ~18 words, and
-      // with five actions the rich day rendered at 248 of 250 -- inside the
-      // budget but with no room for a future word. Four lands at ~233, and the
-      // "+N more jobs" pointer already carries the remainder. The trim ladder
-      // still protects the top three below this.
-      blocks: actionList(data.actions, 4),
-    });
-  }
-
   // PART THREE. After the day's own numbers, because it is a different
   // question: not "what happened yesterday" but "what have we still not dealt
   // with". Replaces the separate follow-up email that used to go out at D+3.
@@ -596,9 +583,9 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
 /**
  * Deterministic degradation, applied here rather than by hand at write time.
  *
- * Order: the action list shrinks first, then the ageing detail. NEVER dropped:
- * the opening line, the four-way check, the at-risk column, the top three
- * actions, the link, and the incomplete-run banner.
+ * Order: part three's intro, then its weakest city rows, then part one's caption
+ * commentary. NEVER dropped: the opening line, the four-way chart, the at-risk
+ * table, the link, and the incomplete-run banner.
  */
 export function trimToBudget(sections: Section[]): Section[] {
   // MEASURE THE ACTUAL RENDER, not an estimate of it.
@@ -616,36 +603,7 @@ export function trimToBudget(sections: Section[]): Section[] {
   let out = sections;
   if (words(out) <= WORD_BUDGET) return out;
 
-  // 1. Actions: down to three, keeping the "+N more" pointer honest.
-  out = out.map((s) => {
-    if (s.id !== "actions") return s;
-    const list = s.blocks.find((b) => b.kind === "list");
-    if (list?.kind !== "list" || list.items.length <= 3) return s;
-    // The section may ALREADY carry a "+N more" line from the initial 5-cap.
-    // Those N are still hidden, so they must be added rather than replaced —
-    // otherwise the email under-reports what it is not showing.
-    const existing = s.blocks.find(
-      (b): b is Extract<Block, { kind: "para" }> => b.kind === "para" && /^\+\d+ more/.test(b.text)
-    );
-    const alreadyHidden = existing ? Number(/^\+(\d+)/.exec(existing.text)?.[1] ?? 0) : 0;
-    const dropped = list.items.length - 3 + alreadyHidden;
-    return {
-      ...s,
-      blocks: [
-        { ...list, items: list.items.slice(0, 3) },
-        {
-          kind: "para",
-          // Same wording as actionList above. Two spellings of one line meant the
-          // email changed voice the moment the budget bit.
-          text: `+${dropped} more ${dropped === 1 ? "job" : "jobs"}, all on the dashboard.`,
-          tone: "muted",
-        },
-      ],
-    };
-  });
-  if (words(out) <= WORD_BUDGET) return out;
-
-  // 2. Part three loses its explanatory sentence.
+  // 1. Part three loses its explanatory sentence.
   //
   // NEVER ITS COLUMNS. An earlier rung sliced the table to three columns, which
   // was harmless on the old four-column list and destroys the grid that replaced
@@ -666,7 +624,7 @@ export function trimToBudget(sections: Section[]): Section[] {
   });
   if (words(out) <= WORD_BUDGET) return out;
 
-  // 3. The grid keeps its worst three cities, plus the all-cities row.
+  // 2. The grid keeps its worst three cities, plus the all-cities row.
   //
   // Rows, not columns, and last, because it is the only rung that removes a
   // city from view. The totals row and the footnote still cover EVERY city, so
@@ -692,7 +650,7 @@ export function trimToBudget(sections: Section[]): Section[] {
   });
   if (words(out) <= WORD_BUDGET) return out;
 
-  // 4. The four-way captions keep their four counts and shed the commentary.
+  // 3. The four-way captions keep their four counts and shed the commentary.
   //
   // Last of all, because these captions ARE the chart for a plaintext reader —
   // the columns are pixels and carry nothing they can read. The four counts are

@@ -95,8 +95,8 @@ const allOff = digest({
 
 const hostile = digest({
   totals: { movements: 5, tier1: 1, tier2: 0, tier3: 0, open: 1 },
-  cities: [city({ city: 'A"B<script>', tier1: 1, open: 1 })],
-  actions: [action({ label: "O'Brien & <b>Co</b>", count: 1, cities: [{ city: 'A"B<script>', count: 1 }] })],
+  cities: [city({ city: 'A&B"<script>', tier1: 1, open: 1 })],
+  actions: [action({ label: "O'Brien & <b>Co</b>", count: 1, cities: [{ city: 'A&B"<script>', count: 1 }] })],
 });
 
 // The founder's three-part shape, all sections live at once: the four-way
@@ -257,14 +257,6 @@ describe("digest — budget", () => {
   it.each(FIXTURES)("stays within the word budget (%s)", (_name, d) => {
     const words = renderDigestText(d, URL).trim().split(/\s+/).filter(Boolean).length;
     expect(words, `rendered ${words} words`).toBeLessThanOrEqual(WORD_BUDGET);
-  });
-
-  it("keeps the top jobs, and says how many it is not showing", () => {
-    const text = renderDigestText(richDay, URL);
-    // The ladder now shrinks the action list first. Whatever it drops, the
-    // largest job survives and the count of what is hidden stays honest.
-    expect(text).toContain("System-Only Entry");
-    expect(text).toMatch(/\+\d+ more jobs?, all on the dashboard\./);
   });
 
   it("marks a city whose weekly off falls inside the business day", () => {
