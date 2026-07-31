@@ -20,11 +20,34 @@ export interface Cell {
   align?: Align;
 }
 
+/**
+ * One proportion, drawn.
+ *
+ * EVERY NUMBER LIVES IN `caption`, NEVER IN A SEGMENT. Segments carry geometry
+ * and colour only. Two reasons, both load-bearing:
+ *
+ *   * The anti-drift test replaces each HTML tag with a SPACE before searching,
+ *     so any visible string split across two tags can never be found. A bar is
+ *     inherently many tags; a caption is one.
+ *   * The plaintext bar is block characters, which carry no number at all. If a
+ *     segment held its own label the two renderers could not agree.
+ *
+ * `pct` is 0-100 and the renderer does not normalise: a caller that does not
+ * make them sum to 100 gets a bar that does not fill, which is a visible bug
+ * rather than a silently rescaled lie.
+ */
+export interface BarRow {
+  label: string;
+  caption: string;
+  segments: { tone: Tone; pct: number }[];
+}
+
 export type Block =
   | { kind: "para"; text: string; tone?: Tone }
   | { kind: "callout"; tone: "warn" | "danger" | "note"; title: string; lines: string[] }
   | { kind: "table"; columns: { label: string; align?: Align }[]; rows: Cell[][]; footnote?: string }
   | { kind: "list"; items: { text: string; sub?: string; tone?: Tone }[] }
+  | { kind: "bars"; rows: BarRow[]; legend?: string }
   | { kind: "cta"; label: string; href: string };
 
 export interface Section {
@@ -62,6 +85,13 @@ export function visibleStrings(sections: Section[]): string[] {
             out.push(i.text);
             if (i.sub) out.push(i.sub);
           }
+          break;
+        case "bars":
+          // Labels, captions and the legend. NOT the segments — they have no
+          // text by construction (see BarRow), which is what lets the two
+          // renderers draw the same data in completely different ways.
+          for (const r of b.rows) out.push(r.label, r.caption);
+          if (b.legend) out.push(b.legend);
           break;
         case "cta":
           // The label only. The href is a link TARGET, not visible copy — in

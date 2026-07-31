@@ -82,6 +82,42 @@ function blockHtml(b: Block): string {
       return `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 12px;">${items}</table>`;
     }
 
+    case "bars": {
+      // Percentage-width <td>s inside a fixed-layout table — the one bar
+      // technique that survives both Gmail and Outlook. No div, no flex, no
+      // background-image, no SVG: Outlook's Word engine drops all four.
+      //
+      // font-size:0/line-height:0 with a &nbsp; is what gives a <td> a reliable
+      // height in Outlook; an empty <td> collapses there.
+      const rows = b.rows
+        .map((r) => {
+          const segs = r.segments
+            // A zero-width <td> still renders a 1px hairline in Outlook, so
+            // empty segments are dropped rather than emitted at width="0%".
+            .filter((s) => s.pct > 0)
+            .map(
+              (s) =>
+                `<td width="${s.pct.toFixed(2)}%" style="width:${s.pct.toFixed(2)}%;background:${TONE_COLOR[s.tone]};font-size:0;line-height:0;height:10px;">&nbsp;</td>`
+            )
+            .join("");
+          // The whole caption in ONE cell — stripTags() in the anti-drift test
+          // turns every tag into a space, so a caption split across cells could
+          // never be matched.
+          const bar = segs
+            ? `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="table-layout:fixed;border-collapse:collapse;border-radius:3px;overflow:hidden;margin:4px 0 3px;"><tr>${segs}</tr></table>`
+            : "";
+          return `<tr><td style="padding:0 0 12px;">
+            <p style="margin:0;font-size:13px;font-weight:600;color:#111827;">${esc(r.label)}</p>${bar}
+            <p style="margin:0;font-size:12px;line-height:1.45;color:#6b7280;">${esc(r.caption)}</p>
+          </td></tr>`;
+        })
+        .join("");
+      const legend = b.legend
+        ? `<p style="margin:2px 0 10px;font-size:12px;line-height:1.5;color:#6b7280;">${esc(b.legend)}</p>`
+        : "";
+      return `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 4px;">${rows}</table>${legend}`;
+    }
+
     case "cta":
       return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:4px 0 0;"><tr><td style="background:#111827;border-radius:8px;">
         <a href="${esc(b.href)}" style="display:inline-block;padding:10px 18px;color:#ffffff;font-size:13px;font-weight:600;text-decoration:none;">${esc(b.label)} &rarr;</a>
