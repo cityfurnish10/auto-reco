@@ -1,5 +1,8 @@
 // The data shape the digest renders. Produced by build.ts from persisted rows.
 
+import type { AgeingSummary } from "./ageing";
+import type { FourWayCoverage } from "./coverage";
+
 /** Per-source, per-direction movement counts for one city (migration 0012). */
 export interface CityMovementCounts {
   sheetIn: number;
@@ -95,6 +98,24 @@ export interface DigestData {
   informational: { label: string; count: number }[];
   /** True when no completed reconciliation exists for `date`. */
   runIncomplete?: boolean;
+  /**
+   * The four-way check — part one of the email.
+   *
+   * ABSENT means "we cannot evidence this", and the section is then omitted
+   * entirely rather than rendered as a table of zeros. Three ways to get there:
+   * migration 0015 unapplied, the ledger read failing, or no date in the
+   * trailing week having all four sources report. `coverage.date` may be OLDER
+   * than `date` — the guard register lands about a day late, so the newest fully
+   * covered day is usually not the day being reported.
+   */
+  coverage?: FourWayCoverage;
+  /**
+   * Errors raised days ago and still open — part three.
+   *
+   * Only counts dates that were re-reconciled recently; `staleDates` names the
+   * ones it could not vouch for. This replaces the separate follow-up email.
+   */
+  ageing?: AgeingSummary;
   /**
    * Today's at-risk RATE against the trailing week — the opening's lead clause.
    *

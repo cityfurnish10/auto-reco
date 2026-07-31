@@ -153,15 +153,14 @@ async function handle(req: NextRequest) {
     runIncomplete: digest.runIncomplete,
     snapshot: result.totals ?? null,
   });
-  if (enqueue.enqueue) {
-    await enqueueFollowUp(db, {
-      businessDate: date,
-      sourceEmailLogId: logId,
-      recipients: result.recipients ?? [],
-      cc: result.cc ?? [],
-      bcc: result.bcc ?? [],
-    }).catch(() => false);
-  }
+  // NO LONGER ENQUEUED. The follow-up is now section three of the digest itself
+  // ("Open more than two days"), which covers a seven-day window instead of one
+  // date and arrives in the mail people already open. Nothing new is queued;
+  // the drain below stays only until the rows queued before this change have
+  // gone out, and then it and lib/email/followup/{queue,drain,send,sections,
+  // subject}.ts can go with it. compare.ts and snapshot.ts must stay — the
+  // ageing section and the Stock Analyser both depend on them.
+  void enqueue;
 
   // Now the follow-ups, last, having given the re-check every spare second.
   let followUps: Awaited<ReturnType<typeof drainScheduledEmails>> = [];

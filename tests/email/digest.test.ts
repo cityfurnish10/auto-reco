@@ -99,6 +99,63 @@ const hostile = digest({
   actions: [action({ label: "O'Brien & <b>Co</b>", count: 1, cities: [{ city: 'A"B<script>', count: 1 }] })],
 });
 
+// The founder's three-part shape, all sections live at once: the four-way
+// check (part 1) on a day older than the one reported, and the ageing list
+// (part 3) with one day the sweep could not refresh. This is the fixture that
+// puts the new sections under the anti-drift, vocabulary and placeholder tests.
+const threePart = digest({
+  totals: { movements: 503, tier1: 9, tier2: 187, tier3: 145, open: 341 },
+  cities: [
+    city({ city: "DELHI", movements: 147, tier1: 5, tier2: 96, tier3: 60, open: 161, topRisk: { label: "Off-System Movement", count: 5, team: "Warehouse team" } }),
+    city({ city: "BANGALORE", movements: 121, tier1: 4, tier2: 60, tier3: 52, open: 116 }),
+    city({ city: "MUMBAI", movements: 172, register: "off", weekOff: "full" }),
+  ],
+  actions: [action({ label: "Off-System Movement", count: 7, cities: [{ city: "DELHI", count: 5 }, { city: "BANGALORE", count: 2 }] })],
+  informational: [{ label: "Odoo Posting Delay", count: 116 }],
+  coverage: {
+    date: "2026-07-28",
+    cities: [
+      {
+        city: "DELHI",
+        total: 150,
+        byCount: [23, 62, 29, 36],
+        missing: { P: 51, S: 10, D: 40, O: 12 },
+        reported: { P: true, S: true, D: true, O: true },
+        inbound: { total: 75, all4: 12 },
+        outbound: { total: 75, all4: 11 },
+      },
+      {
+        city: "BANGALORE",
+        total: 131,
+        byCount: [39, 56, 18, 18],
+        missing: { P: 54, S: 8, D: 61, O: 9 },
+        reported: { P: true, S: true, D: true, O: true },
+        inbound: { total: 64, all4: 0 },
+        outbound: { total: 67, all4: 39 },
+      },
+      {
+        city: "HYDERABAD",
+        total: 31,
+        byCount: [0, 0, 20, 11],
+        missing: { P: 31, S: 31, D: 5, O: 2 },
+        reported: { P: false, S: false, D: true, O: true },
+        inbound: { total: 16, all4: 0 },
+        outbound: { total: 15, all4: 0 },
+      },
+    ],
+  },
+  ageing: {
+    total: 23,
+    overAWeek: 11,
+    staleDates: ["2026-07-23"],
+    cities: [
+      { city: "DELHI", items: 14, oldestDays: 9, kinds: [{ label: "System-Only Entry", count: 8 }, { label: "Register Gap", count: 6 }], otherKinds: 0 },
+      { city: "BANGALORE", items: 6, oldestDays: 4, kinds: [{ label: "Unclosed Return", count: 4 }], otherKinds: 2 },
+      { city: "PUNE", items: 3, oldestDays: 3, kinds: [{ label: "Odoo Entry Missing", count: 3 }], otherKinds: 0 },
+    ],
+  },
+});
+
 const FIXTURES: [string, DigestData][] = [
   ["richDay", richDay],
   ["quietDay", quietDay],
@@ -106,6 +163,7 @@ const FIXTURES: [string, DigestData][] = [
   ["preMigration", preMigration],
   ["allOff", allOff],
   ["hostile", hostile],
+  ["threePart", threePart],
 ];
 
 const stripTags = (html: string) =>
@@ -177,8 +235,13 @@ describe("digest — vocabulary", () => {
 // ─── budget, escaping, subject ───────────────────────────────────────────────
 
 describe("digest — budget", () => {
-  it("the busiest realistic day stays within the word budget", () => {
-    const words = renderDigestText(richDay, URL).trim().split(/\s+/).filter(Boolean).length;
+  // EVERY fixture, not just the rich day. The budget is enforced by trimToBudget
+  // gating on a computed render overhead, and the terms that overhead counts
+  // (table columns, list items, bar rows) grow with content — so the shape most
+  // likely to breach is whichever fixture has the most of them, not whichever
+  // has the most prose.
+  it.each(FIXTURES)("stays within the word budget (%s)", (_name, d) => {
+    const words = renderDigestText(d, URL).trim().split(/\s+/).filter(Boolean).length;
     expect(words, `rendered ${words} words`).toBeLessThanOrEqual(WORD_BUDGET);
   });
 
@@ -262,10 +325,61 @@ describe("digest — the incomplete run outranks everything", () => {
   });
 });
 
+describe("digest — the founder's three parts", () => {
+  const text = () => renderDigestText(threePart, URL);
+
+  it("renders all three numbered parts, in order", () => {
+    const t = text();
+    const one = t.indexOf("1 · FOUR-WAY CHECK");
+    const two = t.indexOf("2 · AT RISK, BY CITY");
+    const three = t.indexOf("3 · OPEN MORE THAN TWO DAYS");
+    expect(one).toBeGreaterThan(-1);
+    expect(two).toBeGreaterThan(one);
+    expect(three).toBeGreaterThan(two);
+  });
+
+  it("draws a bar whose segments sum to the full width", () => {
+    // The plaintext bar is structure, so no test can read its meaning — but a
+    // bar that does not fill its width is a rounding bug that shows on screen.
+    const bars = text()
+      .split("\n")
+      .filter((l) => /^\s+[█▓▒░]+$/.test(l));
+    expect(bars.length).toBeGreaterThan(0);
+    for (const b of bars) expect(b.trim().length).toBe(44);
+  });
+
+  it("never states a four-way pass RATE", () => {
+    // 23 of 150 is 15%, while that same day put 9 units of 503 at risk. A
+    // percentage here reads as "85% of stock is missing", which is false.
+    expect(text()).not.toMatch(/\b\d+% (of )?(units )?(pass|passed|traced|agree)/i);
+  });
+
+  it("names the day it measured when it is not the day reported", () => {
+    expect(text()).toContain("28 July 2026 is the most recent day with all four records in");
+  });
+
+  it("excludes a day the sweep could not re-check, and says so", () => {
+    // Silence here would let an un-rechecked day read as "nothing outstanding".
+    expect(text()).toContain("23 Jul could not be re-checked today");
+  });
+
+  it("keeps the ageing counts and their ages", () => {
+    const t = text();
+    expect(t).toContain("23 in total, 11 of them older than a week.");
+    expect(t).toMatch(/Delhi\s+14\s+9d/);
+  });
+});
+
 describe("digest — model snapshot", () => {
   // Snapshot the MODEL, not the HTML: a colour tweak should not churn this, and
   // the diff a reviewer reads is "what the email says".
   it("richDay", () => {
     expect(buildSections(richDay, { dashboardUrl: URL })).toMatchSnapshot();
+  });
+
+  // Pins the three-part shape: section ids and order, the bar segments, and the
+  // exact wording of the four-way legend and the un-rechecked-day line.
+  it("threePart", () => {
+    expect(buildSections(threePart, { dashboardUrl: URL })).toMatchSnapshot();
   });
 });
