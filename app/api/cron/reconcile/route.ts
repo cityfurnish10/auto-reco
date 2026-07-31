@@ -64,6 +64,15 @@ async function handle(req: NextRequest) {
   const explicitDate = req.nextUrl.searchParams.get("date");
   const runDate = explicitDate || reconcileTargetDate();
   const trigger = req.method === "POST" ? "manual" : "cron";
+  // Opt out of the OCR step on a targeted re-run. The pg_cron ageing sweep
+  // (migration 0018) re-reconciles D-2 .. D-7 every afternoon, and a register
+  // still unprocessed days later has failed repeatedly — 10 uploads x 55s of
+  // Azure polling inside a 60s function is a tail risk with no upside. Same
+  // reasoning the scheduled second pass below already applies to itself.
+  //
+  // Ignored without an explicit ?date=: the primary pass MUST do its OCR, and a
+  // stray query param should never be able to quietly disable it.
+  const skipOcr = !!explicitDate && req.nextUrl.searchParams.get("skipOcr") !== null;
   // THE definition of "this is the untouched scheduled pass". Used for the run's
   // recorded role AND for the re-check gate below, so the two cannot drift — this
   // predicate was spelled out twice, and the file's own comment records that the
@@ -78,6 +87,7 @@ async function handle(req: NextRequest) {
   const result = await runReconcilePipeline(db, {
     runDate,
     trigger,
+    skipOcr,
     role: scheduled ? "primary" : "adhoc",
   });
 
