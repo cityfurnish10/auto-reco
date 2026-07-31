@@ -11,7 +11,8 @@ import type { Bucket, Priority, VarianceDB, VarianceStatus } from "@/lib/db/sche
 import CloseVarianceModal, { type ClosureReason } from "./close-variance-modal";
 import VarianceDetailModal from "./variance-detail-modal";
 import VarianceListModal, { type ListModalRequest } from "./variance-list-modal";
-import { closedPartOfWindow, isCityOff } from "@/lib/engine/schedule";
+import { isCityClosed } from "@/lib/engine/schedule";
+import { addDays } from "@/lib/engine/dates";
 import { queueCaption, rateCaption } from "@/lib/ui/stat-captions";
 import {
   PRIORITY_BADGE,
@@ -301,14 +302,15 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
       {/* Weekly-off notice on the off date itself; on the day BEFORE, the note
           is about the register schedule instead — the book is handed over after
           the holiday, so this board completes a day later than usual. */}
-      {stats?.run && (isCityOff(city, stats.run.business_date) ||
-        closedPartOfWindow(city, stats.run.business_date)) && (
+      {stats?.run && (isCityClosed(city, stats.run.business_date, stats.calendar) ||
+        (!isCityClosed(city, stats.run.business_date, stats.calendar) &&
+          isCityClosed(city, addDays(stats.run.business_date, 1), stats.calendar))) && (
         <div className="card p-4 flex items-center gap-3 border-l-[3px] border-l-border">
           <Icon name="event_busy" size={20} className="text-text-muted shrink-0" />
           <p className="text-sm text-text-secondary">
-            {isCityOff(city, stats.run.business_date) ? (
+            {isCityClosed(city, stats.run.business_date, stats.calendar) ? (
               <>
-                <b>{stats.run.business_date}</b> was your weekly off — no gate register, ops sheet
+                <b>{stats.run.business_date}</b> was your day off — no gate register, ops sheet
                 or delivery-app entries are expected for this day.
               </>
             ) : (

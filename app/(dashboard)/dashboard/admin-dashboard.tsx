@@ -22,7 +22,8 @@ import { errText, useToast } from "@/components/toast";
 import CloseVarianceModal from "./close-variance-modal";
 import VarianceDetailModal from "./variance-detail-modal";
 import VarianceListModal, { type ListModalRequest } from "./variance-list-modal";
-import { closedPartOfWindow, isCityOff } from "@/lib/engine/schedule";
+import { isCityClosed } from "@/lib/engine/schedule";
+import { addDays } from "@/lib/engine/dates";
 import { cityRateLine, queueCaption, rateCaption } from "@/lib/ui/stat-captions";
 import {
   PRIORITY_BADGE,
@@ -537,13 +538,19 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               // Weekly holiday: the warehouse was closed — neutral border + OFF
               // badge so empty numbers read as "expected", not as a data gap.
               // ONE badge per week, on the off date only (the owner's rule).
-              const off = isCityOff(c.city as City, stats.run?.business_date ?? "");
-              // The day BEFORE the off day: the city works this whole board, but
-              // its guard register is handed over AFTER the holiday — Wednesday's
-              // book from a Thursday-off warehouse arrives Friday. That is a
-              // schedule, not a gap, and it gets its own chip rather than a
-              // second week-off badge.
-              const registerDue = closedPartOfWindow(c.city as City, stats.run?.business_date ?? "");
+              // CALENDAR-AWARE (migration 0019): the delivery app's own
+              // weekly-off rules plus its 27 one-off holidays, mirrored into
+              // Supabase each run. Null calendar = pre-0019 database, and
+              // isCityClosed then falls back to the hardcoded Thursday map, so
+              // this line is correct on every vintage of database.
+              const bd = stats.run?.business_date ?? "";
+              const off = bd !== "" && isCityClosed(c.city as City, bd, stats.calendar);
+              const isHoliday = off && !!stats.calendar?.holidays?.[c.city]?.includes(bd);
+              // The day BEFORE a closure: the city works this whole board, but
+              // its guard register is handed over AFTER the day off — the book
+              // from a Thursday-off warehouse arrives Friday. A schedule, not a
+              // gap, so it gets its own chip rather than a closure badge.
+              const registerDue = bd !== "" && !off && isCityClosed(c.city as City, addDays(bd, 1), stats.calendar);
               return (
               <div
                 key={c.city}
@@ -557,9 +564,13 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     {off && (
                       <span
                         className="badge badge-suppressed uppercase"
-                        title="Weekly off — the warehouse was shut, so no gate register, ops sheet or delivery-app entries are expected for this day"
+                        title={
+                          isHoliday
+                            ? "Holiday — the delivery app's calendar marks this warehouse shut on this date, so no floor entries are expected"
+                            : "Weekly off — the warehouse was shut, so no gate register, ops sheet or delivery-app entries are expected for this day"
+                        }
                       >
-                        Week off
+                        {isHoliday ? "Holiday" : "Week off"}
                       </span>
                     )}
                     {!off && registerDue && (
@@ -577,7 +588,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 </div>
                 <div className="text-xs text-text-muted">
                   {off ? (
-                    <span>Weekly off — the warehouse was shut, so nothing is expected</span>
+                    <span>
+                      {isHoliday ? "Holiday" : "Weekly off"} — the warehouse was shut, so nothing
+                      is expected
+                    </span>
                   ) : (
                     <>
                       <span className="text-danger font-semibold">{cityRateLine(c)}</span>{" · "}

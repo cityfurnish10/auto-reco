@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { foldCalendar, parseDmy } from "../../lib/connectors/warehouse-calendar";
-import { isCityClosed, lastWorkingDay } from "../../lib/engine/schedule";
+import { isCityClosed, lastWorkingDay, nextWorkingDay, registerDueOn } from "../../lib/engine/schedule";
 
 // The real rows, verified live against the delivery app on 2026-07-31.
 const WEEKLY = [
@@ -128,5 +128,37 @@ describe("lastWorkingDay — the register handover model", () => {
   it("returns null rather than looping when a city is shut a fortnight", () => {
     const always = { weeklyOff: { MUMBAI: [0, 1, 2, 3, 4, 5, 6] }, holidays: {} };
     expect(lastWorkingDay("MUMBAI", "2026-07-30", always)).toBeNull();
+  });
+});
+
+describe("registerDueOn — the one definition of when a book arrives", () => {
+  const cal = foldCalendar(WEEKLY, HOLIDAYS);
+
+  it("is simply the next day for a city that works tomorrow", () => {
+    expect(registerDueOn("DELHI", "2026-07-30", cal)).toBe("2026-07-31");
+    expect(registerDueOn("PUNE", "2026-07-28", cal)).toBe("2026-07-29");
+  });
+
+  it("skips the weekly off: Wednesday's book from a Thursday-off city lands Friday", () => {
+    expect(registerDueOn("MUMBAI", "2026-07-29", cal)).toBe("2026-07-31");
+  });
+
+  it("moves another day when a holiday stacks against the weekly off", () => {
+    // Thursday off by rule, Friday shut by holiday: Wednesday's book lands
+    // Saturday. The old "+2" literal would have said Friday and been wrong.
+    const stacked = foldCalendar(WEEKLY, [
+      { date: "31/7/2026", status: true, city: ["Mumbai"] },
+    ]);
+    expect(registerDueOn("MUMBAI", "2026-07-29", stacked)).toBe("2026-08-01");
+  });
+
+  it("gives null rather than a guess for a city shut a fortnight", () => {
+    const always = { weeklyOff: { MUMBAI: [0, 1, 2, 3, 4, 5, 6] }, holidays: {} };
+    expect(registerDueOn("MUMBAI", "2026-07-29", always)).toBeNull();
+  });
+
+  it("nextWorkingDay includes `from` itself when the city works that day", () => {
+    expect(nextWorkingDay("MUMBAI", "2026-07-31", cal)).toBe("2026-07-31");
+    expect(nextWorkingDay("MUMBAI", "2026-07-30", cal)).toBe("2026-07-31"); // Thu shut
   });
 });

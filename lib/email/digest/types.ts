@@ -100,6 +100,13 @@ export interface HandoverRow {
   shutSince: boolean;
   /** Whether that day's register has reached us. */
   state: RegisterState;
+  /**
+   * When that book is handed over — the next working day after lastWorkingDay.
+   * On this table a book can never be LATE: the newest owed register is always
+   * due on or after the day the email is read, which is why the section renders
+   * an absent one as "Due Friday" and never as "Not received".
+   */
+  dueOn: string | null;
 }
 
 export interface DigestData {
@@ -130,6 +137,16 @@ export interface DigestData {
    * register every week, on schedule, for a book nobody was going to hand over.
    */
   handover?: HandoverRow[];
+  /**
+   * The closure calendar behind the handover model (migration 0019), so the
+   * renderer can compute due dates for OTHER dates too — e.g. the four-way
+   * chart, which reports an older day. Null on a pre-0019 database; every
+   * consumer falls back to the hardcoded map.
+   */
+  calendar?: {
+    weeklyOff: Record<string, number[]>;
+    holidays: Record<string, string[]>;
+  } | null;
   /**
    * The four-way check — part one of the email.
    *

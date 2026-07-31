@@ -295,6 +295,15 @@ export interface StatsResponse {
     completed_at: string | null;
   } | null;
   usedFallbackRun: boolean;
+  /**
+   * The closure calendar mirrored from the delivery app (migration 0019).
+   * Null on a pre-0019 database — pass it straight to isCityClosed /
+   * lastWorkingDay, which fall back to the hardcoded map on null.
+   */
+  calendar: {
+    weeklyOff: Record<string, number[]>;
+    holidays: Record<string, string[]>;
+  } | null;
   byCity: CityAgg[];
   overall: CityAgg;
 }

@@ -108,6 +108,50 @@ export function lastWorkingDay(
 }
 
 /**
+ * The first business date on or after `from` that this city works.
+ * Same walk as lastWorkingDay, pointed forwards; same 14-day bound.
+ */
+export function nextWorkingDay(
+  city: City,
+  from: string,
+  cal?: ClosureCalendar | null
+): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from ?? "")) return null;
+  const start = Date.parse(`${from}T00:00:00Z`);
+  if (!Number.isFinite(start)) return null;
+  for (let i = 0; i <= MAX_CLOSURE_RUN; i++) {
+    const d = new Date(start + i * 86400_000).toISOString().slice(0, 10);
+    if (!isCityClosed(city, d, cal)) return d;
+  }
+  return null;
+}
+
+/**
+ * When the register for a business date is actually handed over.
+ *
+ * Date D's window shuts at 15:00 on D+1, so the guard rules the book off and
+ * hands it over on D+1 — unless nobody is at the gate that day, in which case
+ * it waits for the next day someone is. This is the ONE definition of "due";
+ * every "+2 on the day before an off day" scattered through the email was an
+ * approximation of it, and each of those approximations was wrong for a
+ * holiday stacked against the weekly off.
+ *
+ *   registerDueOn(MUMBAI, Wed) = Fri   (Thu shut)
+ *   registerDueOn(DELHI,  Thu) = Fri   (ordinary +1)
+ */
+export function registerDueOn(
+  city: City,
+  businessDate: string,
+  cal?: ClosureCalendar | null
+): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate ?? "")) return null;
+  const next = new Date(Date.parse(`${businessDate}T00:00:00Z`) + 86400_000)
+    .toISOString()
+    .slice(0, 10);
+  return nextWorkingDay(city, next, cal);
+}
+
+/**
  * Was this city shut for PART of the business window, without the window itself
  * being its off day?
  *

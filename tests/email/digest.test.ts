@@ -265,11 +265,15 @@ describe("digest — budget", () => {
     // is not missing — it is handed over on Friday, after the holiday, and the
     // cell says which day rather than raising an alarm that fires every week.
     const d = digest({
+      // A real Wednesday, so "delayed" is coherent: Mumbai works this board,
+      // Thursday is its off day, and the book lands Friday. The old fixture
+      // forced delayed onto a Sunday and pinned the "+2" approximation
+      // ("Due Tuesday") — the true handover day for a Sunday book is Monday,
+      // which is exactly why the +2 literal had to go.
+      date: "2026-07-29",
       totals: { movements: 100, tier1: 1, tier2: 0, tier3: 0, open: 1 },
       cities: [
-        // The Wednesday shape: working day, register due after tomorrow's off.
         city({ city: "MUMBAI", tier1: 1, open: 1, register: "delayed" }),
-        // The Thursday shape: the off day itself.
         city({ city: "PUNE", weekOff: "full", register: "off" }),
         city({ city: "DELHI" }),
       ],
@@ -278,8 +282,7 @@ describe("digest — budget", () => {
     expect(text).not.toContain("Mumbai (week off)");
     expect(text).toContain("Pune (week off)");
     expect(text).not.toContain("Delhi (week off)");
-    // digest() dates the board 2026-07-26; handover lands two days on.
-    expect(text).toContain("Due Tuesday");
+    expect(text).toContain("Due Friday");
     expect(text).not.toContain("Not received");
   });
 });
@@ -390,6 +393,45 @@ describe("digest — the founder's three parts", () => {
     expect(t).toMatch(/CITY\s+24 JUL\s+25 JUL\s+26 JUL\s+27 JUL\s+28 JUL\s+TOTAL/);
     expect(t).toMatch(/Delhi\s+12\s+0\s+1\s+0\s+1\s+14/); // the hot row
     expect(t).toMatch(/All cities\s+15\s+1\s+4\s+2\s+1\s+23/); // the column totals
+  });
+});
+
+describe("digest — the register handover table", () => {
+  // The Thursday board, sent Friday: Delhi and Bangalore worked Thursday and
+  // their books land Friday; the three Thursday-off cities last worked
+  // Wednesday, and Hyderabad's book is still on its way.
+  const friday = digest({
+    date: "2026-07-30",
+    handover: [
+      { city: "BANGALORE", lastWorkingDay: "2026-07-30", shutSince: false, state: "missing", dueOn: "2026-07-31" },
+      { city: "DELHI", lastWorkingDay: "2026-07-30", shutSince: false, state: "missing", dueOn: "2026-07-31" },
+      { city: "HYDERABAD", lastWorkingDay: "2026-07-29", shutSince: true, state: "delayed", dueOn: "2026-07-31" },
+      { city: "MUMBAI", lastWorkingDay: "2026-07-29", shutSince: true, state: "received", dueOn: "2026-07-31" },
+      { city: "PUNE", lastWorkingDay: "2026-07-29", shutSince: true, state: "received", dueOn: "2026-07-31" },
+    ],
+  });
+
+  it("names each city's own last working day", () => {
+    const t = renderDigestText(friday, URL);
+    expect(t).toMatch(/Bangalore\s+Thu 30 Jul/);
+    expect(t).toMatch(/Hyderabad\s+Wed 29 Jul/);
+  });
+
+  it("NEVER calls an owed book late — it says when it arrives", () => {
+    // Every register on this table is due on or after the day the email is
+    // read, because the newest owed book's handover day follows the closure.
+    // "Not received" (danger) would accuse a warehouse that is on schedule.
+    const t = renderDigestText(friday, URL);
+    const section = t.split("REGISTER HANDOVER")[1].split("1 ·")[0];
+    expect(section).toContain("Due Friday");
+    expect(section).not.toContain("Not received");
+    expect(section).toContain("Received");
+  });
+
+  it("appears in both renders, like everything else", () => {
+    const html = renderDigestHtml(friday, URL);
+    expect(html).toContain("Register handover");
+    expect(html).toContain("Due Friday");
   });
 });
 

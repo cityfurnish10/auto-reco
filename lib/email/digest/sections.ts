@@ -23,7 +23,7 @@ import type { BarRow, Block, Heat, Section } from "./model";
 import { renderText } from "./render-text";
 import type { ActionItem, CityDigestRow, DigestData, HandoverRow, RegisterState } from "./types";
 import { directionSkew, fullyReported, SOURCE_NAME, topMissing, type SourceKey } from "./coverage";
-import { closedPartOfWindow, isCityOff } from "../../engine/schedule";
+import { isCityOff, registerDueOn } from "../../engine/schedule";
 import { addDays } from "../../engine/dates";
 import type { City } from "../../sample-data";
 import { LOOKBACK_DAYS } from "./ageing";
@@ -162,8 +162,15 @@ function handoverSection(data: DigestData): Section | null {
     if (h.state === "received") return { text: "Received", tone: "good" };
     if (h.state === "failed") return { text: "Unreadable", tone: "danger" };
     if (h.state === "pending") return { text: "Not read yet", tone: "warn" };
-    if (h.state === "delayed") return { text: "Due after day off", tone: "muted" };
-    return { text: "Not received", tone: "danger" };
+    // An absent book here is NEVER "Not received". This table shows each city's
+    // newest owed register, and that book's handover day is always on or after
+    // the day this email is read — so at read time it is on its way, not late.
+    // "Not received" (danger) belongs to the by-city table, which judges the
+    // reported date; here the honest statement is when the book arrives.
+    return {
+      text: h.dueOn ? `Due ${weekdayName(h.dueOn)}` : "Due after day off",
+      tone: "muted",
+    };
   };
 
   return {
@@ -294,9 +301,15 @@ function coverageSection(data: DigestData): Section | null {
       // alarm that cries wolf on schedule.
       badge: !down.includes("P")
         ? { text: "Guard ✓", tone: "good" }
-        : closedPartOfWindow(c.city as City, cov.date)
-          ? { text: `Guard due ${weekdayName(addDays(cov.date, 2)).slice(0, 3)}`, tone: "muted" }
-          : { text: "No guard", tone: "muted" },
+        : (() => {
+            // The exact handover day from the calendar, not "+2": a holiday
+            // stacked against the weekly off pushes the book another day, and
+            // the badge must move with it.
+            const due = registerDueOn(c.city as City, cov.date, data.calendar);
+            return due && due > addDays(cov.date, 1)
+              ? { text: `Guard due ${weekdayName(due).slice(0, 3)}`, tone: "muted" as const }
+              : { text: "No guard", tone: "muted" as const };
+          })(),
       caption: parts.join(" · "),
       segments: [
         { tone: "good", value: four },
@@ -490,7 +503,8 @@ function openingLine(d: DigestData, registerShort: boolean): string {
 function citySnapshot(
   cities: CityDigestRow[],
   footnote: string | null,
-  businessDate?: string
+  businessDate?: string,
+  calendar?: DigestData["calendar"]
 ): Block {
   const rows = cities.map((c) => [
     // The marker rides the CITY cell, not the register column. The register cell
@@ -513,7 +527,9 @@ function citySnapshot(
       // is also why it renders muted rather than danger.
       text:
         c.register === "delayed" && businessDate
-          ? `Due ${weekdayName(addDays(businessDate, 2))}`
+          ? `Due ${weekdayName(
+              registerDueOn(c.city as City, businessDate, calendar) ?? addDays(businessDate, 2)
+            )}`
           : REGISTER_TEXT[c.register],
       tone: c.register === "missing" || c.register === "failed" ? ("danger" as const)
         : c.register === "pending" ? ("warn" as const)
@@ -692,7 +708,7 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
     sections.push({
       id: "cities",
       title: "2 · At risk, by city",
-      blocks: [citySnapshot(data.cities, null, data.date)],
+      blocks: [citySnapshot(data.cities, null, data.date, data.calendar)],
     });
   }
 

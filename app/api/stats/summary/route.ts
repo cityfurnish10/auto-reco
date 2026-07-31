@@ -263,6 +263,31 @@ export async function GET(req: NextRequest) {
     /* ledger unavailable — the source story is simply not shown */
   }
 
+  // The closure calendar (migration 0019), mirrored from the delivery app by
+  // the reconcile pipeline. RLS grants SELECT to any signed-in user. Null when
+  // the table is absent or empty — the dashboards then fall back to the
+  // hardcoded WEEKLY_OFF_DAY map, exactly like the email builder does.
+  let calendar: {
+    weeklyOff: Record<string, number[]>;
+    holidays: Record<string, string[]>;
+  } | null = null;
+  try {
+    const { data: calRows, error: calErr } = await supabase
+      .from("warehouse_calendar")
+      .select("city, weekday, holiday_date");
+    if (!calErr && calRows && calRows.length > 0) {
+      const weeklyOff: Record<string, number[]> = {};
+      const holidays: Record<string, string[]> = {};
+      for (const r of calRows as { city: string; weekday: number | null; holiday_date: string | null }[]) {
+        if (r.weekday !== null && r.weekday !== undefined) (weeklyOff[r.city] ??= []).push(r.weekday);
+        else if (r.holiday_date) (holidays[r.city] ??= []).push(r.holiday_date);
+      }
+      calendar = { weeklyOff, holidays };
+    }
+  } catch {
+    /* pre-0019 database — the clients use the hardcoded map */
+  }
+
   return NextResponse.json({
     run: {
       id: run.id,
@@ -273,6 +298,7 @@ export async function GET(req: NextRequest) {
       completed_at: run.completed_at,
     },
     usedFallbackRun,
+    calendar,
     byCity: [...byCityMap.values()].sort((a, b) => a.city.localeCompare(b.city)),
     overall,
   });
