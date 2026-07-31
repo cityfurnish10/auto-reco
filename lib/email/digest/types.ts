@@ -24,7 +24,17 @@ export interface CityMovementCounts {
  * three different people: nobody uploaded it, nobody has read it yet, or the
  * reading service failed.
  */
-export type RegisterState = "received" | "missing" | "pending" | "failed" | "off";
+export type RegisterState =
+  | "received"
+  | "missing"
+  // Not here YET, and expected: the city's weekly off sits between this
+  // business date and its register handover, so the book arrives a day later
+  // than usual. Wednesday's register for a Thursday-off city lands on Friday.
+  // "missing" is an alarm; this is a schedule.
+  | "delayed"
+  | "pending"
+  | "failed"
+  | "off";
 
 /** One line of the "Do this today" list — a risk kind, summed across cities. */
 export interface ActionItem {
@@ -61,14 +71,15 @@ export interface CityDigestRow {
   topRisk: { label: string; count: number; team: string } | null;
   counts?: CityMovementCounts;
   /**
-   * The weekly holiday falls inside this business day.
+   * "full" when the business date IS the city's weekly off day.
    *
-   * "full" — the business date IS the city's off day.
-   * "partial" — the date is the day BEFORE, whose morning half is the holiday.
-   * Both are marked, because a business day runs 3pm to 3pm and a one-day
-   * closure therefore sits inside two of them.
+   * ONE badge per week, on that date only. The holiday also occupies half of the
+   * neighbouring business window (a business day runs 3pm to 3pm), but the
+   * owner's rule is the calendar's: one day off, one row marked. The knock-on —
+   * the register arriving a day later — is carried by `register: "delayed"`,
+   * not by a second badge.
    */
-  weekOff?: "full" | "partial" | null;
+  weekOff?: "full" | null;
   /**
    * How this city's at-risk count compares with its own recent comparable days.
    *

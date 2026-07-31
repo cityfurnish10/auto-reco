@@ -298,11 +298,9 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
         />
       )}
 
-      {/* Weekly-off notice — the reported day was this warehouse's holiday */}
-      {/* Fires on BOTH shapes of closure. A business day runs 3pm to 3pm, so the
-          weekly holiday falls inside two of them: its own board, and the board of
-          the day before, whose morning half is the holiday. The manager kept
-          seeing an unmarked Wednesday while half that window was their day off. */}
+      {/* Weekly-off notice on the off date itself; on the day BEFORE, the note
+          is about the register schedule instead — the book is handed over after
+          the holiday, so this board completes a day later than usual. */}
       {stats?.run && (isCityOff(city, stats.run.business_date) ||
         closedPartOfWindow(city, stats.run.business_date)) && (
         <div className="card p-4 flex items-center gap-3 border-l-[3px] border-l-border">
@@ -315,9 +313,9 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
               </>
             ) : (
               <>
-                Your weekly off falls inside <b>{stats.run.business_date}</b>. A business day runs
-                3pm to 3pm, so this one covers the morning of your day off — the figures below cover
-                the open half only.
+                Tomorrow is your weekly off, so the guard register for{" "}
+                <b>{stats.run.business_date}</b> is handed over the day after. These figures fill in
+                then — an absent register today is on schedule, not overdue.
               </>
             )}
           </p>

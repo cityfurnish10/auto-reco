@@ -24,6 +24,7 @@ import { renderText } from "./render-text";
 import type { ActionItem, CityDigestRow, DigestData, RegisterState } from "./types";
 import { directionSkew, fullyReported, SOURCE_NAME, topMissing, type SourceKey } from "./coverage";
 import { closedPartOfWindow, isCityOff } from "../../engine/schedule";
+import { addDays } from "../../engine/dates";
 import type { City } from "../../sample-data";
 import { LOOKBACK_DAYS } from "./ageing";
 
@@ -46,10 +47,18 @@ export function fmtDateShort(d: string): string {
   return `${day} ${months[m - 1]}`;
 }
 
+const WEEKDAY = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+function weekdayName(d: string): string {
+  const [y, m, day] = d.split("-").map(Number);
+  return y && m && day ? WEEKDAY[new Date(Date.UTC(y, m - 1, day)).getUTCDay()] : "";
+}
+
 const REGISTER_TEXT: Record<RegisterState, string> = {
   received: "Received",
   // Three different asks of three different people, so three different words.
   missing: "Not received",
+  // Overridden with the actual weekday where the date is known — "Due Friday".
+  delayed: "Due after day off",
   pending: "Not read yet",
   // "Reading failed" reads as if the guard failed. It was our scanner, and
   // the owner does not need to know which.
@@ -160,13 +169,11 @@ function coverageSection(data: DigestData): Section | null {
 
   for (const c of ordered) {
     const off = isCityOff(c.city as City, cov.date);
-    // A business day runs 3pm to 3pm, so a one-day closure lands inside TWO
-    // business dates and a city can be shut for HALF the window while still
-    // moving stock in the other half. Part 2's table already marks those
-    // "(week off)"; without the same test here the same city is charted as a
-    // working warehouse that lost its register, and one email describes it two
-    // different ways.
-    const partly = closedPartOfWindow(c.city as City, cov.date);
+    // The badge tracks the OFF DAY ITSELF and nothing else, matching part two.
+    // Marking the day before as well — its morning half is the holiday — put the
+    // badge on two rows in one week, which is not how the warehouses run. A city
+    // whose off day IS this date is handled by the `off` branch above and never
+    // reaches the chart, so nothing here can be a week-off row.
     if (off) {
       rows.push({
         label: cityName(c.city),
@@ -188,12 +195,8 @@ function coverageSection(data: DigestData): Section | null {
     // easier than across four, so a rate would render an outage as an
     // improvement. This chart shows counts, names the absent book on the city
     // itself, and repeats the reason under the plot.
-    if (!fullyReported(c)) {
-      // Two different reasons for a missing column, and they must not be
-      // conflated: a shut warehouse SHOULD have no register, an open one that
-      // did not file has a problem.
-      if (!partly) noGreen.push(cityName(c.city));
-    } else scored++;
+    if (!fullyReported(c)) noGreen.push(cityName(c.city));
+    else scored++;
 
     const miss = topMissing(c);
     const parts = [
@@ -220,11 +223,9 @@ function coverageSection(data: DigestData): Section | null {
     rows.push({
       label: cityName(c.city),
       sub: `${n(c.total)} moved`,
-      badge: partly
-        ? { text: "Week off", tone: "muted" }
-        : down.includes("P")
-          ? { text: "No guard", tone: "muted" }
-          : { text: "Guard ✓", tone: "good" },
+      badge: down.includes("P")
+        ? { text: "No guard", tone: "muted" }
+        : { text: "Guard ✓", tone: "good" },
       caption: parts.join(" · "),
       segments: [
         { tone: "good", value: four },
@@ -416,7 +417,11 @@ function openingLine(d: DigestData, registerShort: boolean): string {
 
 const TREND_TEXT = { worse: "Worse", usual: "Usual", better: "Better" } as const;
 
-function citySnapshot(cities: CityDigestRow[], footnote: string | null): Block {
+function citySnapshot(
+  cities: CityDigestRow[],
+  footnote: string | null,
+  businessDate?: string
+): Block {
   const rows = cities.map((c) => [
     // The marker rides the CITY cell, not the register column. The register cell
     // already reads "Weekly off" on a full off day, but on the day BEFORE — whose
@@ -441,7 +446,14 @@ function citySnapshot(cities: CityDigestRow[], footnote: string | null): Block {
         : ("muted" as const),
     },
     {
-      text: REGISTER_TEXT[c.register],
+      // "delayed" names the actual handover day: the city's weekly off sits
+      // between this board and the register, so Wednesday's book from a
+      // Thursday-off warehouse is DUE FRIDAY — a schedule, not an alarm, which
+      // is also why it renders muted rather than danger.
+      text:
+        c.register === "delayed" && businessDate
+          ? `Due ${weekdayName(addDays(businessDate, 2))}`
+          : REGISTER_TEXT[c.register],
       tone: c.register === "missing" || c.register === "failed" ? ("danger" as const)
         : c.register === "pending" ? ("warn" as const)
         : ("muted" as const),
@@ -614,7 +626,7 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
     sections.push({
       id: "cities",
       title: "2 · At risk, by city",
-      blocks: [citySnapshot(data.cities, null)],
+      blocks: [citySnapshot(data.cities, null, data.date)],
     });
   }
 

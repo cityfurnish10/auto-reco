@@ -259,21 +259,28 @@ describe("digest — budget", () => {
     expect(words, `rendered ${words} words`).toBeLessThanOrEqual(WORD_BUDGET);
   });
 
-  it("marks a city whose weekly off falls inside the business day", () => {
-    // Both shapes: the date that IS the holiday, and the day before, whose
-    // morning half is. A business day runs 3pm to 3pm.
+  it("badges ONE date per week and schedules the late register on its neighbour", () => {
+    // The week per the owner: Thursday is the off day, so only the Thursday
+    // board carries "(week off)". The Wednesday board's register from that city
+    // is not missing — it is handed over on Friday, after the holiday, and the
+    // cell says which day rather than raising an alarm that fires every week.
     const d = digest({
       totals: { movements: 100, tier1: 1, tier2: 0, tier3: 0, open: 1 },
       cities: [
-        city({ city: "MUMBAI", tier1: 1, open: 1, weekOff: "partial" }),
+        // The Wednesday shape: working day, register due after tomorrow's off.
+        city({ city: "MUMBAI", tier1: 1, open: 1, register: "delayed" }),
+        // The Thursday shape: the off day itself.
         city({ city: "PUNE", weekOff: "full", register: "off" }),
         city({ city: "DELHI" }),
       ],
     });
     const text = renderDigestText(d, URL);
-    expect(text).toContain("Mumbai (week off)");
+    expect(text).not.toContain("Mumbai (week off)");
     expect(text).toContain("Pune (week off)");
     expect(text).not.toContain("Delhi (week off)");
+    // digest() dates the board 2026-07-26; handover lands two days on.
+    expect(text).toContain("Due Tuesday");
+    expect(text).not.toContain("Not received");
   });
 });
 

@@ -536,11 +536,14 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             {stats.byCity.map((c) => {
               // Weekly holiday: the warehouse was closed — neutral border + OFF
               // badge so empty numbers read as "expected", not as a data gap.
+              // ONE badge per week, on the off date only (the owner's rule).
               const off = isCityOff(c.city as City, stats.run?.business_date ?? "");
-              // A business date runs 3pm to 3pm, so a one-day closure lands
-              // inside TWO of them. isCityOff only sees the first; this catches
-              // the day BEFORE, whose morning half was the holiday.
-              const partial = closedPartOfWindow(c.city as City, stats.run?.business_date ?? "");
+              // The day BEFORE the off day: the city works this whole board, but
+              // its guard register is handed over AFTER the holiday — Wednesday's
+              // book from a Thursday-off warehouse arrives Friday. That is a
+              // schedule, not a gap, and it gets its own chip rather than a
+              // second week-off badge.
+              const registerDue = closedPartOfWindow(c.city as City, stats.run?.business_date ?? "");
               return (
               <div
                 key={c.city}
@@ -551,22 +554,20 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 <div className="flex justify-between items-start">
                   <h4 className="font-headline text-base text-text-primary flex items-center gap-2">
                     {c.city}
-                    {/* THE BADGE FIRES FOR BOTH SHAPES OF CLOSURE.
-                        A business date runs 3pm to 3pm, so a one-day holiday
-                        falls inside TWO of them — Thursday's own board, and the
-                        Wednesday board whose morning half IS that Thursday. Both
-                        deserve the marker; only the meaning of the numbers
-                        differs, which the line below the counts explains. */}
-                    {(off || partial) && (
+                    {off && (
                       <span
                         className="badge badge-suppressed uppercase"
-                        title={
-                          off
-                            ? "Weekly off — the warehouse was shut, so no gate register, ops sheet or delivery-app entries are expected for this day"
-                            : "The weekly off falls inside this business day. A business day runs 3pm to 3pm, so this window covers the morning of the holiday — the floor was shut for part of it."
-                        }
+                        title="Weekly off — the warehouse was shut, so no gate register, ops sheet or delivery-app entries are expected for this day"
                       >
                         Week off
+                      </span>
+                    )}
+                    {!off && registerDue && (
+                      <span
+                        className="badge badge-suppressed uppercase"
+                        title="Tomorrow is this warehouse's weekly off, so today's guard register is handed over the day after — the numbers here fill in then."
+                      >
+                        Register due +2d
                       </span>
                     )}
                   </h4>
@@ -600,11 +601,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     Only Odoo saw {c.odooOnly} of {c.ledgered} — no floor record
                   </div>
                 )}
-                {!off && partial && (
+                {!off && registerDue && (
                   <div className="text-xs text-text-muted">
-                    Weekly off falls in this window — the day runs 3pm to 3pm, so
-                    the morning half was the holiday. These numbers are real, but
-                    they cover the open half only.
+                    Tomorrow is this warehouse&apos;s weekly off, so today&apos;s guard
+                    register arrives the day after — these numbers fill in then.
                   </div>
                 )}
                 <div className="text-xs text-text-disabled">

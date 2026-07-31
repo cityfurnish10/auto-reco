@@ -295,6 +295,11 @@ export async function buildDigestFromDb(
   const registerOf = (city: string): RegisterState => {
     if (isCityOff(city as City, businessDate)) return "off";
     const statuses = uploadByCity.get(city) ?? [];
+    // No upload, and tomorrow is this city's weekly off: the register for THIS
+    // board is handed over on the day after the holiday, not tomorrow.
+    // Wednesday's book from a Thursday-off warehouse arrives Friday, and the
+    // Friday sweep folds it in. An alarm here would cry wolf every single week.
+    if (statuses.length === 0 && closedPartOfWindow(city as City, businessDate)) return "delayed";
     if (statuses.length === 0) return "missing";
     if (statuses.includes("processed")) return "received";
     if (statuses.includes("failed")) return "failed";
@@ -326,13 +331,16 @@ export async function buildDigestFromDb(
       tier3: t(3),
       open: open.length,
       register: registerOf(city),
-      // Marked on BOTH shapes: the business date that IS the holiday, and the
-      // one before it, whose morning half is. A business day runs 3pm to 3pm.
-      weekOff: isCityOff(city as City, businessDate)
-        ? ("full" as const)
-        : closedPartOfWindow(city as City, businessDate)
-          ? ("partial" as const)
-          : null,
+      // ONE business date per week, not two.
+      //
+      // A holiday lands inside two business dates — the day it falls on and the
+      // day before, whose morning half it occupies — and the email used to badge
+      // both. The owner's rule is simpler and is the one that ships: these
+      // cities take one day off a week, so one row a week says so.
+      // closedPartOfWindow still exists and the dashboards still use it, where a
+      // reader is looking at a single day in isolation and the half-closure
+      // explains a number they can see.
+      weekOff: isCityOff(city as City, businessDate) ? ("full" as const) : null,
       topRisk: top ? { label: top[0], count: top[1].count, team: teamFor(top[1].name) } : null,
       counts:
         hasCounts && st
