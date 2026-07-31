@@ -115,10 +115,13 @@ REVOKE ALL ON FUNCTION app_cron.recheck(int) FROM PUBLIC, anon, authenticated;
 --     primary reconcile and, 15 minutes after it, the digest that reads them.
 -- Spaced a minute apart so each call owns a whole function invocation rather
 -- than six of them contending for the same instance.
+-- v_ prefix, not `job`: inside PL/pgSQL a table in the FROM clause is also a row
+-- reference, so a variable called `job` collides with `cron.job` itself and the
+-- planner rejects `WHERE jobname = job` as ambiguous (42702).
 DO $$
 DECLARE
   k int;
-  job text;
+  v_job text;
 BEGIN
   -- cron.schedule raises if the extension is absent; say so usefully.
   IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
@@ -129,13 +132,14 @@ BEGIN
   END IF;
 
   FOR k IN 2..7 LOOP
-    job := 'recheck-d' || k;
+    v_job := 'recheck-d' || k;
     -- Idempotent: unschedule by name first so re-running this file cannot
-    -- leave two jobs firing the same date twice.
-    IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = job) THEN
-      PERFORM cron.unschedule(job);
+    -- leave two jobs firing the same date twice. `j` aliases the table so the
+    -- column reference stays unambiguous even if the variable is renamed again.
+    IF EXISTS (SELECT 1 FROM cron.job j WHERE j.jobname = v_job) THEN
+      PERFORM cron.unschedule(v_job);
     END IF;
-    PERFORM cron.schedule(job, format('%s 10 * * *', 18 + k), format('SELECT app_cron.recheck(%s);', k));
+    PERFORM cron.schedule(v_job, format('%s 10 * * *', 18 + k), format('SELECT app_cron.recheck(%s);', k));
   END LOOP;
 END $$;
 
