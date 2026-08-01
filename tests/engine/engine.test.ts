@@ -290,24 +290,28 @@ describe("Only COMPLETED movements reconcile (done vs not-done)", () => {
     expect(hits.map((x) => x.variance_name)).not.toContain(VARIANCE.FAILED_DELIVERY);
   });
 
-  it("same case but the return was never logged inward → FAILED_DELIVERY, not a phantom loss", () => {
+  it("same case, return never logged: still nothing — done-tasks-only (owner, 2026-08-01)", () => {
+    // This used to raise FAILED_DELIVERY (REAL). The owner's rule retired it:
+    // reconciliation checks that COMPLETED movements are marked everywhere; a
+    // task the sheet says did not happen is not a movement. The not-done sheet
+    // row is excluded at the mouth of the engine, and the guard's OUT row for
+    // the same unit merges/ladders on its own merits.
     const res = runReconciliation(
       [
         ...anchor(),
-        r({ source: "PHYSICAL", direction: "OUT", barcode: "GATEFAIL02", status: "done", date: RUN }),
         r({ source: "SHEET", direction: "OUT", barcode: "GATEFAIL02", status: "Not Delivered" }),
       ],
       "MUMBAI"
     );
     const hits = res.variances.filter((x) => x.barcode === canonicalize("GATEFAIL02"));
-    expect(hits).toHaveLength(1);
-    // Previously this was GATE_OPS_NO_DT_ODOO — "the floor and ops confirmed it
-    // but DT/Odoo never posted", i.e. a loss. It is a missing return leg.
-    expect(hits[0].variance_name).toBe(VARIANCE.FAILED_DELIVERY);
-    expect(hits[0].bucket).toBe("REAL");
+    expect(hits).toHaveLength(0);
+    expect(res.warnings.some((w) => w.includes("done-tasks-only"))).toBe(true);
   });
 
-  it("sheet says Not Delivered but Odoo posted it done → the two disagree, and that IS a variance", () => {
+  it("sheet Not Delivered + Odoo posted → at most an Odoo-side INFO, never a REAL", () => {
+    // Ghost Dispatch is retired with the done-tasks-only rule. The not-done
+    // sheet row leaves reconciliation; what remains is an Odoo posting with no
+    // completed floor record, which the Odoo-only branches already grade INFO.
     const res = runReconciliation(
       [
         ...anchor(),
@@ -317,12 +321,13 @@ describe("Only COMPLETED movements reconcile (done vs not-done)", () => {
       "MUMBAI"
     );
     const hits = res.variances.filter((x) => x.barcode === canonicalize("DISAGREE01"));
-    expect(hits).toHaveLength(1);
-    expect(hits[0].variance_name).toBe(VARIANCE.SHEET_NOT_DONE_BUT_POSTED);
-    expect(hits[0].bucket).toBe("REAL");
+    for (const h of hits) {
+      expect(h.variance_name).not.toBe(VARIANCE.SHEET_NOT_DONE_BUT_POSTED);
+      expect(h.bucket).toBe("INFO");
+    }
   });
 
-  it("same disagreement via DT rather than Odoo", () => {
+  it("same via DT: the done DT row ladders on its own, no Ghost Dispatch", () => {
     const res = runReconciliation(
       [
         ...anchor(),
@@ -332,8 +337,7 @@ describe("Only COMPLETED movements reconcile (done vs not-done)", () => {
       "MUMBAI"
     );
     const hits = res.variances.filter((x) => x.barcode === canonicalize("DISAGREE02"));
-    expect(hits).toHaveLength(1);
-    expect(hits[0].variance_name).toBe(VARIANCE.SHEET_NOT_DONE_BUT_POSTED);
+    for (const h of hits) expect(h.variance_name).not.toBe(VARIANCE.SHEET_NOT_DONE_BUT_POSTED);
   });
 
   it("a sheet row with BOTH a done and a not-done status is treated as done (ladder runs)", () => {
@@ -356,7 +360,10 @@ describe("Only COMPLETED movements reconcile (done vs not-done)", () => {
 });
 
 describe("Failed delivery & PP boxes (ops-practice rules)", () => {
-  it("OUT marked Not Delivered with no IN return entry → REAL chase item", () => {
+  it("OUT marked Not Delivered, no return leg → nothing (done-tasks-only)", () => {
+    // Was a REAL "Unclosed Return" chase. Retired by the owner's rule: the
+    // sheet itself says the task did not complete, so there is no movement to
+    // reconcile. The row is counted in the run's warnings, not the queue.
     const res = runReconciliation(
       [
         ...anchor(),
@@ -364,9 +371,7 @@ describe("Failed delivery & PP boxes (ops-practice rules)", () => {
       ],
       "MUMBAI"
     );
-    const v = res.variances.find((x) => x.barcode === canonicalize("FAILED-1"));
-    expect(v?.variance_name).toBe(VARIANCE.FAILED_DELIVERY);
-    expect(v?.bucket).toBe("REAL");
+    expect(res.variances.filter((x) => x.barcode === canonicalize("FAILED-1"))).toHaveLength(0);
   });
 
   it("OUT Not Delivered WITH an IN return entry → silent (return was logged)", () => {
@@ -1113,7 +1118,12 @@ describe("Cross-platform status terminology", () => {
     expect(normalizeStatus("")).toBe("unknown");
   });
 
-  it("an OUT sheet row marked 'RTO' with no IN return leg fires Failed Delivery (was missed as 'unknown')", () => {
+  it("an OUT sheet row marked 'RTO' raises nothing — done-tasks-only", () => {
+    // RTO (return to origin) is a failed delivery. It used to fire the REAL
+    // "Unclosed Return" chase; the owner's rule retired it — a task that did
+    // not complete is not a movement, so it is excluded and suppressed, never
+    // raised. The status-vocabulary point this test guarded still stands:
+    // "RTO" must normalize to not_done, not fall through to "unknown".
     const res = runReconciliation(
       [
         ...anchor(),
@@ -1121,10 +1131,10 @@ describe("Cross-platform status terminology", () => {
       ],
       "MUMBAI"
     );
-    const v = res.variances.find((x) => x.barcode === canonicalize("RTO-1"));
-    expect(v?.variance_name).toBe(VARIANCE.FAILED_DELIVERY);
-    expect(v?.bucket).toBe("REAL");
+    expect(res.variances.filter((x) => x.barcode === canonicalize("RTO-1"))).toHaveLength(0);
+    expect(res.warnings.some((w) => w.includes("done-tasks-only"))).toBe(true);
   });
+
 
   it("an OUT 'Returned' row WITH its IN return leg logged is silent (return already recorded)", () => {
     const res = runReconciliation(

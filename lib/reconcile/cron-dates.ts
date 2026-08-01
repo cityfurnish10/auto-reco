@@ -8,15 +8,17 @@
 // Both jobs therefore close the SAME day, minutes apart, on the afternoon of
 // D+1:
 //
-//   16:30 IST on D+1  → reconcile D   (its window shut 90 minutes earlier)
-//   16:45 IST on D+1  → email     D   (the day just reconciled)
+//   20:00 IST on D+1  → reconcile D   (its window shut five hours earlier —
+//                        moved from 16:30 on 2026-08-01: only 8 of 38 guard
+//                        registers had ever arrived by 16:30, 15 by 20:00)
+//   21:00 IST on D+1  → email     D   (the day just reconciled)
 //
 // vercel.json holds those as UTC cron strings and CANNOT carry a comment — it
 // is strict JSON and Vercel's schema rejects unknown keys, so the mapping is
 // recorded here instead:
 //
-//   "0 11 * * *"   = 11:00 UTC = 16:30 IST   /api/cron/reconcile
-//   "15 11 * * *"  = 11:15 UTC = 16:45 IST   /api/cron/email-digest
+//   "30 14 * * *"  = 14:30 UTC = 20:00 IST   /api/cron/reconcile
+//   "30 15 * * *"  = 15:30 UTC = 21:00 IST   /api/cron/email-digest
 //
 // A THIRD schedule is not available: Vercel Hobby caps at two crons and both
 // are used. Everything else rides one of these two — the scheduled-email queue

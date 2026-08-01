@@ -19,15 +19,13 @@ import { classify, duplicateHit } from "./ladder";
 import { filterOdooWindow } from "./odoo-window";
 import { isCityOff } from "./schedule";
 import { computeSuppressions } from "./suppressions";
-import { isSpareJobType, normalizeJobType } from "./util";
+import { isSpareJobType, normalizeJobType, normalizeStatus } from "./util";
 import { grammarSuspect, isSummaryLine } from "./ocr-noise";
 import { bestGuardMatch } from "./fuzzy";
 import {
   buildViews,
   mergeGuardPresence,
-  postedDone,
   presenceOf,
-  sheetSaysNotDone,
 } from "./views";
 import { VARIANCE } from "./variance-names";
 import { ALL_REPORTED } from "./types";
@@ -123,7 +121,24 @@ export function runReconciliation(
   const odooRaw = rows.filter((r) => r.source === "ODOO");
   const odooWindowed = filterOdooWindow(odooRaw, city, runDate, warnings);
   const nonOdoo = rows.filter((r) => r.source !== "ODOO");
-  const working = [...nonOdoo, ...odooWindowed];
+
+  // DONE TASKS ONLY (owner's rule, 2026-08-01). The purpose of reconciliation
+  // is checking that every COMPLETED movement is marked correctly everywhere.
+  // A row whose own book says the task did not happen — the ops sheet's
+  // "Not Delivered", a cancellation — is not a movement and must not raise a
+  // variance or stand in for presence. Measured: 188 of the last three days'
+  // sheet rows carried "not delivered", and each one could seed a false
+  // "Ops Sheet Only" REAL or a Ghost Dispatch. "pending" rows stay: a task
+  // mid-flight is still evidence the system knows the unit, and the existing
+  // dampening handles them.
+  const preFilter = [...nonOdoo, ...odooWindowed];
+  const notDoneRows = preFilter.filter((r) => normalizeStatus(r.status) === "not_done");
+  const working = preFilter.filter((r) => normalizeStatus(r.status) !== "not_done");
+  if (notDoneRows.length > 0) {
+    warnings.push(
+      `${notDoneRows.length} not-done row${notDoneRows.length === 1 ? "" : "s"} excluded (done-tasks-only rule)`
+    );
+  }
 
   // Section 5 — validity split. Spares and PP boxes surface as counts (never the
   // per-barcode ladder); invalid placeholders are dropped.
@@ -348,67 +363,22 @@ export function runReconciliation(
   // push and the bulk-SO rewrite) has finished contributing.
   const variances: Omit<VarianceRowOut, "reported">[] = [];
 
-  // Failed-delivery rule (ops practice, from the field): an OUT entry the ops
-  // sheet marks "Not Delivered" means the unit left and came back. Only
-  // COMPLETED movements are reconcilable — a movement that never finished is
-  // rightly absent from DT and Odoo, so running it through the ladder invents a
-  // loss. What must still be true is that the return was logged on the IN side.
+  // DONE-TASKS-ONLY, part two (owner's rule, 2026-08-01). Not-done rows were
+  // excluded from the views above — they never raise a variance and never stand
+  // in for presence. But they still carry one load-bearing fact: the task was
+  // ATTEMPTED and failed, so the guard's gate entry for the same unit (the
+  // register hard-codes "done" — it means "crossed the gate", not "delivery
+  // succeeded") must not surface as a gate-only loss. Suppress that leg.
   //
-  // This keys on the SHEET's status alone, not on all four sources agreeing.
-  // DT, Odoo and the guard register all hard-code "done" (each filters to
-  // completed rows upstream), so their "done" means "this source recorded a
-  // movement", not "the delivery succeeded" — a gate entry says the unit
-  // crossed the gate and nothing more. The old test asked whether EVERY status
-  // was not_done, which PHYSICAL's hard-coded "done" defeated: a failed
-  // delivery the guard had logged on its way out fell through to the ladder and
-  // was classified as a REAL loss. See views.ts sheetSaysNotDone().
-  for (const v of Array.from(outViews.values())) {
-    if (!sheetSaysNotDone(v)) continue;
-
-    // …unless DT or Odoo positively posted it done. Then the two systems
-    // disagree about whether the movement happened at all, which is the "done
-    // in one source, not done in another" case and a genuine chase item. Do NOT
-    // suppress it — let it surface under its own name.
-    if (postedDone(v)) {
-      suppressed.add(`OUT::${v.canonical}`);
-      variances.push(
-        applyBucket({
-          barcode: v.canonical,
-          city,
-          direction: "OUT",
-          variance_name: VARIANCE.SHEET_NOT_DONE_BUT_POSTED,
-          priority: "High",
-          ticket_id: v.ticketId,
-          so_number: v.soNumber,
-          customer: v.customer,
-          product: v.product,
-          job_type: v.jobType,
-          date: runDate,
-          present: presenceOf(v),
-        })
-      );
-      continue;
-    }
-
-    suppressed.add(`OUT::${v.canonical}`);
-    if (!inViews.has(v.canonical)) {
-      variances.push(
-        applyBucket({
-          barcode: v.canonical,
-          city,
-          direction: "OUT",
-          variance_name: VARIANCE.FAILED_DELIVERY,
-          priority: "High",
-          ticket_id: v.ticketId,
-          so_number: v.soNumber,
-          customer: v.customer,
-          product: v.product,
-          job_type: v.jobType,
-          date: runDate,
-          present: presenceOf(v),
-        })
-      );
-    }
+  // This retires two variance names that used to be RAISED here —
+  // FAILED_DELIVERY ("Unclosed Return") and SHEET_NOT_DONE_BUT_POSTED
+  // ("Ghost Dispatch"). Both were built on not-done rows, and the owner's rule
+  // is explicit: reconciliation checks that COMPLETED movements are marked
+  // correctly everywhere; a task that did not happen is not a variance. Where
+  // Odoo posted a movement the floor marked not-done, the posting now grades
+  // through the ordinary Odoo-only branches (INFO), not as a REAL.
+  for (const r of notDoneRows) {
+    suppressed.add(`${r.direction}::${canonicalize(r.barcode)}`);
   }
 
   const classifyViews = (views: Map<string, BarcodeView>, direction: Direction) => {
