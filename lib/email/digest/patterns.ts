@@ -64,8 +64,18 @@ export const PATTERN_ACTION: Record<string, string> = {
 /** The row label used when the long tail is folded together. */
 export const OTHER_ROW_LABEL = "Other combinations";
 
-/** How many patterns a city shows before the rest collapse into one row. */
-export const DEFAULT_PATTERN_LIMIT = 6;
+/**
+ * How many patterns a city shows before the rest collapse into one row.
+ *
+ * 15 = all of them, i.e. never collapse by default. A row reading "Other
+ * combinations (3)" tells the reader a gap exists and then refuses to say what
+ * it is — the one thing a table like this must never do. Measured: a city has
+ * at most 9 distinct patterns, so showing every one costs two or three rows.
+ *
+ * The collapse survives for the trim ladder alone, where the alternative is not
+ * a shorter table but a truncated email.
+ */
+export const DEFAULT_PATTERN_LIMIT = 15;
 
 /**
  * A tick, a cross, or "this book never filed".
@@ -123,11 +133,18 @@ export function patternRows(
   }));
 
   if (tailCount > 0) {
+    // Name the combinations, never just count them. Under the trim ladder this
+    // row is all the reader gets about those units, so "(3)" would be a gap
+    // announcing itself and then withholding what it is.
+    const named = tail
+      .map(([key]) => SOURCE_ORDER.filter((k, i) => key[i] !== "-").map((k) => SOURCE_LABEL[k]).join("+"))
+      .map((s) => s || "no book")
+      .join(", ");
     rows.push({
       key: "",
       marks: SOURCE_ORDER.map(() => "na"),
       count: tailCount,
-      action: `${OTHER_ROW_LABEL} (${tail.length})`,
+      action: `${OTHER_ROW_LABEL}: ${named}`,
       share: share(tailCount),
     });
   }
