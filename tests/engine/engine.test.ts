@@ -148,8 +148,8 @@ describe("Section 5 — barcode validity & canonicalization", () => {
 
 describe("Section 4 — Odoo posting-date window (uniform ±1 day)", () => {
   const base = (createdOn: string) => [
-    r({ source: "PHYSICAL", direction: "OUT", barcode: "ITEM-1", status: "done", date: RUN }),
-    r({ source: "ODOO", direction: "OUT", barcode: "ITEM-1", status: "done", createdOn }),
+    r({ source: "PHYSICAL", direction: "OUT", barcode: "FUTEST2301001", status: "done", date: RUN }),
+    r({ source: "ODOO", direction: "OUT", barcode: "FUTEST2301001", status: "done", createdOn }),
   ];
 
   it("keeps a next-day posting for every city (posting lag is the norm)", () => {
@@ -191,13 +191,13 @@ describe("Reported-source gating (outage / no-guard modes)", () => {
   it("no-guard mode: Sheet+DT agree, Odoo missing → REAL 'Not in Odoo' (the ops chase item)", () => {
     const res = runReconciliation(
       [
-        r({ source: "SHEET", direction: "OUT", barcode: "ITEM-2", status: "done" }),
-        r({ source: "DT", direction: "OUT", barcode: "ITEM-2", status: "done", date: RUN }),
+        r({ source: "SHEET", direction: "OUT", barcode: "UNIT-2", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "UNIT-2", status: "done", date: RUN }),
       ],
       "MUMBAI",
       rep({ P: false })
     );
-    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-2"));
+    const v = res.variances.find((x) => x.barcode === canonicalize("UNIT-2"));
     expect(v?.variance_name).toBe(VARIANCE.FLOOR_DT_NOT_ODOO);
     expect(v?.bucket).toBe("REAL");
   });
@@ -206,12 +206,12 @@ describe("Reported-source gating (outage / no-guard modes)", () => {
     const res = runReconciliation(
       [
         ...anchor(),
-        r({ source: "SHEET", direction: "OUT", barcode: "ITEM-2", status: "done" }),
-        r({ source: "DT", direction: "OUT", barcode: "ITEM-2", status: "done", date: RUN }),
+        r({ source: "SHEET", direction: "OUT", barcode: "UNIT-2", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "UNIT-2", status: "done", date: RUN }),
       ],
       "MUMBAI"
     );
-    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-2"));
+    const v = res.variances.find((x) => x.barcode === canonicalize("UNIT-2"));
     expect(v?.variance_name).toBe(VARIANCE.OPS_DT_ODOO_PENDING);
     expect(v?.bucket).toBe("INFO");
   });
@@ -219,28 +219,28 @@ describe("Reported-source gating (outage / no-guard modes)", () => {
   it("Odoo outage: absence variances against Odoo are silenced", () => {
     const res = runReconciliation(
       [
-        r({ source: "SHEET", direction: "OUT", barcode: "ITEM-3", status: "done" }),
-        r({ source: "DT", direction: "OUT", barcode: "ITEM-3", status: "done", date: RUN }),
+        r({ source: "SHEET", direction: "OUT", barcode: "UNIT-3", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "UNIT-3", status: "done", date: RUN }),
       ],
       "MUMBAI",
       rep({ P: false, O: false })
     );
     expect(
-      res.variances.find((x) => x.barcode === canonicalize("ITEM-3"))
+      res.variances.find((x) => x.barcode === canonicalize("UNIT-3"))
     ).toBeUndefined();
   });
 
   it("sheet not filled in (unreported): DT-only does NOT become Fake Scan Risk", () => {
     const res = runReconciliation(
       [
-        r({ source: "DT", direction: "OUT", barcode: "ITEM-4", status: "done", date: RUN }),
+        r({ source: "DT", direction: "OUT", barcode: "UNIT-4", status: "done", date: RUN }),
         // Odoo reported for the city via another barcode:
         r({ source: "ODOO", direction: "OUT", barcode: "OTHER-9", status: "done", createdOn: RUN }),
       ],
       "MUMBAI",
       rep({ P: false, S: false })
     );
-    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-4"));
+    const v = res.variances.find((x) => x.barcode === canonicalize("UNIT-4"));
     // Floor sources both unreported → corroboration vacuous → Odoo-missing REAL.
     expect(v?.variance_name).toBe(VARIANCE.FLOOR_DT_NOT_ODOO);
   });
@@ -248,8 +248,8 @@ describe("Reported-source gating (outage / no-guard modes)", () => {
   it("no-guard mode: Sheet+Odoo agree, DT missing → INFO (not Gate Log Missing)", () => {
     const res = runReconciliation(
       [
-        r({ source: "SHEET", direction: "OUT", barcode: "ITEM-5", status: "done" }),
-        r({ source: "ODOO", direction: "OUT", barcode: "ITEM-5", status: "done", createdOn: RUN }),
+        r({ source: "SHEET", direction: "OUT", barcode: "UNIT-5", status: "done" }),
+        r({ source: "ODOO", direction: "OUT", barcode: "UNIT-5", status: "done", createdOn: RUN }),
         // date anchor (deriveRunDate needs a PHYSICAL/DT row):
         r({ source: "DT", direction: "OUT", barcode: "ANCHOR-DT-1", status: "done", date: RUN }),
         r({ source: "SHEET", direction: "OUT", barcode: "ANCHOR-DT-1", status: "done" }),
@@ -258,7 +258,7 @@ describe("Reported-source gating (outage / no-guard modes)", () => {
       "MUMBAI",
       rep({ P: false })
     );
-    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-5"));
+    const v = res.variances.find((x) => x.barcode === canonicalize("UNIT-5"));
     expect(v?.variance_name).toBe(VARIANCE.OPS_ODOO_NO_DT);
     expect(v?.bucket).toBe("INFO");
   });
@@ -476,7 +476,9 @@ describe("Section 6 — variance ladder", () => {
       [
         ...anchor(),
         ...parts.map((p) =>
-          r({ direction: "OUT", barcode: "ITEM-1", status: "done", ...p })
+          // A realistic 13-char label: P-only fixtures now pass through the
+          // OCR plausibility gate exactly like production barcodes do.
+          r({ direction: "OUT", barcode: "FUTEST2301001", status: "done", ...p })
         ),
       ],
       "MUMBAI"
@@ -487,7 +489,7 @@ describe("Section 6 — variance ladder", () => {
     // batch-post of an earlier movement whose floor record lives on its own
     // day. Audit tally, not a morning chase item.
     const res = one([{ source: "ODOO", createdOn: RUN, recordCreatedOn: PRIOR }]);
-    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-1"));
+    const v = res.variances.find((x) => x.barcode === canonicalize("FUTEST2301001"));
     expect(v?.variance_name).toBe(VARIANCE.ODOO_ONLY);
     expect(v?.bucket).toBe("INFO");
     expect(v?.priority).toBe("Info");
@@ -501,7 +503,7 @@ describe("Section 6 — variance ladder", () => {
     const res = one([
       { source: "ODOO", createdOn: RUN, recordCreatedOn: RUN, soNumber: "ON-RET-MUM-42424", ticketId: "MUM/OUT/12345" },
     ]);
-    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-1"));
+    const v = res.variances.find((x) => x.barcode === canonicalize("FUTEST2301001"));
     expect(v?.variance_name).toBe(VARIANCE.ODOO_ONLY_TODAY);
     expect(v?.bucket).toBe("REAL");
     expect(v?.priority).toBe("High");
@@ -513,7 +515,7 @@ describe("Section 6 — variance ladder", () => {
     const res = one([
       { source: "ODOO", createdOn: RUN, recordCreatedOn: RUN, ticketId: "BAN/IN/24136" },
     ]);
-    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-1"));
+    const v = res.variances.find((x) => x.barcode === canonicalize("FUTEST2301001"));
     expect(v?.variance_name).toBe(VARIANCE.ODOO_ONLY);
     expect(v?.bucket).toBe("INFO");
   });
@@ -522,7 +524,7 @@ describe("Section 6 — variance ladder", () => {
     const res = one([
       { source: "ODOO", createdOn: RUN, recordCreatedOn: RUN, soNumber: "ON-RET-PUN-11111", ticketId: "PUN/INT/00123" },
     ]);
-    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-1"));
+    const v = res.variances.find((x) => x.barcode === canonicalize("FUTEST2301001"));
     expect(v?.variance_name).toBe(VARIANCE.ODOO_ONLY);
     expect(v?.bucket).toBe("INFO");
   });
@@ -558,13 +560,13 @@ describe("Section 6 — variance ladder", () => {
     const res = runReconciliation(
       [
         ...anchor(),
-        r({ source: "ODOO", direction: "OUT", barcode: "ITEM-1", status: "done", createdOn: RUN, recordCreatedOn: RUN, soNumber: "ON-RET-MUM-42424", ticketId: "MUM/OUT/12345" }),
+        r({ source: "ODOO", direction: "OUT", barcode: "FUTEST2301001", status: "done", createdOn: RUN, recordCreatedOn: RUN, soNumber: "ON-RET-MUM-42424", ticketId: "MUM/OUT/12345" }),
       ],
       "MUMBAI",
       undefined,
-      new Set([canonicalize("ITEM-1")])
+      new Set([canonicalize("FUTEST2301001")])
     );
-    const v = res.variances.find((x) => x.barcode === canonicalize("ITEM-1"));
+    const v = res.variances.find((x) => x.barcode === canonicalize("FUTEST2301001"));
     expect(v?.variance_name).toBe(VARIANCE.ODOO_ONLY);
     expect(v?.bucket).toBe("INFO");
   });
@@ -614,8 +616,8 @@ describe("Section 6 — variance ladder", () => {
   it("DT non_match → Fake Scan Risk (top priority)", () => {
     const res = runReconciliation(
       [
-        r({ source: "PHYSICAL", direction: "OUT", barcode: "ITEM-1", status: "done" }),
-        r({ source: "DT", direction: "OUT", barcode: "ITEM-1", status: "non_match" }),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "FUTEST2301001", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "FUTEST2301001", status: "non_match" }),
       ],
       "MUMBAI"
     );
@@ -627,14 +629,14 @@ describe("Section 7 — suppressions", () => {
   it("DT All-Pending suppresses every variance for the barcode", () => {
     const res = runReconciliation(
       [
-        r({ source: "PHYSICAL", direction: "OUT", barcode: "ITEM-1", status: "done" }),
-        r({ source: "DT", direction: "OUT", barcode: "ITEM-1", status: "pending" }),
-        r({ source: "DT", direction: "OUT", barcode: "ITEM-1", status: "pending" }),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "FUTEST2301001", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "FUTEST2301001", status: "pending" }),
+        r({ source: "DT", direction: "OUT", barcode: "FUTEST2301001", status: "pending" }),
       ],
       "MUMBAI"
     );
     expect(
-      res.variances.find((v) => v.barcode === canonicalize("ITEM-1"))
+      res.variances.find((v) => v.barcode === canonicalize("FUTEST2301001"))
     ).toBeUndefined();
   });
 
@@ -710,10 +712,10 @@ describe("Section 8 — direction conflict", () => {
   it("fires when the same SO+unit is IN and OUT with OUT completed", () => {
     const res = runReconciliation(
       [
-        r({ source: "PHYSICAL", direction: "OUT", barcode: "UNIT-1", status: "done", soNumber: "SO-9" }),
-        r({ source: "DT", direction: "OUT", barcode: "UNIT-1", status: "done", soNumber: "SO-9" }),
-        r({ source: "PHYSICAL", direction: "IN", barcode: "UNIT-1", status: "done", soNumber: "SO-9" }),
-        r({ source: "SHEET", direction: "IN", barcode: "UNIT-1", status: "done", soNumber: "SO-9" }),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "FUTEST2301001", status: "done", soNumber: "SO-9" }),
+        r({ source: "DT", direction: "OUT", barcode: "FUTEST2301001", status: "done", soNumber: "SO-9" }),
+        r({ source: "PHYSICAL", direction: "IN", barcode: "FUTEST2301001", status: "done", soNumber: "SO-9" }),
+        r({ source: "SHEET", direction: "IN", barcode: "FUTEST2301001", status: "done", soNumber: "SO-9" }),
       ],
       "MUMBAI"
     );
@@ -835,7 +837,9 @@ describe("OCR-tolerant merge — dampen guard variances from OCR slips", () => {
         r({ source: "DT", direction: "OUT", barcode: "DESKAAAAAA", status: "done", date: RUN }),
         r({ source: "ODOO", direction: "OUT", barcode: "DESKAAAAAA", status: "done", createdOn: RUN }),
         // A real 'Gate-Only' item — unrelated ticket/SO/product/barcode:
-        r({ source: "PHYSICAL", direction: "OUT", barcode: "SHELFBBBBB", status: "done", ticketId: "999999", soNumber: "SO-999999", product: "Shelf" }),
+        // Realistic digits so the plausibility gate (a production behaviour)
+        // does not park the fixture before the ladder can see it.
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "SHELF2509012", status: "done", ticketId: "999999", soNumber: "SO-999999", product: "Shelf" }),
       ],
       "MUMBAI"
     );
@@ -1197,9 +1201,9 @@ describe("Per-source presence flags (migration 0013)", () => {
 
   it("flags match the ladder's presence pattern", () => {
     const gateOnly = runReconciliation(
-      [...anchor(), r({ source: "PHYSICAL", direction: "OUT", barcode: "P-ONLY", status: "done" })],
+      [...anchor(), r({ source: "PHYSICAL", direction: "OUT", barcode: "PONLY2507001", status: "done" })],
       "MUMBAI"
-    ).variances.find((x) => x.barcode === canonicalize("P-ONLY"));
+    ).variances.find((x) => x.barcode === canonicalize("PONLY2507001"));
     expect(gateOnly?.variance_name).toBe(VARIANCE.GATE_ONLY);
     expect(gateOnly?.present).toEqual({ P: true, S: false, D: false, O: false });
 

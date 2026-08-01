@@ -20,6 +20,7 @@ import { filterOdooWindow } from "./odoo-window";
 import { isCityOff } from "./schedule";
 import { computeSuppressions } from "./suppressions";
 import { isSpareJobType, normalizeJobType } from "./util";
+import { grammarSuspect, isSummaryLine } from "./ocr-noise";
 import { bestGuardMatch } from "./fuzzy";
 import {
   buildViews,
@@ -171,7 +172,19 @@ export function runReconciliation(
   const ppBoxRows: SourceRow[] = [];
   const valid: SourceRow[] = [];
   for (const r of working) {
-    // Placeholder checks first — these labels are long enough to pass the
+    // The register's own furniture first: a footer written across the barcode
+    // boxes parses as a movement ("COUNT 014 ITEMS" → C0UNT0141TEM5, "Total 9")
+    // and can only ever raise a false Gate-Only HIGH. Guard rows only — a typed
+    // source cannot produce these, and a sheet product legitimately says
+    // "count" things. Not routed to the spare/PP counts either: a total line's
+    // number is the guard adding up, not a unit that moved.
+    if (r.source === "PHYSICAL" && isSummaryLine(r.barcode, r.product)) {
+      warnings.push(
+        `guard summary line skipped: ${r.barcode}${r.product ? ` / ${r.product}` : ""}`
+      );
+      continue;
+    }
+    // Placeholder checks next — these labels are long enough to pass the
     // length/alnum test but must never run the normal ladder.
     if (ppBoxCanon.has(canonicalize(r.barcode))) ppBoxRows.push(r);
     else if (spareCanon.has(canonicalize(r.barcode))) spareRows.push(r);
@@ -200,8 +213,26 @@ export function runReconciliation(
   // already had its chance to rescue it via ticket/SO; unmerged it can only
   // ever raise a false "Gate Register Only" — drop it (with an audit warning).
   const dropOcrFragments = (views: Map<string, BarcodeView>) => {
+    let parked = 0;
     for (const v of Array.from(views.values())) {
       const pOnly = v.P.present && !v.S.present && !v.D.present && !v.O.present;
+      // Grammar-implausible P-only reads, the wider sibling of the digits-only
+      // drop below: measured against 13,674 system-typed barcodes (99.6%
+      // alphanumeric, 93% exactly 14 chars), a gate-only read under 10 chars,
+      // over 17, near digit-free or carrying stray punctuation is an OCR
+      // artifact, not a unit ("N42150", "08166F", "F4M410825040067112"). The
+      // merge pass above already had its chance to rescue it; unmerged it can
+      // only raise a false Gate-Only HIGH. Deleted, not suppressed, on the same
+      // deliberate grounds as the fragments: a garbage read is not a movement,
+      // so it must not sit in the accuracy denominator either.
+      if (pOnly && /[A-Z]/.test(v.canonical) && grammarSuspect(v.canonical)) {
+        views.delete(v.canonical);
+        parked++;
+        warnings.push(
+          `unreadable gate line parked (${v.direction}): guard ${v.canonical} (implausible barcode, no match)`
+        );
+        continue;
+      }
       if (pOnly && !/[A-Z]/.test(v.canonical)) {
         views.delete(v.canonical);
         warnings.push(

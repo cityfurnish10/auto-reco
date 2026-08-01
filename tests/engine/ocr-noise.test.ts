@@ -143,3 +143,106 @@ describe("wordClass", () => {
     expect(wordClass("T0TAL9")).toContain("TOTAL");
   });
 });
+
+// ─── engine integration: the three hooks end to end ──────────────────────────
+
+import { runReconciliation } from "../../lib/engine/run";
+import { VARIANCE } from "../../lib/engine/variance-names";
+import type { SourceRow } from "../../lib/engine/types";
+
+const RUN = "2026-07-30";
+const row = (p: Partial<SourceRow> & Pick<SourceRow, "source" | "direction" | "barcode">): SourceRow =>
+  ({ date: RUN, status: "done", ...p } as SourceRow);
+
+// A fully-reconciled anchor so run-date derivation has a majority.
+const anchorRows = (): SourceRow[] => [
+  row({ source: "PHYSICAL", direction: "OUT", barcode: "ANCHOR-OK-1" }),
+  row({ source: "SHEET", direction: "OUT", barcode: "ANCHOR-OK-1" }),
+  row({ source: "DT", direction: "OUT", barcode: "ANCHOR-OK-1" }),
+  row({ source: "ODOO", direction: "OUT", barcode: "ANCHOR-OK-1", createdOn: RUN }),
+];
+
+describe("engine hooks — OCR noise never reaches the ladder", () => {
+  it("hook A: a summary line raises nothing and leaves a warning", () => {
+    const res = runReconciliation(
+      [...anchorRows(), row({ source: "PHYSICAL", direction: "OUT", barcode: "COUNT014ITEMS", product: "e parts" })],
+      "DELHI",
+      undefined,
+      new Set(),
+      RUN
+    );
+    expect(res.variances.filter((v) => v.variance_name === VARIANCE.GATE_ONLY)).toHaveLength(0);
+    expect(res.warnings.some((w) => w.includes("guard summary line skipped"))).toBe(true);
+    // And it is not smuggled into the counts either.
+    expect(res.summary.consumable_count).toBe(0);
+    expect(res.summary.pp_box_count).toBe(0);
+  });
+
+  it("hook B: a stray-character read folds into the typed item — one INFO, no HIGH", () => {
+    const res = runReconciliation(
+      [
+        ...anchorRows(),
+        // The real unit, seen by the typed sources…
+        row({ source: "SHEET", direction: "OUT", barcode: "AP815719030952" }),
+        row({ source: "DT", direction: "OUT", barcode: "AP815719030952" }),
+        row({ source: "ODOO", direction: "OUT", barcode: "AP815719030952", createdOn: RUN }),
+        // …and the guard's read of the same label with a leading stray.
+        row({ source: "PHYSICAL", direction: "OUT", barcode: "6AP815719030952" }),
+      ],
+      "DELHI",
+      undefined,
+      new Set(),
+      RUN
+    );
+    // Neither a false "gate only" for the stray spelling nor a false
+    // "missing from gate register" for the real one.
+    expect(res.variances.filter((v) => v.variance_name === VARIANCE.GATE_ONLY)).toHaveLength(0);
+    expect(res.variances.filter((v) => v.variance_name === VARIANCE.OPS_ODOO_NO_GATE)).toHaveLength(0);
+    expect(res.warnings.some((w) => w.includes("OCR merge"))).toBe(true);
+    // Worst case for the merged unit is the tier-3 read-error note.
+    for (const v of res.variances.filter((x) => String(x.barcode).includes("815719030952"))) {
+      expect(v.variance_name).toBe(VARIANCE.FIELD_MISMATCH);
+    }
+  });
+
+  it("hook C: a grammar-implausible orphan is parked, not raised", () => {
+    const res = runReconciliation(
+      [...anchorRows(), row({ source: "PHYSICAL", direction: "OUT", barcode: "F4M410825040067112" })],
+      "DELHI",
+      undefined,
+      new Set(),
+      RUN
+    );
+    expect(res.variances.filter((v) => v.variance_name === VARIANCE.GATE_ONLY)).toHaveLength(0);
+    expect(res.warnings.some((w) => w.includes("unreadable gate line parked"))).toBe(true);
+  });
+
+  it("a REAL gate-only unit still raises GATE_ONLY — the alarm survives", () => {
+    const res = runReconciliation(
+      [...anchorRows(), row({ source: "PHYSICAL", direction: "OUT", barcode: "FUMYHA23030062", product: "Nico Balcony chair" })],
+      "DELHI",
+      undefined,
+      new Set(),
+      RUN
+    );
+    expect(res.variances.filter((v) => v.variance_name === VARIANCE.GATE_ONLY)).toHaveLength(1);
+  });
+
+  it("an ambiguous repair (two candidates) stays unmerged — no guessing", () => {
+    const res = runReconciliation(
+      [
+        ...anchorRows(),
+        row({ source: "ODOO", direction: "OUT", barcode: "AP815719030952", createdOn: RUN }),
+        row({ source: "ODOO", direction: "OUT", barcode: "AP815719030956", createdOn: RUN }),
+        row({ source: "PHYSICAL", direction: "OUT", barcode: "6AP815719030953" }),
+      ],
+      "DELHI",
+      undefined,
+      new Set(),
+      RUN
+    );
+    // Both targets are class-near the orphan → tie → no merge, GATE_ONLY stands
+    // (a reviewable false HIGH beats a silent wrong merge).
+    expect(res.warnings.some((w) => w.includes("OCR merge") && w.includes("81571903095"))).toBe(false);
+  });
+});
