@@ -412,8 +412,10 @@ export async function saveCityStats(
       // they were computed and discarded.
       sheet_in: c.count_in.sheet_total,
       sheet_out: c.count_out.sheet_total,
-      odoo_in: c.count_in.odoo_count,
-      odoo_out: c.count_out.odoo_count,
+      // Same-day postings — what the digest reports. The ±1 reconciliation
+      // window (odoo_count) would stack three days into one reported column.
+      odoo_in: c.count_in.odoo_same_day,
+      odoo_out: c.count_out.odoo_same_day,
       dt_in: c.count_in.dt_total,
       dt_out: c.count_out.dt_total,
       phys_in: c.count_in.phys_total,

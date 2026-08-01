@@ -24,14 +24,13 @@ import type {
   ActionItem,
   CityDigestRow,
   DigestData,
-  HandoverRow,
   RegisterState,
 } from "./types";
 
 /** How many reconciled business days the watch list looks back over. */
 const WATCH_DAYS = 7;
 /**
- * How far back the handover table will look for a city's last working day.
+ * How far back to look for a city's last working day, for the register column.
  *
  * Comfortably past a weekly off stacked against a public holiday, and bounded
  * so a misconfigured calendar cannot make this read the whole table.
@@ -289,7 +288,7 @@ export async function buildDigestFromDb(
   const statByCity = new Map(stats.map((s) => [s.city, s]));
 
   // A WINDOW, not a single date. The reported day's own uploads drive
-  // registerOf() below, but the handover table asks about each city's OWN last
+  // registerOf() below, but the register column asks about each city's OWN last
   // working day, which is an earlier date for any city shut since — and on a
   // Friday that is three of the five. One read serves both.
   const { data: uploads } = await db
@@ -298,13 +297,9 @@ export async function buildDigestFromDb(
     .gte("business_date", addDays(businessDate, -HANDOVER_LOOKBACK_DAYS))
     .lte("business_date", businessDate);
   const uploadByCity = new Map<string, string[]>();
-  const uploadByCityDate = new Map<string, string[]>();
   for (const u of uploads ?? []) {
     const city = u.city as string;
     const date = u.business_date as string;
-    const keyed = uploadByCityDate.get(`${city}|${date}`) ?? [];
-    keyed.push(u.status as string);
-    uploadByCityDate.set(`${city}|${date}`, keyed);
     if (date !== businessDate) continue;
     const list = uploadByCity.get(city) ?? [];
     list.push(u.status as string);
@@ -320,7 +315,7 @@ export async function buildDigestFromDb(
 
   // The closure calendar, mirrored from the delivery app by the reconcile
   // pipeline (migration 0019). Read BEFORE registerOf so the register column,
-  // the week-off badge and the handover table all judge closures from the same
+  // the week-off badge and the register column all judge closures from the same
   // source — with two of them on the calendar and one on the hardcoded map, a
   // public holiday made one email contradict itself. Null is a first-class
   // answer: every consumer falls back to WEEKLY_OFF_DAY.
@@ -492,34 +487,6 @@ export async function buildDigestFromDb(
   // four-way check would score 0/N for every city, every day. This walks back to
   // the newest day whose four sources all reported, and moves forward on its own
   // once register timing improves.
-  // REGISTER HANDOVER, per city. Each warehouse owes the register for its own
-  // last working day; on a Friday that is Thursday for Delhi and Bangalore and
-  // Wednesday for the three cities shut on Thursday.
-  const handover: HandoverRow[] = [...byCity.keys()].sort().flatMap((city) => {
-    // Null means closed 14+ days straight — a data problem, and asserting the
-    // city worked on `businessDate` (the old fallback) stated a falsehood about
-    // a shut warehouse. Omit the row; the by-city table still shows the city.
-    const lwd = lastWorkingDay(city as City, businessDate, calendar);
-    if (lwd === null) return [];
-    const statuses = uploadByCityDate.get(`${city}|${lwd}`) ?? [];
-    const state: RegisterState =
-      statuses.includes("processed") ? "received"
-      : statuses.includes("failed") ? "failed"
-      : statuses.length > 0 ? "pending"
-      : lwd !== businessDate ? "delayed"
-      : "missing";
-    return [{
-      city,
-      lastWorkingDay: lwd,
-      shutSince: lwd !== businessDate,
-      state,
-      // When that book is actually handed over. The section renders an absent
-      // book as "Due <weekday>" from this — on THIS table a book can never be
-      // late, because the newest owed book is always due on or after send day.
-      dueOn: registerDueOn(city as City, lwd, calendar),
-    }];
-  });
-
   const coverage = await (async () => {
     const date = await latestFullyCoveredDate(db, businessDate);
     if (!date) return undefined;
@@ -557,7 +524,6 @@ export async function buildDigestFromDb(
     actions,
     informational,
     coverage,
-    handover,
     calendar,
     // Absent, not empty, when the history read failed: "we did not look" and
     // "we looked and found nothing outstanding" are different claims and the

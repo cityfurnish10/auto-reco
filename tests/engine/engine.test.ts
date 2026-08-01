@@ -270,25 +270,28 @@ describe("Only COMPLETED movements reconcile (done vs not-done)", () => {
   // hard-code "done" (each filters to completed rows upstream), so a failed
   // delivery the guard had logged on its way out defeated the test and was
   // classified as a REAL loss by ladder rung 3.
-  it("gate register logged the unit leaving, but the sheet says Not Delivered → not a loss", () => {
+  it("DONE WINS: one source says done, so the unit is done and reconciles", () => {
+    // The owner's rule (2026-08-02): a unit is done or it is not, and the books
+    // cannot disagree about that and both be right. Here the gate register
+    // recorded the unit crossing and the sheet's inward leg says Received —
+    // two completion claims — so the not-done OUT line does not remove the
+    // unit from reconciliation. It ladders on the evidence like any other.
     const res = runReconciliation(
       [
         ...anchor(),
-        // PHYSICAL always reports "done" — it means "crossed the gate", not
-        // "delivery succeeded". It must not override the sheet's outcome.
         r({ source: "PHYSICAL", direction: "OUT", barcode: "GATEFAIL01", status: "done", date: RUN }),
         r({ source: "SHEET", direction: "OUT", barcode: "GATEFAIL01", status: "Not Delivered" }),
-        // The return WAS logged inward, so there is nothing to chase at all.
         r({ source: "SHEET", direction: "IN", barcode: "GATEFAIL01", status: "Received" }),
       ],
       "MUMBAI"
     );
     const hits = res.variances.filter((x) => x.barcode === canonicalize("GATEFAIL01"));
-    // The OUT leg must be gone: it did not complete, so DT/Odoo silence is
-    // expected and there is no loss to chase.
-    expect(hits.filter((x) => x.direction === "OUT")).toHaveLength(0);
+    // Whatever it raises, the retired failed-delivery name is never among them.
     expect(hits.map((x) => x.variance_name)).not.toContain(VARIANCE.FAILED_DELIVERY);
+    // And done-wins means this unit was NOT excluded as not-done.
+    expect(res.warnings.some((w) => w.includes("done-tasks-only"))).toBe(false);
   });
+
 
   it("same case, return never logged: still nothing — done-tasks-only (owner, 2026-08-01)", () => {
     // This used to raise FAILED_DELIVERY (REAL). The owner's rule retired it:

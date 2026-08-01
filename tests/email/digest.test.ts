@@ -396,45 +396,6 @@ describe("digest — the founder's three parts", () => {
   });
 });
 
-describe("digest — the register handover table", () => {
-  // The Thursday board, sent Friday: Delhi and Bangalore worked Thursday and
-  // their books land Friday; the three Thursday-off cities last worked
-  // Wednesday, and Hyderabad's book is still on its way.
-  const friday = digest({
-    date: "2026-07-30",
-    handover: [
-      { city: "BANGALORE", lastWorkingDay: "2026-07-30", shutSince: false, state: "missing", dueOn: "2026-07-31" },
-      { city: "DELHI", lastWorkingDay: "2026-07-30", shutSince: false, state: "missing", dueOn: "2026-07-31" },
-      { city: "HYDERABAD", lastWorkingDay: "2026-07-29", shutSince: true, state: "delayed", dueOn: "2026-07-31" },
-      { city: "MUMBAI", lastWorkingDay: "2026-07-29", shutSince: true, state: "received", dueOn: "2026-07-31" },
-      { city: "PUNE", lastWorkingDay: "2026-07-29", shutSince: true, state: "received", dueOn: "2026-07-31" },
-    ],
-  });
-
-  it("names each city's own last working day", () => {
-    const t = renderDigestText(friday, URL);
-    expect(t).toMatch(/Bangalore\s+Thu 30 Jul/);
-    expect(t).toMatch(/Hyderabad\s+Wed 29 Jul/);
-  });
-
-  it("NEVER calls an owed book late — it says when it arrives", () => {
-    // Every register on this table is due on or after the day the email is
-    // read, because the newest owed book's handover day follows the closure.
-    // "Not received" (danger) would accuse a warehouse that is on schedule.
-    const t = renderDigestText(friday, URL);
-    const section = t.split("REGISTER HANDOVER")[1].split("1 ·")[0];
-    expect(section).toContain("Due Friday");
-    expect(section).not.toContain("Not received");
-    expect(section).toContain("Received");
-  });
-
-  it("appears in both renders, like everything else", () => {
-    const html = renderDigestHtml(friday, URL);
-    expect(html).toContain("Register handover");
-    expect(html).toContain("Due Friday");
-  });
-});
-
 describe("digest — model snapshot", () => {
   // Snapshot the MODEL, not the HTML: a colour tweak should not churn this, and
   // the diff a reviewer reads is "what the email says".

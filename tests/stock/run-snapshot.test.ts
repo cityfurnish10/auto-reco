@@ -26,7 +26,7 @@ const v = (over: Partial<VarianceRowOut> = {}): VarianceRowOut => ({
   ...over,
 });
 
-const counts = { expected: 0, dt_done: 0, dt_diff: 0, odoo_count: 0, odoo_diff: 0,
+const counts = { expected: 0, dt_done: 0, dt_diff: 0, odoo_count: 0, odoo_same_day: 0, odoo_diff: 0,
   phys_total: 0, sheet_total: 0, dt_total: 0, phys_sheet_match: true, phys_sheet_diff: 0,
   primary_source: "SHEET" as const };
 

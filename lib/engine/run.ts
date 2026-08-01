@@ -132,8 +132,27 @@ export function runReconciliation(
   // mid-flight is still evidence the system knows the unit, and the existing
   // dampening handles them.
   const preFilter = [...nonOdoo, ...odooWindowed];
-  const notDoneRows = preFilter.filter((r) => normalizeStatus(r.status) === "not_done");
-  const working = preFilter.filter((r) => normalizeStatus(r.status) !== "not_done");
+
+  // DONE WINS, ACROSS SOURCES (owner's rule, 2026-08-02). A unit is done or it
+  // is not — the books cannot disagree about that and both be right. If ANY
+  // source says the movement completed, the unit is done everywhere and the
+  // whole unit reconciles normally. Only when NO source claims completion does
+  // the not-done verdict stand, and then the unit leaves reconciliation
+  // entirely (done-tasks-only).
+  //
+  // Keyed per unit — direction + canonical barcode — because one leg failing
+  // says nothing about the other: a delivery that came back is a not-done OUT
+  // and a genuine IN.
+  const unitKey = (r: SourceRow) => `${r.direction}::${canonicalize(r.barcode)}`;
+  const anyDone = new Set<string>();
+  for (const r of preFilter) {
+    if (normalizeStatus(r.status) === "done") anyDone.add(unitKey(r));
+  }
+  const notDoneRows = preFilter.filter(
+    (r) => normalizeStatus(r.status) === "not_done" && !anyDone.has(unitKey(r))
+  );
+  const notDoneUnits = new Set(notDoneRows.map(unitKey));
+  const working = preFilter.filter((r) => !notDoneUnits.has(unitKey(r)));
   if (notDoneRows.length > 0) {
     warnings.push(
       `${notDoneRows.length} not-done row${notDoneRows.length === 1 ? "" : "s"} excluded (done-tasks-only rule)`
@@ -508,8 +527,8 @@ export function runReconciliation(
   const stamped: VarianceRowOut[] = variances.map((v) => ({ ...v, reported }));
 
   // Section 9 — count layer per direction.
-  const count_in = computeCountLayer(byDir("IN"));
-  const count_out = computeCountLayer(byDir("OUT"));
+  const count_in = computeCountLayer(byDir("IN"), runDate);
+  const count_out = computeCountLayer(byDir("OUT"), runDate);
 
   // Summary.
   const real_variances = stamped.filter((v) => v.bucket === "REAL");

@@ -91,24 +91,6 @@ export interface CityDigestRow {
   trend?: "worse" | "usual" | "better" | null;
 }
 
-/** One city's register-handover position on the reported day. */
-export interface HandoverRow {
-  city: string;
-  /** The most recent business date this city actually worked. */
-  lastWorkingDay: string;
-  /** True when that is not the reported date — the city was shut since. */
-  shutSince: boolean;
-  /** Whether that day's register has reached us. */
-  state: RegisterState;
-  /**
-   * When that book is handed over — the next working day after lastWorkingDay.
-   * On this table a book can never be LATE: the newest owed register is always
-   * due on or after the day the email is read, which is why the section renders
-   * an absent one as "Due Friday" and never as "Not received".
-   */
-  dueOn: string | null;
-}
-
 export interface DigestData {
   date: string; // business date reconciled (YYYY-MM-DD)
   generatedAt: string; // ISO timestamp
@@ -128,17 +110,7 @@ export interface DigestData {
   /** True when no completed reconciliation exists for `date`. */
   runIncomplete?: boolean;
   /**
-   * Register handover, per city — its own table in the email.
-   *
-   * Each warehouse hands over the register for ITS OWN last working day, and
-   * that day differs per city: on a Friday, Delhi and Bangalore hand over
-   * Thursday's book while Mumbai, Pune and Hyderabad — shut on Thursday — hand
-   * over Wednesday's. Without this, three warehouses are accused of a missing
-   * register every week, on schedule, for a book nobody was going to hand over.
-   */
-  handover?: HandoverRow[];
-  /**
-   * The closure calendar behind the handover model (migration 0019), so the
+   * The closure calendar (migration 0019), so the
    * renderer can compute due dates for OTHER dates too — e.g. the four-way
    * chart, which reports an older day. Null on a pre-0019 database; every
    * consumer falls back to the hardcoded map.

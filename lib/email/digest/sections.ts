@@ -21,7 +21,7 @@
 
 import type { BarRow, Block, Heat, Section } from "./model";
 import { renderText } from "./render-text";
-import type { ActionItem, CityDigestRow, DigestData, HandoverRow, RegisterState } from "./types";
+import type { ActionItem, CityDigestRow, DigestData, RegisterState } from "./types";
 import { directionSkew, fullyReported, SOURCE_NAME, topMissing, type SourceKey } from "./coverage";
 import { isCityOff, registerDueOn } from "../../engine/schedule";
 import { addDays } from "../../engine/dates";
@@ -77,151 +77,83 @@ function andList(items: string[]): string {
 // ─── the movement summary ────────────────────────────────────────────────────
 
 /**
- * What each book recorded, out and in, per city.
+ * What each book recorded, per city — TWO tables, inward and outward.
  *
- * The data has been reaching this file since migration 0012 and nothing ever
- * rendered it: build.ts fills CityDigestRow.counts and every section ignored it.
+ * They were one table with "out / in" in every cell until the owner split them
+ * (2026-08-02): inward and outward are different operations with different
+ * books in play, and the combined cell made the reader do the splitting.
  *
- * ONE CELL PER BOOK, "out / in", rather than the eight separate columns of the
- * spreadsheet this mirrors. Eight numeric columns plus a city name does not fit
- * a phone, and the block model has no colspan, so a two-row header naming each
- * book above its own Out/In pair is not available. Combining the pair keeps all
- * sixteen numbers and fits five columns.
+ * "-" WHERE A BOOK DID NOT FILE, never 0. A zero would say the warehouse moved
+ * nothing; the truth is nobody told us — the distinction `counts.reported`
+ * exists to preserve.
  *
- * "NA" WHERE A BOOK DID NOT FILE, never 0. A zero here would say the warehouse
- * moved nothing; the truth is that nobody told us — which is exactly the
- * distinction `counts.reported` exists to preserve.
+ * The Odoo column counts SAME-DAY postings only (run.ts passes runDate to
+ * computeCountLayer). Reconciliation still matches against the ±1 day window,
+ * so a next-day posting is not flagged late; reporting that window here stacked
+ * three days into one column and dwarfed every other book.
  */
-function movementSummary(data: DigestData): Section | null {
+function movementSummary(data: DigestData): Section[] {
   const withCounts = data.cities.filter((c) => c.counts);
-  if (withCounts.length === 0) return null;
+  if (withCounts.length === 0) return [];
 
   // "-" for an absent book, per the owner (was "NA").
-  const pair = (out: number, inn: number, reported: boolean) =>
-    reported ? `${n(out)} / ${n(inn)}` : "-";
+  const num = (v: number, reported: boolean) => (reported ? n(v) : "-");
 
-  return {
-    id: "movements",
-    title: `Movement summary · ${fmtDate(data.date)}`,
+  // ONE TABLE PER DIRECTION, per the owner. Inward and outward are different
+  // operations with different books in play — a combined "out / in" cell made
+  // the reader do the splitting. Column order follows the owner's spec:
+  // Odoo, WH (the gate register), GSheet, DT.
+  const table = (dir: "IN" | "OUT"): Section => ({
+    id: dir === "IN" ? "movements-in" : "movements-out",
+    title: `${dir === "IN" ? "Inward" : "Outward"} · ${fmtDate(data.date)}`,
     blocks: [
       {
         kind: "table",
         columns: [
           { label: "City" },
-          { label: "Register", align: "right" },
           { label: "Odoo", align: "right" },
-          { label: "Delivery tracker", align: "right" },
-          { label: "Security guards", align: "right" },
+          { label: "WH", align: "right" },
+          { label: "GSheet", align: "right" },
+          { label: "DT", align: "right" },
         ],
         rows: [
-          // The "Out / In" key as its own row under the book names, replacing
-          // the caps sentence that used to explain the cell format in prose.
-          [
-            { text: "" },
-            { text: "Out / In", tone: "muted" as const },
-            { text: "Out / In", tone: "muted" as const },
-            { text: "Out / In", tone: "muted" as const },
-            { text: "Out / In", tone: "muted" as const },
-          ],
           ...withCounts.map((c) => {
             const m = c.counts!;
+            const odoo = dir === "IN" ? m.odooIn : m.odooOut;
+            const wh = dir === "IN" ? m.physIn : m.physOut;
+            const sheet = dir === "IN" ? m.sheetIn : m.sheetOut;
+            const dt = dir === "IN" ? m.dtIn : m.dtOut;
             return [
               { text: cityName(c.city), strong: true },
-              { text: pair(m.sheetOut, m.sheetIn, m.reported.S) },
-              { text: pair(m.odooOut, m.odooIn, m.reported.O) },
-              { text: pair(m.dtOut, m.dtIn, m.reported.D) },
-              {
-                text: pair(m.physOut, m.physIn, m.reported.P),
-                tone: m.reported.P ? undefined : ("muted" as const),
-              },
+              { text: num(odoo, m.reported.O) },
+              { text: num(wh, m.reported.P), tone: m.reported.P ? undefined : ("muted" as const) },
+              { text: num(sheet, m.reported.S), tone: m.reported.S ? undefined : ("muted" as const) },
+              { text: num(dt, m.reported.D) },
             ];
           }),
-          // Column totals — reported cells only, so an absent book does not
-          // masquerade as a zero inside the sum.
+          // Reported cells only, so an absent book never masquerades as a zero.
           (() => {
-            const t = { S: [0, 0, false], O: [0, 0, false], D: [0, 0, false], P: [0, 0, false] } as
-              Record<string, [number, number, boolean]>;
+            const t = { O: [0, false], P: [0, false], S: [0, false], D: [0, false] } as
+              Record<string, [number, boolean]>;
             for (const c of withCounts) {
               const m = c.counts!;
-              if (m.reported.S) { t.S[0] += m.sheetOut; t.S[1] += m.sheetIn; t.S[2] = true; }
-              if (m.reported.O) { t.O[0] += m.odooOut; t.O[1] += m.odooIn; t.O[2] = true; }
-              if (m.reported.D) { t.D[0] += m.dtOut; t.D[1] += m.dtIn; t.D[2] = true; }
-              if (m.reported.P) { t.P[0] += m.physOut; t.P[1] += m.physIn; t.P[2] = true; }
+              if (m.reported.O) { t.O[0] += dir === "IN" ? m.odooIn : m.odooOut; t.O[1] = true; }
+              if (m.reported.P) { t.P[0] += dir === "IN" ? m.physIn : m.physOut; t.P[1] = true; }
+              if (m.reported.S) { t.S[0] += dir === "IN" ? m.sheetIn : m.sheetOut; t.S[1] = true; }
+              if (m.reported.D) { t.D[0] += dir === "IN" ? m.dtIn : m.dtOut; t.D[1] = true; }
             }
-            const cell = (k: string) => ({
-              text: t[k][2] ? `${n(t[k][0])} / ${n(t[k][1])}` : "-",
-              strong: true,
-            });
-            return [{ text: "Total", strong: true }, cell("S"), cell("O"), cell("D"), cell("P")];
+            const cell = (k: string) => ({ text: t[k][1] ? n(t[k][0]) : "-", strong: true });
+            return [
+              { text: "Total", strong: true },
+              cell("O"), cell("P"), cell("S"), cell("D"),
+            ];
           })(),
         ],
       },
     ],
-  };
-}
+  });
 
-// ─── register handover ───────────────────────────────────────────────────────
-
-/**
- * Which day's register each city owes, and whether it has arrived.
- *
- * ITS OWN TABLE, because it answers a question the by-city table cannot: not
- * "did the register arrive for the reported day" but "did the register arrive
- * for the last day this warehouse actually worked". Those are the same question
- * for Delhi and Bangalore and a different one for Mumbai, Pune and Hyderabad,
- * and collapsing them accused three warehouses of a missing book every Friday.
- *
- * A LATE REGISTER AND A SCHEDULED ONE MUST NEVER READ ALIKE. "Due after day
- * off" is the warehouse doing exactly what it is supposed to; "Not received" is
- * a book somebody owes us today. The colour follows: only the second is danger.
- */
-function handoverSection(data: DigestData): Section | null {
-  const rows = data.handover ?? [];
-  if (rows.length === 0) return null;
-
-  const label = (h: HandoverRow): { text: string; tone: "danger" | "warn" | "good" | "muted" } => {
-    if (h.state === "received") return { text: "Received", tone: "good" };
-    if (h.state === "failed") return { text: "Unreadable", tone: "danger" };
-    if (h.state === "pending") return { text: "Not read yet", tone: "warn" };
-    // An absent book here is NEVER "Not received". This table shows each city's
-    // newest owed register, and that book's handover day is always on or after
-    // the day this email is read — so at read time it is on its way, not late.
-    // "Not received" (danger) belongs to the by-city table, which judges the
-    // reported date; here the honest statement is when the book arrives.
-    return {
-      text: h.dueOn ? `Due ${weekdayName(h.dueOn)}` : "Due after day off",
-      tone: "muted",
-    };
-  };
-
-  return {
-    id: "handover",
-    title: "Register handover",
-    blocks: [
-      {
-        kind: "table",
-        columns: [
-          { label: "City" },
-          { label: "Last working day" },
-          { label: "Register for that day" },
-        ],
-        rows: rows.map((h) => {
-          const st = label(h);
-          return [
-            { text: cityName(h.city), strong: true },
-            {
-              // The weekday, not just the date: "Wed 29 Jul" is the whole point
-              // of the row — it says which day this warehouse last opened, and
-              // that it is not the same day as its neighbour's.
-              text: `${weekdayName(h.lastWorkingDay).slice(0, 3)} ${fmtDateShort(h.lastWorkingDay)}`,
-              tone: h.shutSince ? ("muted" as const) : undefined,
-            },
-            { text: st.text, tone: st.tone },
-          ];
-        }),
-      },
-    ],
-  };
+  return [table("IN"), table("OUT")];
 }
 
 // ─── part one: the four-way check ────────────────────────────────────────────
@@ -627,16 +559,10 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
   // (2026-08-01): the movement summary right below carries the day's numbers,
   // and the incomplete-run banner above still fires when the check broke.
 
-  // REGISTER HANDOVER, right under the movement summary: the summary says what
-  // each book recorded, this says which day's book we are even entitled to.
-  const handover = handoverSection(data);
-
   // THE MOVEMENT SUMMARY, first. It is the raw count each book recorded, before
   // any judgement is applied to it — so it belongs above the sections that
   // interpret those counts.
-  const movements = movementSummary(data);
-  if (movements) sections.push(movements);
-  if (handover) sections.push(handover);
+  sections.push(...movementSummary(data));
 
   // PART ONE. Before the at-risk detail, because it answers the prior question:
   // did the four records agree at all? Omitted entirely when it cannot be

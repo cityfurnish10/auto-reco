@@ -146,6 +146,14 @@ export interface CountLayer {
   dt_done: number;
   dt_diff: number;
   odoo_count: number;
+  /**
+   * Postings dated the run date ITSELF — what the digest reports.
+   *
+   * odoo_count is the reconciliation window (run-1 .. run+1), deliberately
+   * wide so a next-day posting matches the day's movement. Reporting that as
+   * "Odoo" stacked three days into one column and dwarfed every other book.
+   */
+  odoo_same_day: number;
   odoo_diff: number;
   phys_total: number;
   sheet_total: number;
