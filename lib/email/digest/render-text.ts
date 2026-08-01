@@ -82,7 +82,11 @@ function blockLines(b: Block): string[] {
 
 export function renderText(sections: Section[], date: string, kicker: string): string {
   const out: string[] = [`CITYFURNISH — ${kicker} — ${date}`, ""];
+  let first = true;
   for (const s of sections) {
+    // The same section divider the HTML draws as a rule.
+    if (!first) out.push("─".repeat(40), "");
+    first = false;
     if (s.title) out.push(s.title.toUpperCase(), "");
     for (const b of s.blocks) {
       out.push(...blockLines(b));

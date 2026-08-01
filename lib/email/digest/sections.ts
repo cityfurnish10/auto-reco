@@ -96,8 +96,9 @@ function movementSummary(data: DigestData): Section | null {
   const withCounts = data.cities.filter((c) => c.counts);
   if (withCounts.length === 0) return null;
 
+  // "-" for an absent book, per the owner (was "NA").
   const pair = (out: number, inn: number, reported: boolean) =>
-    reported ? `${n(out)} / ${n(inn)}` : "NA";
+    reported ? `${n(out)} / ${n(inn)}` : "-";
 
   return {
     id: "movements",
@@ -112,28 +113,48 @@ function movementSummary(data: DigestData): Section | null {
           { label: "Delivery tracker", align: "right" },
           { label: "Security guards", align: "right" },
         ],
-        rows: withCounts.map((c) => {
-          const m = c.counts!;
-          return [
-            { text: cityName(c.city), strong: true },
-            { text: pair(m.sheetOut, m.sheetIn, m.reported.S), align: "right" as const },
-            { text: pair(m.odooOut, m.odooIn, m.reported.O), align: "right" as const },
-            { text: pair(m.dtOut, m.dtIn, m.reported.D), align: "right" as const },
-            {
-              text: pair(m.physOut, m.physIn, m.reported.P),
-              align: "right" as const,
-              tone: m.reported.P ? undefined : ("muted" as const),
-            },
-          ];
-        }),
-      },
-      {
-        kind: "para",
-        // Owner's spec: capitalised and bold. It is the one line that stops a
-        // reader dividing an out/in pair, or reading NA as zero.
-        text: "EACH CELL IS OUT / IN. NA MEANS THAT BOOK DID NOT REACH US.",
-        tone: "muted",
-        strong: true,
+        rows: [
+          // The "Out / In" key as its own row under the book names, replacing
+          // the caps sentence that used to explain the cell format in prose.
+          [
+            { text: "" },
+            { text: "Out / In", tone: "muted" as const },
+            { text: "Out / In", tone: "muted" as const },
+            { text: "Out / In", tone: "muted" as const },
+            { text: "Out / In", tone: "muted" as const },
+          ],
+          ...withCounts.map((c) => {
+            const m = c.counts!;
+            return [
+              { text: cityName(c.city), strong: true },
+              { text: pair(m.sheetOut, m.sheetIn, m.reported.S) },
+              { text: pair(m.odooOut, m.odooIn, m.reported.O) },
+              { text: pair(m.dtOut, m.dtIn, m.reported.D) },
+              {
+                text: pair(m.physOut, m.physIn, m.reported.P),
+                tone: m.reported.P ? undefined : ("muted" as const),
+              },
+            ];
+          }),
+          // Column totals — reported cells only, so an absent book does not
+          // masquerade as a zero inside the sum.
+          (() => {
+            const t = { S: [0, 0, false], O: [0, 0, false], D: [0, 0, false], P: [0, 0, false] } as
+              Record<string, [number, number, boolean]>;
+            for (const c of withCounts) {
+              const m = c.counts!;
+              if (m.reported.S) { t.S[0] += m.sheetOut; t.S[1] += m.sheetIn; t.S[2] = true; }
+              if (m.reported.O) { t.O[0] += m.odooOut; t.O[1] += m.odooIn; t.O[2] = true; }
+              if (m.reported.D) { t.D[0] += m.dtOut; t.D[1] += m.dtIn; t.D[2] = true; }
+              if (m.reported.P) { t.P[0] += m.physOut; t.P[1] += m.physIn; t.P[2] = true; }
+            }
+            const cell = (k: string) => ({
+              text: t[k][2] ? `${n(t[k][0])} / ${n(t[k][1])}` : "-",
+              strong: true,
+            });
+            return [{ text: "Total", strong: true }, cell("S"), cell("O"), cell("D"), cell("P")];
+          })(),
+        ],
       },
     ],
   };
@@ -447,57 +468,6 @@ function cityBreakdown(item: ActionItem): string {
   return parts.join(", ");
 }
 
-function openingLine(d: DigestData, registerShort: boolean): string {
-  const { tier1, tier2, movements } = d.totals;
-  // "closed at 3pm" is load-bearing: the digest goes out at 16:45 IST, an hour
-  // after the business day shut. The year is dropped — it is in the masthead —
-  // and so is "today", which a deferred send turns into a lie.
-  const head = `${fmtDate(d.date)} closed at 3pm.`;
-  const moved = movements > 0 ? n(movements) : null;
-
-  if (tier1 === 0 && tier2 === 0) {
-    // "All accounted for" is BLOCKED while any live city is short a book —
-    // the same rule subject.ts already applies, for the same reason: the clean
-    // headline would be a lie, and the caveat three lines below would contradict
-    // it in the same email.
-    if (registerShort) {
-      return moved
-        ? `${head} ${moved} units moved and nothing has been flagged so far — but not every record has arrived yet.`
-        : `${head} Nothing has been flagged so far — but not every record has arrived yet.`;
-    }
-    const all = moved ? `All ${moved} units that moved are accounted for.` : "Every unit that moved is accounted for.";
-    // Only claimed from 3 days up: "two clean days running" is a coincidence.
-    return (d.cleanStreak ?? 0) >= 3
-      ? `${head} ${all.slice(0, -1)} — ${n(d.cleanStreak!)} clean days running.`
-      : `${head} ${all}`;
-  }
-  if (tier1 === 0) {
-    if (registerShort) {
-      return `${head} ${moved ? `${moved} units moved. ` : ""}Nothing is unaccounted for so far, though not every record has arrived. ${n(tier2)} are written up wrong and need correcting.`;
-    }
-    const all = moved ? `All ${moved} units that moved are accounted for.` : "Every unit that moved is accounted for.";
-    return `${head} ${all} ${n(tier2)} of them are written up wrong and need correcting.`;
-  }
-
-  // THE LEAD: rate first, so the reader knows in one clause whether today is
-  // unusual. "we cannot place" is the tier-1 rule in the owner's own words, and
-  // a plainer claim than "moved without a full trail".
-  const rate = movements > 0 ? Math.round(movements / tier1) : null;
-  const head2 = moved
-    ? `${moved} units moved and we cannot place ${n(tier1)} of them`
-    : `We cannot place ${n(tier1)} ${tier1 === 1 ? "unit" : "units"}`;
-
-  // The rate clause is suppressed whenever any live city was short a book: a day
-  // we could not fully see must not be ranked against days we could.
-  const verdict = d.dayTrend === "worst" ? ", the worst rate this week"
-    : d.dayTrend === "best" ? ", the best rate this week"
-    : d.dayTrend === "usual" ? ", in line with the week"
-    : "";
-  const lead = rate && verdict ? `${head2} — 1 in ${n(rate)}${verdict}.` : `${head2}.`;
-
-  const rest = tier2 > 0 ? ` Another ${n(tier2)} are on the floor but written up wrong.` : "";
-  return `${head} ${lead}${rest}`;
-}
 
 
 function citySnapshot(
@@ -599,29 +569,6 @@ function informationalLine(d: DigestData): string | null {
   return `Of the ${n(open)} items open today, ${n(tier3)} need nothing from anyone.`;
 }
 
-/**
- * Cities reconciled without their guard register ran on three sources, not
- * four, so their at-risk count is UNDERSTATED. Saying so is not optional.
- */
-function threeSourceCaveat(d: DigestData): string | null {
-  const short = d.cities.filter((c) => c.register === "missing" || c.register === "failed");
-  if (short.length === 0) return null;
-  const named = short.map((c) => cityName(c.city));
-  const names = named.length > 1
-    ? `${named.slice(0, -1).join(", ")} and ${named[named.length - 1]}`
-    : named[0];
-  // State the EFFECT, but do NOT claim a direction.
-  //
-  // "too low" was wrong in both directions. Missing the register HIDES items
-  // only it could raise (rung 4, "Off-System Movement" — a unit only the guard
-  // saw leave never enters the universe at all), and it PROMOTES others that the
-  // register's presence would have demoted (rung 8 fires DT-only as tier 1).
-  // The count is unreliable, not understated, and saying which way it leans
-  // would be a guess dressed as a finding.
-  return short.length === 1
-    ? `${names} was checked against three records, not four, so its at-risk number is not comparable with the rest.`
-    : `${names} were checked against three records, not four, so their at-risk numbers are not comparable with the rest.`;
-}
 
 export interface SectionOpts {
   dashboardUrl?: string;
@@ -675,17 +622,10 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
         },
       ],
     });
-  } else {
-    // One paragraph. The reconciling line that used to sit here spent 20 words —
-    // a tenth of the whole budget — explaining why two of our own screens count
-    // differently. The tier-3 total in the footer now closes the arithmetic
-    // without teaching anyone the word "tier", and those 20 words paid for the
-    // risk sentence in the action list.
-    sections.push({
-      id: "opening",
-      blocks: [{ kind: "para", text: openingLine(data, threeSourceCaveat(data) !== null) }],
-    });
   }
+  // The opening summary paragraph was removed at the owner's request
+  // (2026-08-01): the movement summary right below carries the day's numbers,
+  // and the incomplete-run banner above still fires when the check broke.
 
   // REGISTER HANDOVER, right under the movement summary: the summary says what
   // each book recorded, this says which day's book we are even entitled to.

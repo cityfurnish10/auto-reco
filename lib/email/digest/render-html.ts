@@ -46,12 +46,13 @@ function cellHtml(c: Cell): string {
   const heat = c.heat === undefined ? null : HEAT[c.heat];
   const color = heat ? heat.fg : TONE_COLOR[c.tone ?? "normal"];
   const weight = c.strong || (c.heat ?? 0) >= 3 ? "600" : "400";
-  const align = c.align ?? "left";
   const bg = heat ? `background:${heat.bg};` : "";
-  // A filled cell gets a white hairline instead of a top border, so the grid
-  // reads as separate tiles rather than a table that happens to be coloured.
-  const border = heat ? "border:2px solid #ffffff;" : "border-top:1px solid #f3f4f6;";
-  return `<td style="padding:8px 10px;${border}${bg}font-size:13px;color:${color};font-weight:${weight};text-align:${align};">${esc(c.text)}</td>`;
+  // Full gridlines and centred data, per the owner (2026-08-01). The model's
+  // per-cell `align` still drives the PLAINTEXT columns; here every cell is
+  // centred inside a real grid. Heat cells keep their white tile hairline —
+  // that IS the heatmap's grid.
+  const border = heat ? "border:2px solid #ffffff;" : "border:1px solid #e5e7eb;";
+  return `<td style="padding:8px 10px;${border}${bg}font-size:13px;color:${color};font-weight:${weight};text-align:center;">${esc(c.text)}</td>`;
 }
 
 function blockHtml(b: Block): string {
@@ -73,7 +74,7 @@ function blockHtml(b: Block): string {
       const head = b.columns
         .map(
           (col) =>
-            `<th style="padding:8px 10px;text-align:${col.align ?? "left"};font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#6b7280;font-weight:600;">${esc(col.label)}</th>`
+            `<th style="padding:8px 10px;border:1px solid #e5e7eb;background:#f9fafb;text-align:center;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#6b7280;font-weight:600;">${esc(col.label)}</th>`
         )
         .join("");
       const body = b.rows.map((r) => `<tr>${r.map(cellHtml).join("")}</tr>`).join("");
@@ -186,14 +187,17 @@ function blockHtml(b: Block): string {
 }
 
 export function renderHtml(sections: Section[], date: string, kicker: string): string {
+  // A rule and breathing room between every pair of sections, per the owner.
+  const DIVIDER =
+    `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:22px 0;"><tr><td style="border-top:1px solid #e5e7eb;font-size:0;line-height:0;">&nbsp;</td></tr></table>`;
   const body = sections
     .map((s) => {
       const title = s.title
-        ? `<p style="margin:18px 0 8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#6b7280;">${esc(s.title)}</p>`
+        ? `<p style="margin:0 0 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#6b7280;">${esc(s.title)}</p>`
         : "";
       return title + s.blocks.map(blockHtml).join("");
     })
-    .join("");
+    .join(DIVIDER);
 
   // Brand logo from the public CDN. The old objection to images was specific:
   // inline/base64 (stripped by Gmail) and the deployment-protected Vercel URL

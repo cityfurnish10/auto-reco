@@ -5,15 +5,6 @@ exports[`digest — model snapshot > richDay 1`] = `
   {
     "blocks": [
       {
-        "kind": "para",
-        "text": "26 July 2026 closed at 3pm. 3,825 units moved and we cannot place 78 of them. Another 305 are on the floor but written up wrong.",
-      },
-    ],
-    "id": "opening",
-  },
-  {
-    "blocks": [
-      {
         "columns": [
           {
             "label": "City",
@@ -153,15 +144,6 @@ exports[`digest — model snapshot > richDay 1`] = `
 
 exports[`digest — model snapshot > threePart 1`] = `
 [
-  {
-    "blocks": [
-      {
-        "kind": "para",
-        "text": "26 July 2026 closed at 3pm. 503 units moved and we cannot place 9 of them. Another 187 are on the floor but written up wrong.",
-      },
-    ],
-    "id": "opening",
-  },
   {
     "blocks": [
       {
