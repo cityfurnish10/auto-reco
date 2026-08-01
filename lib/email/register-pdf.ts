@@ -18,6 +18,9 @@
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { City } from "../sample-data";
+import { lastWorkingDay } from "../engine/schedule";
+import { readWarehouseCalendarRows } from "../db/persist";
 
 export interface CityRegisterPdf {
   city: string;
@@ -136,29 +139,35 @@ function drawHeaderRow(page: PDFPage, bold: PDFFont, y: number): void {
   });
 }
 
-// One PDF per city, not one document holding all five. Each warehouse gets a
-// file it can print and work from on its own, and a city manager forwarding
-// theirs no longer hands over every other city's register with it.
-export async function buildRegisterPdfs(
-  db: SupabaseClient,
-  businessDate: string
-): Promise<RegisterPdfResult> {
+// One PDF per city PER DATE, not one document holding all five.
+//
+// WHICH DATES: the handover model's. Each city contributes the register for its
+// OWN last working day — on the Thursday board that is Thursday's book for
+// Delhi and Bangalore and WEDNESDAY'S for the three cities shut on Thursday.
+// The old behaviour attached only board-date files, so the email's own handover
+// table said "Mumbai — Wed 29 Jul" while the attachments carried a 30-July
+// name; Pune's real 91-row Wednesday book went nowhere and a 6-row Friday-half
+// file stood in for it under the wrong day's name. Every file is now named by
+// the date its rows are from, and a city shut since its last working day
+// contributes BOTH books when the board date has rows of its own.
 
+const ALL_CITIES: City[] = ["DELHI", "MUMBAI", "PUNE", "HYDERABAD", "BANGALORE"];
+
+async function latestRunId(db: SupabaseClient, businessDate: string): Promise<string | null> {
   // Scope to ONE run. source_rows keeps every re-check pass for a date, so a
   // plain business_date filter returns the register several times over —
   // measured 4,106 rows for 2026-07-25 where the run itself pulled 896.
-  const { data: runs } = await db
+  const { data } = await db
     .from("reconciliation_runs")
     .select("id")
     .eq("business_date", businessDate)
     .in("status", ["success", "partial"])
     .order("created_at", { ascending: false })
     .limit(1);
-  const runId = runs?.[0]?.id as string | undefined;
-  if (!runId) {
-    return { pdfs: [], reason: "no completed reconciliation for this date" };
-  }
+  return (data?.[0]?.id as string) ?? null;
+}
 
+async function sheetRowsOfRun(db: SupabaseClient, runId: string): Promise<SheetRow[] | null> {
   const rows: SheetRow[] = [];
   for (let from = 0; ; from += 1000) {
     const { data, error } = await db
@@ -171,94 +180,139 @@ export async function buildRegisterPdfs(
       .order("city", { ascending: true })
       .order("id", { ascending: true })
       .range(from, from + 999);
-    if (error) return { pdfs: [], reason: error.message };
+    if (error) return null;
     rows.push(...((data ?? []) as SheetRow[]));
     if (!data || data.length < 1000) break;
   }
+  return rows;
+}
 
-  if (rows.length === 0) {
+async function renderCityPdf(
+  city: string,
+  date: string,
+  cityRows: SheetRow[]
+): Promise<CityRegisterPdf> {
+  // A fresh document per city — fonts are embedded per document.
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+
+  // OUT before IN, then barcode — the order a register is read in.
+  cityRows.sort(
+    (a, b) =>
+      a.direction.localeCompare(b.direction) || String(a.barcode).localeCompare(String(b.barcode))
+  );
+
+  let page = pdf.addPage([PAGE_W, PAGE_H]);
+  let y = PAGE_H - MARGIN;
+
+  const title = (continued: boolean) => {
+    page.drawText(`${titleCity(city)} — Warehouse Register — ${fileDate(date)}`, {
+      x: MARGIN,
+      y,
+      size: 12,
+      font: bold,
+      color: rgb(0.07, 0.09, 0.15),
+    });
+    page.drawText(
+      continued
+        ? "(continued)"
+        : `${cityRows.length} row${cityRows.length === 1 ? "" : "s"} · business day 15:00–15:00 IST`,
+      { x: MARGIN, y: y - 13, size: 8, font, color: rgb(0.45, 0.45, 0.5) }
+    );
+    y -= 30;
+    drawHeaderRow(page, bold, y);
+    y -= LINE_H;
+  };
+
+  title(false);
+
+  for (const r of cityRows) {
+    if (y < MARGIN + LINE_H) {
+      page = pdf.addPage([PAGE_W, PAGE_H]);
+      y = PAGE_H - MARGIN;
+      title(true);
+    }
+    let x = MARGIN;
+    for (const col of COLUMNS) {
+      page.drawText(safe(col.get(r), font, col.width - 6), {
+        x,
+        y,
+        size: FONT_SIZE,
+        font,
+        color: rgb(0.1, 0.1, 0.14),
+      });
+      x += col.width;
+    }
+    y -= LINE_H;
+  }
+
+  return {
+    city,
+    bytes: await pdf.save(),
+    filename: `Register-${titleCity(city)}-${fileDate(date)}.pdf`,
+    rowCount: cityRows.length,
+  };
+}
+
+export async function buildRegisterPdfs(
+  db: SupabaseClient,
+  businessDate: string
+): Promise<RegisterPdfResult> {
+  // The closure calendar decides each city's last working day. Best-effort:
+  // null falls back to the hardcoded Thursday map inside lastWorkingDay.
+  const calendar = await readWarehouseCalendarRows(db).catch(() => null);
+
+  // date -> the cities whose register belongs to that date on THIS board.
+  const wanted = new Map<string, Set<string>>();
+  const put = (date: string, city: string) => {
+    const set = wanted.get(date) ?? new Set<string>();
+    set.add(city);
+    wanted.set(date, set);
+  };
+  for (const city of ALL_CITIES) {
+    // Board-date rows always belong to the board's own file for that city.
+    put(businessDate, city);
+    const lwd = lastWorkingDay(city, businessDate, calendar);
+    if (lwd && lwd !== businessDate) put(lwd, city);
+  }
+
+  const pdfs: CityRegisterPdf[] = [];
+  let reason: string | undefined;
+
+  // Newest date first, so the attachment strip leads with the board itself.
+  for (const date of [...wanted.keys()].sort().reverse()) {
+    const runId = await latestRunId(db, date);
+    if (!runId) {
+      if (date === businessDate) reason = "no completed reconciliation for this date";
+      continue;
+    }
+    const rows = await sheetRowsOfRun(db, runId);
+    if (rows === null) {
+      if (date === businessDate) reason = "reading the stored register rows failed";
+      continue;
+    }
+    const byCity = new Map<string, SheetRow[]>();
+    for (const r of rows) {
+      if (!wanted.get(date)!.has(r.city)) continue;
+      const list = byCity.get(r.city) ?? [];
+      list.push(r);
+      byCity.set(r.city, list);
+    }
+    for (const city of [...byCity.keys()].sort()) {
+      pdfs.push(await renderCityPdf(city, date, byCity.get(city)!));
+    }
+  }
+
+  if (pdfs.length === 0) {
     // source_rows is pruned after 7 days, so a re-send of an older date finds
     // nothing. Say that rather than attaching empty documents.
     return {
       pdfs: [],
-      reason: "no stored ops-sheet rows for this date (raw source rows are kept for 7 days)",
+      reason:
+        reason ??
+        "no stored ops-sheet rows for this date (raw source rows are kept for 7 days)",
     };
   }
-
-  const byCity = new Map<string, SheetRow[]>();
-  for (const r of rows) {
-    const list = byCity.get(r.city) ?? [];
-    list.push(r);
-    byCity.set(r.city, list);
-  }
-
-  const pdfs: CityRegisterPdf[] = [];
-
-  for (const city of [...byCity.keys()].sort()) {
-    // A fresh document per city — fonts are embedded per document, so they are
-    // created inside the loop rather than shared.
-    const pdf = await PDFDocument.create();
-    const font = await pdf.embedFont(StandardFonts.Helvetica);
-    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-
-    const cityRows = byCity.get(city)!;
-    // OUT before IN, then barcode — the order a register is read in.
-    cityRows.sort(
-      (a, b) =>
-        a.direction.localeCompare(b.direction) || String(a.barcode).localeCompare(String(b.barcode))
-    );
-
-    let page = pdf.addPage([PAGE_W, PAGE_H]);
-    let y = PAGE_H - MARGIN;
-
-    const title = (continued: boolean) => {
-      page.drawText(`${titleCity(city)} — Warehouse Register — ${fileDate(businessDate)}`, {
-        x: MARGIN,
-        y,
-        size: 12,
-        font: bold,
-        color: rgb(0.07, 0.09, 0.15),
-      });
-      page.drawText(
-        continued
-          ? "(continued)"
-          : `${cityRows.length} row${cityRows.length === 1 ? "" : "s"} · business day 15:00–15:00 IST`,
-        { x: MARGIN, y: y - 13, size: 8, font, color: rgb(0.45, 0.45, 0.5) }
-      );
-      y -= 30;
-      drawHeaderRow(page, bold, y);
-      y -= LINE_H;
-    };
-
-    title(false);
-
-    for (const r of cityRows) {
-      if (y < MARGIN + LINE_H) {
-        page = pdf.addPage([PAGE_W, PAGE_H]);
-        y = PAGE_H - MARGIN;
-        title(true);
-      }
-      let x = MARGIN;
-      for (const col of COLUMNS) {
-        page.drawText(safe(col.get(r), font, col.width - 6), {
-          x,
-          y,
-          size: FONT_SIZE,
-          font,
-          color: rgb(0.1, 0.1, 0.14),
-        });
-        x += col.width;
-      }
-      y -= LINE_H;
-    }
-
-    pdfs.push({
-      city,
-      bytes: await pdf.save(),
-      filename: `Register-${titleCity(city)}-${fileDate(businessDate)}.pdf`,
-      rowCount: cityRows.length,
-    });
-  }
-
   return { pdfs };
 }
