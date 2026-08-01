@@ -63,6 +63,20 @@ export function registerAttachments(res: RegisterPdfResult | null): {
   };
 }
 
+// "2026-07-30" -> "30-July-2026", the same convention as the email subject
+// ("Movement Register- 30-July-2026"), so the attachment strip and the subject
+// visibly belong to the same day. The ISO form was correct but machine-facing:
+// a reader scanning five attachments should not have to parse y-m-d.
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+function fileDate(businessDate: string): string {
+  const [y, m, d] = businessDate.split("-").map(Number);
+  return y && m && d ? `${d}-${MONTHS[m - 1]}-${y}` : businessDate;
+}
+const titleCity = (c: string) => c.charAt(0) + c.slice(1).toLowerCase();
+
 interface SheetRow {
   city: string;
   direction: string;
@@ -198,7 +212,7 @@ export async function buildRegisterPdfs(
     let y = PAGE_H - MARGIN;
 
     const title = (continued: boolean) => {
-      page.drawText(`${city} — Warehouse Register — ${businessDate}`, {
+      page.drawText(`${titleCity(city)} — Warehouse Register — ${fileDate(businessDate)}`, {
         x: MARGIN,
         y,
         size: 12,
@@ -241,7 +255,7 @@ export async function buildRegisterPdfs(
     pdfs.push({
       city,
       bytes: await pdf.save(),
-      filename: `register-${city}-${businessDate}.pdf`,
+      filename: `Register-${titleCity(city)}-${fileDate(businessDate)}.pdf`,
       rowCount: cityRows.length,
     });
   }
