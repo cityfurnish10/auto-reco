@@ -51,6 +51,33 @@ export async function loadEmailArchive(
   }
 }
 
+/**
+ * The register PDFs that travelled with one email, as short-lived signed URLs.
+ *
+ * The bucket is private, so a viewer cannot link to the object directly. Keys
+ * are `{logId}-{CITY}.pdf` and the city set is not known here, so the listing
+ * is matched by prefix — the same approach pruneEmailArchive takes.
+ */
+export async function listEmailPdfs(
+  admin: SupabaseClient,
+  logId: string
+): Promise<{ name: string; url: string }[]> {
+  const out: { name: string; url: string }[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await admin.storage.from(BUCKET).list("", { limit: 1000, offset });
+    if (error || !data) break;
+    for (const f of data) {
+      if (!f.name.startsWith(`${logId}-`) || !f.name.endsWith(".pdf")) continue;
+      const { data: signed } = await admin.storage
+        .from(BUCKET)
+        .createSignedUrl(f.name, 60 * 30); // half an hour is plenty to click it
+      if (signed?.signedUrl) out.push({ name: f.name.slice(logId.length + 1), url: signed.signedUrl });
+    }
+    if (data.length < 1000) break;
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 // Remove the archived documents for a set of pruned email_logs ids.
 // Best-effort by contract — a failed remove only leaves an orphaned file.
 // The register PDF that went out with the email, keyed off the same log id.

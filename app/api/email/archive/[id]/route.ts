@@ -7,7 +7,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
-import { loadEmailArchive } from "@/lib/email/email-archive";
+import { listEmailPdfs, loadEmailArchive } from "@/lib/email/email-archive";
 import { buildDigestFromDb, renderDigestHtml, digestSubject } from "@/lib/email/digest";
 import { dashboardUrl } from "@/lib/email";
 
@@ -27,7 +27,7 @@ export async function GET(
   const db = createAdminClient();
   const { data: log, error } = await db
     .from("email_logs")
-    .select("id, kind, business_date, status, notes, created_at")
+    .select("id, kind, business_date, status, notes, created_at, recipients, cc, bcc, message_id")
     .eq("id", id)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -35,6 +35,18 @@ export async function GET(
   if (log.status !== "sent") {
     return NextResponse.json({ error: "this email was not sent — nothing to view" }, { status: 404 });
   }
+
+  // The envelope — who it reached and what travelled with it. Stored all along
+  // in email_logs and the archive bucket; the viewer showed only the body, so
+  // "what was actually sent" could not be answered from this page.
+  const envelope = {
+    to: (log.recipients as string[]) ?? [],
+    cc: (log.cc as string[]) ?? [],
+    bcc: (log.bcc as string[]) ?? [],
+    messageId: (log.message_id as string) ?? null,
+    kind: log.kind as string,
+    attachments: await listEmailPdfs(db, id).catch(() => []),
+  };
 
   // Preferred: the byte-identical snapshot taken at send time.
   const archived = await loadEmailArchive(db, id);
@@ -46,6 +58,7 @@ export async function GET(
       html: archived.html,
       businessDate: log.business_date,
       createdAt: log.created_at,
+      ...envelope,
     });
   }
 
@@ -61,5 +74,6 @@ export async function GET(
     html: renderDigestHtml(digest, dashboardUrl(), (log.notes as string) ?? undefined),
     businessDate: log.business_date,
     createdAt: log.created_at,
+    ...envelope,
   });
 }

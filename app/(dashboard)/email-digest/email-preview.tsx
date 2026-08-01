@@ -46,6 +46,12 @@ interface ArchivedView {
   html: string;
   archived: boolean;
   createdAt: string;
+  // The envelope — the email as the recipient received it, not just its body.
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  messageId: string | null;
+  attachments: { name: string; url: string }[];
 }
 
 // Today as an IST calendar date — the archive is bucketed by IST send day, and
@@ -152,6 +158,11 @@ export default function EmailPreview() {
         subject: json.subject ?? "",
         html: json.html ?? "",
         archived: !!json.archived,
+        to: json.to ?? [],
+        cc: json.cc ?? [],
+        bcc: json.bcc ?? [],
+        messageId: json.messageId ?? null,
+        attachments: json.attachments ?? [],
         createdAt: json.createdAt ?? "",
       });
     } catch (err) {
@@ -553,6 +564,49 @@ export default function EmailPreview() {
                   <Icon name="arrow_back" size={14} /> Back to live preview
                 </button>
               </div>
+              {/* THE ENVELOPE. The body alone cannot answer "what was actually
+                  sent" — who received it and what travelled with it are the
+                  half a reader checks first. All of it was stored already. */}
+              <dl className="px-4 py-3 border-b border-border text-xs grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                <dt className="text-text-muted">Subject</dt>
+                <dd className="text-text-primary font-medium min-w-0 break-words">{viewing.subject || "—"}</dd>
+                <dt className="text-text-muted">To</dt>
+                <dd className="text-text-secondary min-w-0 break-words">{viewing.to.length ? viewing.to.join(", ") : "—"}</dd>
+                {viewing.cc.length > 0 && (
+                  <>
+                    <dt className="text-text-muted">Cc</dt>
+                    <dd className="text-text-secondary min-w-0 break-words">{viewing.cc.join(", ")}</dd>
+                  </>
+                )}
+                {viewing.bcc.length > 0 && (
+                  <>
+                    <dt className="text-text-muted">Bcc</dt>
+                    <dd className="text-text-secondary min-w-0 break-words">{viewing.bcc.join(", ")}</dd>
+                  </>
+                )}
+                <dt className="text-text-muted">Attachments</dt>
+                <dd className="min-w-0">
+                  {viewing.attachments.length === 0 ? (
+                    <span className="text-text-muted">None</span>
+                  ) : (
+                    <span className="flex flex-wrap gap-1.5">
+                      {viewing.attachments.map((a) => (
+                        <a
+                          key={a.name}
+                          href={a.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 border border-border rounded-control px-2 py-0.5 text-text-secondary hover:border-accent hover:text-accent transition-colors"
+                          title="Open the PDF that was attached to this email"
+                        >
+                          <Icon name="download" size={12} />
+                          {a.name}
+                        </a>
+                      ))}
+                    </span>
+                  )}
+                </dd>
+              </dl>
               <iframe
                 title="Archived email"
                 srcDoc={viewing.html}
