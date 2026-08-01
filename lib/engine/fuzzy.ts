@@ -9,6 +9,7 @@
 // it in and the false variance is resolved rather than raised.
 
 import { canonicalize } from "./barcode";
+import { classNear } from "./ocr-noise";
 import type { BarcodeView } from "./types";
 
 export const BARCODE_MATCH_RATIO = 0.7; // same-length positional match cutoff
@@ -93,6 +94,14 @@ function matchScore(orphan: BarcodeView, target: BarcodeView): number {
   // ── Item-level identifiers — unique per line item, so they DISAMBIGUATE. ──
   // Near-identical barcode (same length, ≥70% positions — OCR fold set applied).
   if (barcodeFuzzy(orphan.canonical, target.canonical)) score += 4;
+  // Stray-character shape the positional matcher cannot see: one character
+  // glued to either end plus at most one confusable-class edit. Measured on the
+  // live queue 2026-08-01, 18 of 50 open Gate-Only HIGHs matched a same-day
+  // typed barcode exactly this way (6AP815719030952 → AP815719030952) and all
+  // scored ZERO here, because a stray character changes the length. Same weight
+  // as the positional match — both are item-level identifications — and the
+  // ambiguity-tie rule below still refuses to guess between two candidates.
+  else if (classNear(orphan.canonical, target.canonical)) score += 4;
 
   // Strong SO agreement — the SAME order number. Guard rows carry the bare
   // number ("84808") while typed sources wrap it ("ON-RET-BAN-84808"), so

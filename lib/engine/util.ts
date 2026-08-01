@@ -1,6 +1,7 @@
 // Shared normalizers for statuses, job types, and SO numbers.
 
 import type { NormStatus } from "./types";
+import { wordClass } from "./ocr-noise";
 
 export function pad(n: number): string {
   return String(n).padStart(2, "0");
@@ -98,5 +99,13 @@ export function blank(v: string | undefined | null): boolean {
 export function isSpareJobType(jobType: string | undefined | null): boolean {
   if (!jobType) return false;
   const s = jobType.toString().toUpperCase();
-  return s.includes("SPARE") || s.includes("CONSUM") || (s.includes("REFURB") && s.includes("MAT"));
+  // Also tested through the OCR word-class (digits mapped back to the letters
+  // they were misread from), so a register ops column that came through as
+  // "5PARE" or "C0NSUM" still diverts to the count lane instead of the ladder.
+  const w = wordClass(s);
+  return (
+    s.includes("SPARE") || w.includes("SPARE") ||
+    s.includes("CONSUM") || w.includes("CONSUM") ||
+    (s.includes("REFURB") && s.includes("MAT"))
+  );
 }
