@@ -52,7 +52,24 @@ function cellHtml(c: Cell): string {
   // centred inside a real grid. Heat cells keep their white tile hairline —
   // that IS the heatmap's grid.
   const border = heat ? "border:2px solid #ffffff;" : "border:1px solid #e5e7eb;";
-  return `<td style="padding:8px 10px;${border}${bg}font-size:13px;color:${color};font-weight:${weight};text-align:center;">${esc(c.text)}</td>`;
+
+  // A filled bar behind the number. Percentage widths on <td> are the only
+  // horizontal-bar primitive Outlook honours — the same reason the tables
+  // everywhere else are nested <table role="presentation"> rather than divs.
+  const pct = c.bar === undefined ? null : Math.max(0, Math.min(100, Math.round(c.bar)));
+  const body =
+    pct === null
+      ? esc(c.text)
+      : `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="table-layout:fixed;"><tr>` +
+        `<td style="white-space:nowrap;padding-right:6px;text-align:right;font-size:13px;color:${color};font-weight:${weight};">${esc(c.text)}</td>` +
+        `<td width="60%" style="width:60%;"><table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="table-layout:fixed;"><tr>` +
+        (pct > 0
+          ? `<td width="${pct}%" style="width:${pct}%;background:${TONE_COLOR[c.tone ?? "normal"]};height:8px;font-size:0;line-height:0;border-radius:2px;">&nbsp;</td>`
+          : "") +
+        (pct < 100 ? `<td style="font-size:0;line-height:0;">&nbsp;</td>` : "") +
+        `</tr></table></td></tr></table>`;
+
+  return `<td style="padding:8px 10px;${border}${bg}font-size:13px;color:${color};font-weight:${weight};text-align:center;">${body}</td>`;
 }
 
 function blockHtml(b: Block): string {
@@ -96,82 +113,6 @@ function blockHtml(b: Block): string {
         })
         .join(`<tr><td style="height:6px;line-height:6px;font-size:0;">&nbsp;</td></tr>`);
       return `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 12px;">${items}</table>`;
-    }
-
-    case "bars": {
-      // A grouped column chart, built from nested tables with FIXED PIXEL
-      // HEIGHTS. No div, no flex, no background-image, no SVG, and above all no
-      // CSS transform — Outlook's Word engine drops every one of them, which is
-      // why the value sits ABOVE each column rather than rotated inside it.
-      //
-      // One shared scale across every city: heights are measured against the
-      // largest value in the whole chart, so Mumbai's 107 towers over
-      // Hyderabad's 13 exactly as the numbers do. Scaling per city would draw
-      // two very different days as the same picture.
-      const PLOT = 120; // px for the tallest column
-      const max = Math.max(1, ...b.rows.flatMap((r) => r.segments.map((s) => s.value)));
-
-      const groups = b.rows
-        .map((r) => {
-          const cols = r.segments
-            .map((s) => {
-              // Zero keeps its slot — the gap where Mumbai's green bar should
-              // be is the whole point of the chart — but draws no block.
-              const h = s.value <= 0 ? 0 : Math.max(3, Math.round((s.value / max) * PLOT));
-              const cap = s.value > 0
-                ? `<div style="font-size:10px;line-height:12px;color:#6b7280;">${esc(String(s.value))}</div>`
-                : `<div style="font-size:10px;line-height:12px;color:#ffffff;">&nbsp;</div>`;
-              const block = h > 0
-                ? `<div style="width:16px;height:${h}px;background:${TONE_COLOR[s.tone]};border-radius:2px 2px 0 0;font-size:0;line-height:0;">&nbsp;</div>`
-                : "";
-              return `<td valign="bottom" style="padding:0 3px;text-align:center;">${cap}${block}</td>`;
-            })
-            .join("");
-          const badge = r.badge
-            ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:3px auto 0;"><tr><td style="padding:2px 7px;border-radius:9px;background:${r.badge.tone === "good" ? "#dcfce7" : "#f3f4f6"};font-size:10px;color:${r.badge.tone === "good" ? "#166534" : "#6b7280"};">${esc(r.badge.text)}</td></tr></table>`
-            : "";
-          const sub = r.sub
-            ? `<div style="font-size:11px;line-height:15px;color:#6b7280;">${esc(r.sub)}</div>`
-            : "";
-          // A nested two-row table with a FIXED-HEIGHT plot row. The axis line
-          // is the border between the rows, and fixing the plot height puts
-          // that border at exactly the same y in every group — before this,
-          // each group bottom-aligned its whole stack, so a city with no
-          // columns (weekly off) or no badge had a shorter stack and its
-          // baseline floated above its neighbours'.
-          return `<td valign="top" style="padding:0 6px;">
-            <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
-              <tr><td height="${PLOT + 14}" valign="bottom" align="center" style="height:${PLOT + 14}px;">
-                ${cols ? `<table role="presentation" cellpadding="0" cellspacing="0" align="center"><tr>${cols}</tr></table>` : `<div style="font-size:0;line-height:0;">&nbsp;</div>`}
-              </td></tr>
-              <tr><td align="center" style="border-top:1px solid #e5e7eb;padding-top:5px;text-align:center;">
-                <div style="font-size:12px;font-weight:600;color:#111827;">${esc(r.label)}</div>
-                ${sub}${badge}
-              </td></tr>
-            </table>
-          </td>`;
-        })
-        .join("");
-
-      const keys = (b.keys ?? [])
-        .map(
-          (k) =>
-            `<td style="padding:0 8px;font-size:11px;color:#6b7280;white-space:nowrap;"><span style="display:inline-block;width:9px;height:9px;background:${TONE_COLOR[k.tone]};border-radius:2px;">&nbsp;</span> ${esc(k.text)}</td>`
-        )
-        .join("");
-      const keyRow = keys
-        ? `<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:12px auto 0;"><tr>${keys}</tr></table>`
-        : "";
-
-      // NO CAPTIONS HERE. Each column already carries its own value above it,
-      // so restating them as prose underneath was five paragraphs of numbers
-      // the reader had just looked at. They render in the text part only, where
-      // the bar is block glyphs and carries nothing.
-      const legend = b.legend
-        ? `<p style="margin:14px 0 0;font-size:12px;line-height:1.5;color:#6b7280;">${esc(b.legend)}</p>`
-        : "";
-
-      return `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 6px;"><tr>${groups}</tr></table>${keyRow}${legend}`;
     }
 
     case "cta":

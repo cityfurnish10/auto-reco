@@ -7,18 +7,17 @@
 // units at risk out of 503 — about 98% fine. A bare "23 of 150 passed" would
 // tell a reader that 85% of stock is unaccounted for, which is false: plenty of
 // legitimate movements are never expected in all four systems (Bangalore inward
-// scored 0 of 64, every single one). So this reports the 4/3/2/1 distribution
-// and names the source that is missing, which is a finding somebody can act on,
-// rather than a ratio that reads as a catastrophe.
+// scored 0 of 64, every single one). So this reports the EXACT PRESENCE PATTERN
+// per unit — which books saw it and which did not — a finding somebody can act
+// on, rather than a ratio that reads as a catastrophe.
 //
-// WHICH DATE. Not necessarily the one the digest reports. Zero guard registers
-// have ever been uploaded before their own date's 16:30 run — measured over all
-// 33 rows of guard_uploads, see trends.ts:37-42 — so on the reported date
-// present_p is false almost everywhere and a literal four-way check would score
-// 0/N for every city, every day. latestFullyCoveredDate() therefore walks back
-// to the newest date whose four sources all reported, and the section says which
-// date it found. When register timing improves that answer moves forward on its
-// own, with no code change.
+// WHICH DATE — the day the digest reports, since 2026-08-02. It used to walk
+// back to the newest fully-covered day because a four-way check on the reported
+// date scored 0/N when the register had not arrived. Two things retired that:
+// the reconcile moved to 20:00 IST (only 8 of 38 registers had ever landed by
+// 16:30, against 15 by 20:00), and the section became a table that can say "-"
+// for a book that never filed instead of "x". A late register now reads as
+// absent rather than as a failure, so the section can stay on the email's day.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { addDays } from "../../engine/dates";
@@ -46,6 +45,15 @@ export interface CityCoverage {
   reported: Record<SourceKey, boolean>;
   inbound: { total: number; all4: number };
   outbound: { total: number; all4: number };
+  /**
+   * Exact presence pattern -> unit count. Keys are four characters in P,S,D,O
+   * order: "PSDO" seen by all four, "-SDO" missing the gate register.
+   *
+   * SUMS TO `total` BY CONSTRUCTION — every movement has exactly one pattern.
+   * That is what lets the section render rows a reader can add up against the
+   * city's own "N moved", which byCount could only do in aggregate.
+   */
+  patterns: Record<string, number>;
 }
 
 export interface FourWayCoverage {
@@ -219,6 +227,7 @@ export async function readFourWayCoverage(
         reported: { P: false, S: false, D: false, O: false },
         inbound: { total: 0, all4: 0 },
         outbound: { total: 0, all4: 0 },
+        patterns: {},
       } satisfies CityCoverage);
 
     const present: Record<SourceKey, boolean> = {
@@ -234,6 +243,13 @@ export async function readFourWayCoverage(
     // cannot occur (is_movement requires at least one source) but is dropped
     // rather than trusted to be impossible.
     if (seen >= 1) c.byCount[4 - seen]++;
+
+    // The exact pattern, in P,S,D,O order. One key per movement, so the map
+    // partitions the city's total — the section's rows can be added up.
+    const key = (["P", "S", "D", "O"] as SourceKey[])
+      .map((k) => (present[k] ? k : "-"))
+      .join("");
+    c.patterns[key] = (c.patterns[key] ?? 0) + 1;
     for (const k of ["P", "S", "D", "O"] as SourceKey[]) {
       if (!present[k]) c.missing[k]++;
       if (r[`reported_${k.toLowerCase()}` as keyof LedgerRow]) c.reported[k] = true;

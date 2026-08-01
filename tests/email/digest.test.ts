@@ -123,6 +123,7 @@ const threePart = digest({
         reported: { P: true, S: true, D: true, O: true },
         inbound: { total: 75, all4: 12 },
         outbound: { total: 75, all4: 11 },
+        patterns: { PSDO: 23, "-SDO": 62, "-S-O": 29, "---O": 36 },
       },
       {
         city: "BANGALORE",
@@ -132,6 +133,7 @@ const threePart = digest({
         reported: { P: true, S: true, D: true, O: true },
         inbound: { total: 64, all4: 0 },
         outbound: { total: 67, all4: 39 },
+        patterns: { PSDO: 39, "-SDO": 56, "-S-O": 18, "P---": 18 },
       },
       {
         city: "HYDERABAD",
@@ -141,6 +143,7 @@ const threePart = digest({
         reported: { P: false, S: false, D: true, O: true },
         inbound: { total: 16, all4: 0 },
         outbound: { total: 15, all4: 0 },
+        patterns: { "--DO": 20, "---O": 11 },
       },
     ],
   },
@@ -337,38 +340,6 @@ describe("digest — the founder's three parts", () => {
     expect(three).toBeGreaterThan(two);
   });
 
-  it("scales every city's bar against the SAME maximum", () => {
-    // A shared scale is the point of the chart: per-city percentages would draw
-    // Hyderabad's 18 movements the same size as Mumbai's 172. So the widest bar
-    // belongs to whichever city holds the single largest value, and no bar may
-    // exceed it.
-    const bars = text()
-      .split("\n")
-      .filter((l) => /^\s+[█▓▒░]+$/.test(l))
-      .map((l) => l.trim().length);
-    expect(bars.length).toBeGreaterThan(1);
-    expect(Math.max(...bars)).toBeLessThanOrEqual(40 * 4);
-    // Delhi holds the largest single segment (62) so it must draw the longest.
-    expect(bars[0]).toBe(Math.max(...bars));
-  });
-
-  it("keeps the per-city counts in the PLAINTEXT part only", () => {
-    // The captions were removed from the HTML — each column already prints its
-    // own value there, so restating them underneath was five paragraphs of
-    // numbers the reader had just looked at. In the text part the bar is block
-    // glyphs and carries nothing, so the caption is the only place the numbers
-    // exist. visibleStrings deliberately excludes it, which means the anti-drift
-    // test cannot guard it and THIS test has to.
-    const t = renderDigestText(threePart, URL);
-    expect(t).toContain("Delhi: 23 in all four · 62 in three · 29 in two · 36 in one");
-    expect(t).toContain("Bangalore: 39 in all four");
-
-    const html = stripTags(renderDigestHtml(threePart, URL));
-    expect(html).not.toContain("23 in all four");
-    // …but the values still reach the HTML, as labels on the columns.
-    expect(renderDigestHtml(threePart, URL)).toContain(">23<");
-  });
-
   it("drops the intro sentence that restated the key in prose", () => {
     for (const s of [renderDigestText(threePart, URL), stripTags(renderDigestHtml(threePart, URL))]) {
       expect(s).not.toContain("checked against all four records");
@@ -381,8 +352,14 @@ describe("digest — the founder's three parts", () => {
     expect(text()).not.toMatch(/\b\d+% (of )?(units )?(pass|passed|traced|agree)/i);
   });
 
-  it("names the day it measured when it is not the day reported", () => {
-    expect(text()).toContain("28 July 2026 is the most recent day with all four records in");
+  it("reports the email's own day — no second date to reconcile", () => {
+    // The section used to walk back to the newest fully-covered day, so it
+    // carried a "29 July is the most recent day with all four records in"
+    // caveat. Two things retired that: the reconcile moved to 20:00 IST, and a
+    // book that has not filed now shows a dash rather than a cross.
+    for (const surface of [renderDigestText(threePart, URL), stripTags(renderDigestHtml(threePart, URL))]) {
+      expect(surface).not.toContain("most recent day with all four records in");
+    }
   });
 
   it("lays part three out as a city-by-date grid with both totals", () => {

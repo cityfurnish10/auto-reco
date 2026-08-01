@@ -19,10 +19,17 @@
 // after each digest; a second mail nobody had asked for was worse at the job
 // than a section in the one they already open.
 
-import type { BarRow, Block, Heat, Section } from "./model";
+import type { Block, Heat, Section, Tone } from "./model";
 import { renderText } from "./render-text";
 import type { ActionItem, CityDigestRow, DigestData, RegisterState } from "./types";
-import { directionSkew, fullyReported, SOURCE_NAME, topMissing, type SourceKey } from "./coverage";
+import { directionSkew, fullyReported } from "./coverage";
+import {
+  DEFAULT_PATTERN_LIMIT,
+  filedNote,
+  patternRows,
+  SOURCE_LABEL,
+  SOURCE_ORDER,
+} from "./patterns";
 import { isCityOff, registerDueOn } from "../../engine/schedule";
 import { addDays } from "../../engine/dates";
 import type { City } from "../../sample-data";
@@ -159,148 +166,100 @@ function movementSummary(data: DigestData): Section[] {
 // ─── part one: the four-way check ────────────────────────────────────────────
 
 /**
- * The 4/3/2/1 split per city, drawn.
+ * Which books saw each unit, per city — the four-way check.
  *
- * Deliberately NOT a pass rate. Measured 2026-07-29, the first date with all
- * four sources live: Delhi reached all four on 23 of 150 units, Bangalore 39 of
- * 131 — while the engine put NINE units of 503 at risk that day. "15% passed"
- * and "98% fine" describe the same day, and only the second is true in the sense
- * a reader will take. So the chart shows the DISTRIBUTION, never a rate, and the
- * key names each band. The explanatory legend that used to sit underneath was
- * cut at the owner's request; the per-city badges now carry the reason a green
- * column is missing.
+ * A TABLE OF EXACT PATTERNS, not a distribution. The chart this replaced said
+ * how MANY books agreed and never which, so a reader could not tell 48 units
+ * missing only the gate register from 31 missing the register AND the app —
+ * and neither could be acted on. Every row now names the combination and what
+ * to do about it, and the rows sum to the city's own movement count.
+ *
+ * DELIBERATELY NOT A PASS RATE. Measured 2026-07-29: Delhi reached all four on
+ * 23 of 150 units, while the engine put NINE units of 503 at risk that day.
+ * "15% passed" and "98% fine" describe the same day and only the second is true
+ * in the sense a reader will take, so this section counts units per pattern and
+ * never divides.
  */
-function coverageSection(data: DigestData): Section | null {
+function coverageSection(data: DigestData, patternLimit: number = DEFAULT_PATTERN_LIMIT): Section | null {
   const cov = data.coverage;
   if (!cov || cov.cities.length === 0) return null;
 
-  const rows: BarRow[] = [];
+  const blocks: Block[] = [];
   let scored = 0;
 
-  // Cities that CAN be scored first, biggest first; the ones that cannot sink to
-  // the bottom. The reader came for the bars, and sorting purely by size floats
-  // a city with no bar at all to the top of the section — measured: Mumbai, shut
-  // for its weekly off, led a list whose next two rows were the only real data.
+  // Cities that can be scored first, biggest first; the rest sink. A city with
+  // no table must not lead a section whose next two rows are the real data.
   const ordered = [...cov.cities].sort((a, b) => {
     const sa = fullyReported(a) && !isCityOff(a.city as City, cov.date) ? 1 : 0;
     const sb = fullyReported(b) && !isCityOff(b.city as City, cov.date) ? 1 : 0;
     return sb - sa || b.total - a.total || a.city.localeCompare(b.city);
   });
 
-  // Cities that could not reach all four. Only the return guard reads this now
-  // — the explanatory legend it used to feed was cut from the email.
-  const noGreen: string[] = [];
-
   for (const c of ordered) {
-    const off = isCityOff(c.city as City, cov.date);
-    // The badge tracks the OFF DAY ITSELF and nothing else, matching part two.
-    // Marking the day before as well — its morning half is the holiday — put the
-    // badge on two rows in one week, which is not how the warehouses run. A city
-    // whose off day IS this date is handled by the `off` branch above and never
-    // reaches the chart, so nothing here can be a week-off row.
-    if (off) {
-      rows.push({
-        label: cityName(c.city),
-        sub: "weekly off",
-        caption: `${cityName(c.city)} was shut — nothing expected.`,
-        segments: [],
+    if (isCityOff(c.city as City, cov.date)) {
+      blocks.push({
+        kind: "para",
+        text: `${cityName(c.city)} — weekly off, nothing expected.`,
+        tone: "muted",
       });
       continue;
     }
 
-    const down = (["P", "S", "D", "O"] as SourceKey[]).filter((k) => !c.reported[k]);
-    const [four, three, two, one] = c.byCount;
+    const rows = patternRows(c, patternLimit);
+    if (rows.length === 0) continue;
+    if (fullyReported(c)) scored++;
 
-    // A city short a book STILL GETS ITS COLUMNS. The counts of "in three", "in
-    // two" and "in one" are real measurements either way, and the missing green
-    // column is the most legible thing on the page: it says, without a sentence,
-    // that nothing here could pass. What must never happen is scoring such a
-    // city as a RATE against one with all four — agreeing across two records is
-    // easier than across four, so a rate would render an outage as an
-    // improvement. This chart shows counts, names the absent book on the city
-    // itself, and repeats the reason under the plot.
-    if (!fullyReported(c)) noGreen.push(cityName(c.city));
-    else scored++;
+    blocks.push({
+      kind: "para",
+      text: `${cityName(c.city)} · ${n(c.total)} moved`,
+      strong: true,
+    });
 
-    const miss = topMissing(c);
-    const parts = [
-      `${cityName(c.city)}: ${n(four)} in all four`,
-      `${n(three)} in three`,
-      `${n(two)} in two`,
-      `${n(one)} in one`,
-    ];
-    // Spelt out rather than "(95)" beside the split above it: that count is over
-    // ALL the city's units, not a subset of the "in three" bucket, and a bare
-    // number sitting in the same list reads as though it were one.
-    if (miss) {
-      parts.push(`no ${SOURCE_NAME[miss.source]} on ${n(miss.count)} of them`);
-    }
-    // One direction unlogged while the other is fine — invisible in the city
-    // total, and the most actionable thing this section can say. Measured on
-    // Bangalore: 0 of 64 arriving reached all four, against 39 of 67 leaving.
+    const note = filedNote(c);
+    if (note) blocks.push({ kind: "para", text: note, tone: "muted" });
+
+    blocks.push({
+      kind: "table",
+      columns: [
+        ...SOURCE_ORDER.map((k) => ({ label: SOURCE_LABEL[k] })),
+        { label: "Count", align: "right" as const },
+        { label: "What it means" },
+      ],
+      rows: rows.map((r) => [
+        ...r.marks.map((m) => ({
+          // A dash, never a cross, for a book that did not file: its silence
+          // about this unit says nothing about the warehouse.
+          text: m === "yes" ? "✓" : m === "no" ? "✗" : "–",
+          tone: (m === "yes" ? "good" : m === "no" ? "danger" : "muted") as Tone,
+        })),
+        {
+          text: n(r.count),
+          align: "right" as const,
+          strong: true,
+          bar: r.share,
+          tone: (r.key === "PSDO" ? "good" : "warn") as Tone,
+        },
+        { text: r.action, tone: (r.key === "PSDO" ? "good" : "normal") as Tone },
+      ]),
+    });
+
+    // The one finding a per-city total hides: a whole direction unlogged.
+    // Measured on Bangalore — 0 of 64 arriving units reached all four records
+    // against 39 of 67 leaving. It survived the chart's removal on purpose.
     const skew = directionSkew(c);
     if (skew) {
-      parts.push(
-        `${skew.weak} units almost never do: ${n(skew.weakAll4)} of ${n(skew.weakTotal)}, against ${n(skew.strongAll4)} of ${n(skew.strongTotal)} the other way`
-      );
+      blocks.push({
+        kind: "para",
+        tone: "warn",
+        text: `${cityName(c.city)} logs almost nothing ${skew.weak}: ${n(skew.weakAll4)} of ${n(skew.weakTotal)} reach all four, against ${n(skew.strongAll4)} of ${n(skew.strongTotal)} the other way.`,
+      });
     }
-    rows.push({
-      label: cityName(c.city),
-      sub: `${n(c.total)} moved`,
-      // Three guard states, matching part two's register column. "Guard due
-      // Fri" is a schedule — the city's weekly off sits between this board and
-      // the register handover; "No guard" is a problem. The chart said "No
-      // guard" for all three off-day cities every single week, which is an
-      // alarm that cries wolf on schedule.
-      badge: !down.includes("P")
-        ? { text: "Guard ✓", tone: "good" }
-        : (() => {
-            // The exact handover day from the calendar, not "+2": a holiday
-            // stacked against the weekly off pushes the book another day, and
-            // the badge must move with it.
-            const due = registerDueOn(c.city as City, cov.date, data.calendar);
-            return due && due > addDays(cov.date, 1)
-              ? { text: `Guard due ${weekdayName(due).slice(0, 3)}`, tone: "muted" as const }
-              : { text: "No guard", tone: "muted" as const };
-          })(),
-      caption: parts.join(" · "),
-      segments: [
-        { tone: "good", value: four },
-        { tone: "normal", value: three },
-        { tone: "warn", value: two },
-        { tone: "danger", value: one },
-      ],
-    });
   }
 
   // Nothing scoreable AND nothing measurable — every city shut, or a ledger
-  // that answered with no movements at all. An absent claim beats an empty one.
-  if (scored === 0 && noGreen.length === 0) return null;
-
-  // NO INTRO PARAGRAPH. The section heading, the key under the plot and the
-  // legend below it already say what is being counted; a sentence naming the
-  // four records was restating the key in prose.
-  const blocks: Block[] = [
-    {
-      kind: "bars",
-      rows,
-      keys: [
-        { tone: "good", text: "All 4 records" },
-        { tone: "normal", text: "3 of 4" },
-        { tone: "warn", text: "2 of 4" },
-        { tone: "danger", text: "1 of 4" },
-      ],
-    },
-  ];
-
-  // Only say this when it IS a different day, so the normal case stays quiet.
-  if (cov.date !== data.date) {
-    blocks.push({
-      kind: "para",
-      tone: "muted",
-      text: `${fmtDate(cov.date)} is the most recent day with all four records in — gate registers reach us about a day late.`,
-    });
-  }
+  // that answered with no movements. An absent claim beats an empty one.
+  if (blocks.length === 0 || (scored === 0 && cov.cities.every((c) => isCityOff(c.city as City, cov.date))))
+    return null;
 
   return { id: "coverage", title: "1 · Four-way check", blocks };
 }
@@ -525,7 +484,7 @@ export const DIGEST_KICKER = "Daily stock check";
  * board rendered 548 — two words of headroom, with the ladder already trimming
  * to get there, which is a budget doing harm rather than good.
  */
-export const WORD_BUDGET = 650;
+export const WORD_BUDGET = 850;
 
 export function buildSections(data: DigestData, opts: SectionOpts = {}): Section[] {
   const sections: Section[] = [];
@@ -610,7 +569,7 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
     });
   }
 
-  return opts.trim === false ? sections : trimToBudget(sections);
+  return opts.trim === false ? sections : trimToBudget(sections, data);
 }
 
 /**
@@ -620,7 +579,9 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
  * commentary. NEVER dropped: the opening line, the four-way chart, the at-risk
  * table, the link, and the incomplete-run banner.
  */
-export function trimToBudget(sections: Section[]): Section[] {
+const TRIMMED_PATTERN_LIMIT = 3;
+
+export function trimToBudget(sections: Section[], data: DigestData): Section[] {
   // MEASURE THE ACTUAL RENDER, not an estimate of it.
   //
   // This used to count the model's words and add a reserve for what the
@@ -683,60 +644,16 @@ export function trimToBudget(sections: Section[]): Section[] {
   });
   if (words(out) <= WORD_BUDGET) return out;
 
-  // 3. The four-way captions keep their four counts and shed the commentary.
+  // 3. The four-way tables keep their three biggest patterns each.
   //
-  // Last of all, because these captions ARE the chart for a plaintext reader —
-  // the columns are pixels and carry nothing they can read. The four counts are
-  // the measurement; the missing-source and one-direction clauses are the
-  // interpretation, and the legend underneath still carries the general point.
-  out = out.map((s) => {
-    if (s.id !== "coverage") return s;
-    return {
-      ...s,
-      blocks: s.blocks.map((b) =>
-        b.kind === "bars"
-          ? {
-              ...b,
-              rows: b.rows.map((r) => ({
-                ...r,
-                caption: r.caption.split(" · ").slice(0, 4).join(" · "),
-              })),
-            }
-          : b
-      ),
-    };
-  });
+  // Rewritten with the section (2026-08-02). The old rung sliced a bar caption
+  // on " · " and is a silent no-op against a table — the ladder would have
+  // stopped trimming exactly as this section tripled in size. patternRows folds
+  // whatever it drops into one "Other combinations" row, so the Count column
+  // still sums to the city's own movement total at any limit.
+  out = out.map((s) =>
+    s.id === "coverage" ? coverageSection(data, TRIMMED_PATTERN_LIMIT) ?? s : s
+  );
   return out;
 }
 
-function blockText(b: Block): string[] {
-  switch (b.kind) {
-    case "para":
-      return [b.text];
-    case "callout":
-      return [b.title, ...b.lines];
-    case "table":
-      return [
-        ...b.columns.map((c) => c.label),
-        ...b.rows.flatMap((r) => r.map((c) => c.text)),
-        ...(b.footnote ? [b.footnote] : []),
-      ];
-    case "list":
-      return b.items.flatMap((i) => (i.sub ? [i.text, i.sub] : [i.text]));
-    case "bars":
-      // All the copy; the columns themselves cost nothing in either renderer.
-      return [
-        ...b.rows.flatMap((r) =>
-          [r.label, r.sub, r.badge?.text, r.caption].filter((x): x is string => !!x)
-        ),
-        ...(b.keys ?? []).map((k) => k.text),
-        ...(b.legend ? [b.legend] : []),
-      ];
-    case "cta":
-      return [b.label];
-    default: {
-      const never: never = b;
-      throw new Error(`blockText: unhandled ${JSON.stringify(never)}`);
-    }
-  }
-}

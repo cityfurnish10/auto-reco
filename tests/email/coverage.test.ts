@@ -21,6 +21,8 @@ const city = (over: Partial<CityCoverage> = {}): CityCoverage => ({
   reported: { P: true, S: true, D: true, O: true },
   inbound: { total: 75, all4: 12 },
   outbound: { total: 75, all4: 11 },
+  // Sums to total (150), as the fold guarantees.
+  patterns: { PSDO: 23, "-SDO": 62, "-S-O": 29, "---O": 36 },
   ...over,
 });
 
@@ -103,20 +105,26 @@ describe("directionSkew", () => {
 });
 
 describe("the four-way section", () => {
-  it("draws the split and never calls it a pass rate", () => {
-    const t = textOf(digest({ date: "2026-07-30", cities: [city()] }));
+  it("names each pattern and what it means, and never states a rate", () => {
+    const d = digest({ date: "2026-07-30", cities: [city()] });
+    const t = textOf(d);
     expect(t).toContain("1 · Four-way check");
-    const plain = plainOf(digest({ date: "2026-07-30", cities: [city()] }));
-    expect(plain).toContain("23 in all four");
-    expect(plain).toContain("no gate register on 51 of them");
+    expect(t).toContain("Delhi · 150 moved");
+    expect(t).toContain("All clear");
+    expect(t).toContain("Guard post not logging");
+    // Counts are cell TEXT, not just bar geometry, so they reach both renderers.
+    expect(plainOf(d)).toMatch(/62/);
   });
 
-  it("still charts a city whose guard register did not file, and says why", () => {
-    // The counts of "in three / two / one" are real measurements either way,
-    // and the MISSING GREEN COLUMN is the most legible thing on the page. What
-    // must never happen is scoring such a city as a RATE against one with all
-    // four — agreeing across two records is easier than across four, so a rate
-    // would render an outage as an improvement. Counts do not have that flaw.
+  it("rows sum to the city total, so the table reconciles with its heading", () => {
+    const c = city();
+    expect(Object.values(c.patterns).reduce((a, b) => a + b, 0)).toBe(c.total);
+  });
+
+  it("a book that never filed is a dash, never a cross", () => {
+    // The cross accuses; the dash reports. Measured 30 Jul: Mumbai's guard and
+    // sheet books did not file at all, and rendering those as crosses would
+    // blame a warehouse for not logging on a day nobody asked it to.
     const t = textOf(
       digest({
         date: "2026-07-30",
@@ -126,25 +134,21 @@ describe("the four-way section", () => {
         ],
       })
     );
-    expect(t).toContain("No guard");
-    expect(t).toContain("Guard ✓"); // Delhi keeps its badge
+    expect(t).toContain("–");
+    expect(t).toContain("did not file today");
+    // And the action text for such a city never names the absent book.
+    expect(t).not.toContain("Guard post not logging · Bangalore");
   });
 
-  it("marks a city shut for its weekly off and charts nothing for it", () => {
+  it("marks a city shut for its weekly off and tabulates nothing for it", () => {
     // 2026-07-30 is a Thursday; Pune is closed.
-    const d = digest({ date: "2026-07-30", cities: [city(), city({ city: "PUNE", total: 0 })] });
+    const d = digest({
+      date: "2026-07-30",
+      cities: [city(), city({ city: "PUNE", total: 0, patterns: {} })],
+    });
     const t = textOf(d);
-    expect(plainOf(d)).toContain("Pune was shut — nothing expected.");
-  });
-
-  it("says which day it measured when that is not the day reported", () => {
-    const t = textOf(digest({ date: "2026-07-28", cities: [city()] }));
-    expect(t).toContain("28 July 2026 is the most recent day with all four records in");
-  });
-
-  it("stays quiet about the date when it matches the reported day", () => {
-    const t = textOf(digest({ date: "2026-07-30", cities: [city()] }));
-    expect(t).not.toContain("most recent day with all four records in");
+    expect(t).toContain("Pune — weekly off, nothing expected.");
+    expect(t).not.toContain("Pune · 0 moved");
   });
 
   it("omits the section when every city was shut", () => {
@@ -154,9 +158,9 @@ describe("the four-way section", () => {
       digest({
         date: "2026-07-30",
         cities: [
-          city({ city: "MUMBAI", total: 0 }),
-          city({ city: "PUNE", total: 0 }),
-          city({ city: "HYDERABAD", total: 0 }),
+          city({ city: "MUMBAI", total: 0, patterns: {} }),
+          city({ city: "PUNE", total: 0, patterns: {} }),
+          city({ city: "HYDERABAD", total: 0, patterns: {} }),
         ],
       })
     );

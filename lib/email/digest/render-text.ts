@@ -10,16 +10,34 @@
 
 import type { Block, Section } from "./model";
 
+// Shading for a plaintext bar. Hoisted out of the retired grouped-column
+// renderer so the block glyph survives it.
+const BAR_GLYPH = "█";
+const CELL_BAR_WIDTH = 10;
+
+/**
+ * A cell's printable string — the text, plus its bar when it has one.
+ *
+ * Built BEFORE the column-width pass below, which measures `.length`: appending
+ * the glyphs afterwards would leave every column short by the bar and the table
+ * would shear.
+ */
+function cellText(c: { text: string; bar?: number }): string {
+  if (c.bar === undefined) return c.text;
+  const filled = Math.max(0, Math.min(CELL_BAR_WIDTH, Math.round((c.bar / 100) * CELL_BAR_WIDTH)));
+  return filled > 0 ? `${c.text} ${BAR_GLYPH.repeat(filled)}` : c.text;
+}
+
 function tableLines(b: Extract<Block, { kind: "table" }>): string[] {
   const widths = b.columns.map((c, i) =>
-    Math.max(c.label.length, ...b.rows.map((r) => (r[i]?.text ?? "").length))
+    Math.max(c.label.length, ...b.rows.map((r) => (r[i] ? cellText(r[i]) : "").length))
   );
   const pad = (s: string, i: number) =>
     b.columns[i].align === "right" ? s.padStart(widths[i]) : s.padEnd(widths[i]);
 
   const lines = [b.columns.map((c, i) => pad(c.label.toUpperCase(), i)).join("  ")];
   lines.push(widths.map((w) => "-".repeat(w)).join("  "));
-  for (const r of b.rows) lines.push(r.map((c, i) => pad(c.text, i)).join("  "));
+  for (const r of b.rows) lines.push(r.map((c, i) => pad(cellText(c), i)).join("  "));
   if (b.footnote) lines.push("", b.footnote);
   return lines;
 }
@@ -29,33 +47,6 @@ function tableLines(b: Extract<Block, { kind: "table" }>): string[] {
 const BAR_GLYPHS = ["█", "▓", "▒", "░"];
 const BAR_WIDTH = 40; // fits a 72-column part with room to indent
 
-/**
- * The column chart, laid down on its side.
- *
- * A vertical chart cannot exist in monospace text, so each city becomes one
- * horizontal bar scaled against the SAME maximum the HTML renderer uses. That
- * keeps the two pictures telling the same story even though they look nothing
- * alike, and the caption underneath carries every number regardless.
- */
-function barLines(b: Extract<Block, { kind: "bars" }>): string[] {
-  const out: string[] = [];
-  const max = Math.max(1, ...b.rows.flatMap((r) => r.segments.map((s) => s.value)));
-  for (const r of b.rows) {
-    out.push([r.label, r.sub, r.badge?.text].filter(Boolean).join(" · "));
-    const bar = r.segments
-      .map((s, i) =>
-        BAR_GLYPHS[i % BAR_GLYPHS.length].repeat(
-          s.value <= 0 ? 0 : Math.max(1, Math.round((s.value / max) * BAR_WIDTH))
-        )
-      )
-      .join("");
-    if (bar) out.push(`  ${bar}`);
-    out.push(`  ${r.caption}`);
-  }
-  if (b.keys?.length) out.push("", b.keys.map((k, i) => `${BAR_GLYPHS[i % BAR_GLYPHS.length]} ${k.text}`).join("   "));
-  if (b.legend) out.push("", b.legend);
-  return out;
-}
 
 function blockLines(b: Block): string[] {
   switch (b.kind) {
@@ -67,8 +58,6 @@ function blockLines(b: Block): string[] {
       return tableLines(b);
     case "list":
       return b.items.flatMap((i) => (i.sub ? [`- ${i.text}`, `  ${i.sub}`] : [`- ${i.text}`]));
-    case "bars":
-      return barLines(b);
     case "cta":
       // The old plaintext renderer dropped this, so a text-only reader had no
       // way to reach the dashboard at all.

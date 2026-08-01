@@ -147,113 +147,397 @@ exports[`digest — model snapshot > threePart 1`] = `
   {
     "blocks": [
       {
-        "keys": [
+        "kind": "para",
+        "strong": true,
+        "text": "Delhi · 150 moved",
+      },
+      {
+        "columns": [
           {
-            "text": "All 4 records",
-            "tone": "good",
+            "label": "Guard",
           },
           {
-            "text": "3 of 4",
-            "tone": "normal",
+            "label": "Sheet",
           },
           {
-            "text": "2 of 4",
-            "tone": "warn",
+            "label": "DT",
           },
           {
-            "text": "1 of 4",
-            "tone": "danger",
+            "label": "Odoo",
+          },
+          {
+            "align": "right",
+            "label": "Count",
+          },
+          {
+            "label": "What it means",
           },
         ],
-        "kind": "bars",
+        "kind": "table",
         "rows": [
-          {
-            "badge": {
-              "text": "Guard ✓",
+          [
+            {
+              "text": "✗",
+              "tone": "danger",
+            },
+            {
+              "text": "✓",
               "tone": "good",
             },
-            "caption": "Delhi: 23 in all four · 62 in three · 29 in two · 36 in one · no gate register on 51 of them",
-            "label": "Delhi",
-            "segments": [
-              {
-                "tone": "good",
-                "value": 23,
-              },
-              {
-                "tone": "normal",
-                "value": 62,
-              },
-              {
-                "tone": "warn",
-                "value": 29,
-              },
-              {
-                "tone": "danger",
-                "value": 36,
-              },
-            ],
-            "sub": "150 moved",
-          },
-          {
-            "badge": {
-              "text": "Guard ✓",
+            {
+              "text": "✓",
               "tone": "good",
             },
-            "caption": "Bangalore: 39 in all four · 56 in three · 18 in two · 18 in one · no delivery app on 61 of them · arriving units almost never do: 0 of 64, against 39 of 67 the other way",
-            "label": "Bangalore",
-            "segments": [
-              {
-                "tone": "good",
-                "value": 39,
-              },
-              {
-                "tone": "normal",
-                "value": 56,
-              },
-              {
-                "tone": "warn",
-                "value": 18,
-              },
-              {
-                "tone": "danger",
-                "value": 18,
-              },
-            ],
-            "sub": "131 moved",
-          },
-          {
-            "badge": {
-              "text": "No guard",
-              "tone": "muted",
+            {
+              "text": "✓",
+              "tone": "good",
             },
-            "caption": "Hyderabad: 0 in all four · 0 in three · 20 in two · 11 in one · no gate register on 31 of them",
-            "label": "Hyderabad",
-            "segments": [
-              {
-                "tone": "good",
-                "value": 0,
-              },
-              {
-                "tone": "normal",
-                "value": 0,
-              },
-              {
-                "tone": "warn",
-                "value": 20,
-              },
-              {
-                "tone": "danger",
-                "value": 11,
-              },
-            ],
-            "sub": "31 moved",
-          },
+            {
+              "align": "right",
+              "bar": 100,
+              "strong": true,
+              "text": "62",
+              "tone": "warn",
+            },
+            {
+              "text": "Guard post not logging",
+              "tone": "normal",
+            },
+          ],
+          [
+            {
+              "text": "✗",
+              "tone": "danger",
+            },
+            {
+              "text": "✗",
+              "tone": "danger",
+            },
+            {
+              "text": "✗",
+              "tone": "danger",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "align": "right",
+              "bar": 58,
+              "strong": true,
+              "text": "36",
+              "tone": "warn",
+            },
+            {
+              "text": "Only Odoo has it — off-system?",
+              "tone": "normal",
+            },
+          ],
+          [
+            {
+              "text": "✗",
+              "tone": "danger",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "text": "✗",
+              "tone": "danger",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "align": "right",
+              "bar": 47,
+              "strong": true,
+              "text": "29",
+              "tone": "warn",
+            },
+            {
+              "text": "Guard + DT both skipped",
+              "tone": "normal",
+            },
+          ],
+          [
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "align": "right",
+              "bar": 37,
+              "strong": true,
+              "text": "23",
+              "tone": "good",
+            },
+            {
+              "text": "All clear",
+              "tone": "good",
+            },
+          ],
         ],
       },
       {
         "kind": "para",
-        "text": "28 July 2026 is the most recent day with all four records in — gate registers reach us about a day late.",
+        "strong": true,
+        "text": "Bangalore · 131 moved",
+      },
+      {
+        "columns": [
+          {
+            "label": "Guard",
+          },
+          {
+            "label": "Sheet",
+          },
+          {
+            "label": "DT",
+          },
+          {
+            "label": "Odoo",
+          },
+          {
+            "align": "right",
+            "label": "Count",
+          },
+          {
+            "label": "What it means",
+          },
+        ],
+        "kind": "table",
+        "rows": [
+          [
+            {
+              "text": "✗",
+              "tone": "danger",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "align": "right",
+              "bar": 100,
+              "strong": true,
+              "text": "56",
+              "tone": "warn",
+            },
+            {
+              "text": "Guard post not logging",
+              "tone": "normal",
+            },
+          ],
+          [
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "align": "right",
+              "bar": 70,
+              "strong": true,
+              "text": "39",
+              "tone": "good",
+            },
+            {
+              "text": "All clear",
+              "tone": "good",
+            },
+          ],
+          [
+            {
+              "text": "✗",
+              "tone": "danger",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "text": "✗",
+              "tone": "danger",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "align": "right",
+              "bar": 32,
+              "strong": true,
+              "text": "18",
+              "tone": "warn",
+            },
+            {
+              "text": "Guard + DT both skipped",
+              "tone": "normal",
+            },
+          ],
+          [
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "text": "✗",
+              "tone": "danger",
+            },
+            {
+              "text": "✗",
+              "tone": "danger",
+            },
+            {
+              "text": "✗",
+              "tone": "danger",
+            },
+            {
+              "align": "right",
+              "bar": 32,
+              "strong": true,
+              "text": "18",
+              "tone": "warn",
+            },
+            {
+              "text": "Only the guard saw it",
+              "tone": "normal",
+            },
+          ],
+        ],
+      },
+      {
+        "kind": "para",
+        "text": "Bangalore logs almost nothing arriving: 0 of 64 reach all four, against 39 of 67 the other way.",
+        "tone": "warn",
+      },
+      {
+        "kind": "para",
+        "strong": true,
+        "text": "Hyderabad · 31 moved",
+      },
+      {
+        "kind": "para",
+        "text": "Guard and Sheet did not file today — those columns are blank, not a miss.",
         "tone": "muted",
+      },
+      {
+        "columns": [
+          {
+            "label": "Guard",
+          },
+          {
+            "label": "Sheet",
+          },
+          {
+            "label": "DT",
+          },
+          {
+            "label": "Odoo",
+          },
+          {
+            "align": "right",
+            "label": "Count",
+          },
+          {
+            "label": "What it means",
+          },
+        ],
+        "kind": "table",
+        "rows": [
+          [
+            {
+              "text": "–",
+              "tone": "muted",
+            },
+            {
+              "text": "–",
+              "tone": "muted",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "align": "right",
+              "bar": 100,
+              "strong": true,
+              "text": "20",
+              "tone": "warn",
+            },
+            {
+              "text": "In every book that filed",
+              "tone": "normal",
+            },
+          ],
+          [
+            {
+              "text": "–",
+              "tone": "muted",
+            },
+            {
+              "text": "–",
+              "tone": "muted",
+            },
+            {
+              "text": "✗",
+              "tone": "danger",
+            },
+            {
+              "text": "✓",
+              "tone": "good",
+            },
+            {
+              "align": "right",
+              "bar": 55,
+              "strong": true,
+              "text": "11",
+              "tone": "warn",
+            },
+            {
+              "text": "Missing from DT",
+              "tone": "normal",
+            },
+          ],
+        ],
       },
     ],
     "id": "coverage",
