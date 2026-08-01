@@ -159,6 +159,25 @@ export async function readFourWayCoverage(
   db: SupabaseClient,
   date: string
 ): Promise<FourWayCoverage | null> {
+  // LATEST RUN ONLY. The ledger upserts on its natural key and never deletes,
+  // so rows the newest run no longer emits — merged OCR orphans, parked
+  // artifacts, superseded spellings — linger with an older run_id. Measured
+  // 2026-08-01 on the 30 Jul board: the unfiltered ledger said Delhi moved 200
+  // while run_city_stats (and part two of the same email) said 190, and the 10
+  // extra rows were exactly the killed artifacts (C0UNT0141TEM5, 611TEN50UT…).
+  // upsertMovementEvents re-stamps run_id on every row it touches, so
+  // run_id = latest is precisely "what the newest run stands behind" — and the
+  // chart's total now equals run_city_stats.movements by construction.
+  const { data: runs } = await db
+    .from("reconciliation_runs")
+    .select("id")
+    .eq("business_date", date)
+    .in("status", ["success", "partial"])
+    .order("created_at", { ascending: false })
+    .limit(1);
+  const latestRun = runs?.[0]?.id as string | undefined;
+  if (!latestRun) return null;
+
   const rows: LedgerRow[] = [];
   // Paginated: PostgREST silently caps an un-ranged select at 1000 rows, and a
   // busy day is comfortably over that. Ordered by id so pages cannot repeat or
@@ -170,6 +189,7 @@ export async function readFourWayCoverage(
         "city, direction, present_p, present_s, present_d, present_o, reported_p, reported_s, reported_d, reported_o, is_movement"
       )
       .eq("business_date", date)
+      .eq("run_id", latestRun)
       .order("id", { ascending: true })
       .range(from, from + 999);
     if (error) return null;

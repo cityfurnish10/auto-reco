@@ -239,6 +239,10 @@ export async function GET(req: NextRequest) {
         .from("movement_events")
         .select("city, present_p, present_s, present_d, present_o, is_movement")
         .eq("business_date", run.business_date)
+        // Latest run only — the ledger never deletes, so rows the newest run no
+        // longer emits (merged/parked OCR artifacts) linger under older run_ids
+        // and inflated these counts. run.id IS that date's latest run here.
+        .eq("run_id", run.id)
         .order("id", { ascending: true })
         .range(from, from + 999);
       if (error) throw error;

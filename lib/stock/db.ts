@@ -162,15 +162,41 @@ export async function readMovements(
     if (isMissingTable(probe.error)) return null;
     throw new Error(`readMovements: ${probe.error.message}`);
   }
-  return pageAll<MovementRow>((lo, hi) =>
+  // Latest run per date. The ledger upserts and never deletes, so rows a newer
+  // run no longer emits (merged or parked OCR artifacts) keep their older
+  // run_id and would inflate every per-day picture drawn from this read —
+  // measured 2026-08-01: 10 killed artifacts still counted as Delhi movements.
+  // Rows whose date has no completed run are kept (fail-open): dropping a whole
+  // day because its run rows were pruned would be the larger lie.
+  const { data: runRows } = await db
+    .from("reconciliation_runs")
+    .select("id, business_date, created_at")
+    .gte("business_date", from)
+    .lte("business_date", to)
+    .in("status", ["success", "partial"])
+    .order("business_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(400);
+  const latestByDate = new Map<string, string>();
+  for (const r of runRows ?? []) {
+    const d = r.business_date as string;
+    if (!latestByDate.has(d)) latestByDate.set(d, r.id as string);
+  }
+
+  const all = await pageAll<MovementRow & { run_id?: string | null }>((lo, hi) =>
     db
       .from("movement_events")
-      .select("business_date, city, direction, barcode, is_movement, outcome, backfilled")
+      .select("business_date, city, direction, barcode, is_movement, outcome, backfilled, run_id")
       .gte("business_date", from)
       .lte("business_date", to)
       .order("id", { ascending: true })
       .range(lo, hi)
   );
+  if (all === null) return null;
+  return all.filter((m) => {
+    const latest = latestByDate.get(m.business_date);
+    return latest === undefined || m.run_id === latest;
+  });
 }
 
 export interface CityStatRow {
