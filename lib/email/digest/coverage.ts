@@ -22,8 +22,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { addDays } from "../../engine/dates";
 
-/** How far back to look for a date with all four sources. */
-export const COVERAGE_LOOKBACK_DAYS = 7;
 
 export type SourceKey = "P" | "S" | "D" | "O";
 
@@ -124,37 +122,6 @@ export function topMissing(c: CityCoverage): { source: SourceKey; count: number 
   return ranked[0] && ranked[0].count > 0 ? ranked[0] : null;
 }
 
-/**
- * The newest business date on or before `upTo` where all four sources reported.
- *
- * Reads run_city_stats, which carries the reported_* flags per city per date
- * (migration 0012). Returns null when no date in the window qualifies — which is
- * the honest answer during the first week after a source outage, and the caller
- * must render that rather than an empty table.
- */
-export async function latestFullyCoveredDate(
-  db: SupabaseClient,
-  upTo: string,
-  lookbackDays: number = COVERAGE_LOOKBACK_DAYS
-): Promise<string | null> {
-  const from = addDays(upTo, -lookbackDays);
-  const { data, error } = await db
-    .from("run_city_stats")
-    .select("business_date, reported_p, reported_s, reported_d, reported_o")
-    .gte("business_date", from)
-    .lte("business_date", upTo)
-    .order("business_date", { ascending: false });
-  // 42703/PGRST204: pre-0012 database with no reported_* columns. Say "no
-  // covered date" rather than guessing that a missing column means true.
-  if (error || !data) return null;
-
-  for (const r of data) {
-    if (r.reported_p && r.reported_s && r.reported_d && r.reported_o) {
-      return r.business_date as string;
-    }
-  }
-  return null;
-}
 
 /**
  * Fold the movement ledger for one date into the per-city split.

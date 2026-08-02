@@ -127,12 +127,19 @@ export default function MovementVolumesPanel({ today }: { today: string }) {
   // silently closing up.
   const days = useMemo(() => {
     if (!data) return [];
-    const byDate = new Map<string, { in: number; out: number; ledgered: boolean; short: boolean; back: number }>();
+    const byDate = new Map<string, { in: number; out: number; total: number; ledgered: boolean; short: boolean; back: number }>();
     for (const b of data.buckets) {
       if (!b.date) continue;
-      const a = byDate.get(b.date) ?? { in: 0, out: 0, ledgered: false, short: false, back: 0 };
+      const a = byDate.get(b.date) ?? { in: 0, out: 0, total: 0, ledgered: false, short: false, back: 0 };
       a.in += b.in ?? 0;
       a.out += b.out ?? 0;
+      // The TOTAL comes from the bucket, per city, not from in + out. Beyond the
+      // ledger's 31-day reach the route sends in/out as null and carries the
+      // run_city_stats rollup in `total` instead — so re-deriving the total from
+      // the split drew every one of those days as zero, on a chart whose whole
+      // job is showing how much moved. A day can be mixed (one city ledgered,
+      // another not), which is why this is decided per bucket.
+      a.total += b.ledgered ? (b.in ?? 0) + (b.out ?? 0) : b.total ?? 0;
       if (b.ledgered) a.ledgered = true;
       if (b.booksRead !== null && b.booksRead < 4) a.short = true;
       a.back += b.backfilled ?? 0;
@@ -148,7 +155,7 @@ export default function MovementVolumesPanel({ today }: { today: string }) {
         date: d,
         in: a?.in ?? 0,
         out: a?.out ?? 0,
-        total: (a?.in ?? 0) + (a?.out ?? 0),
+        total: a?.total ?? 0,
         ledgered: a?.ledgered ?? false,
         short: a?.short ?? false,
         backfilled: (a?.back ?? 0) > 0,

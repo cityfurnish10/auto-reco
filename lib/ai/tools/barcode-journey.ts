@@ -28,6 +28,13 @@ import type { ToolContext } from "./context";
 
 const MAX_FLAGGED = 20;
 const MAX_SOURCE_ROWS = 40;
+/**
+ * How many recent runs to resolve when scoping the raw feed to one per date.
+ *
+ * source_rows is pruned at 7 days and a date is reconciled a handful of times,
+ * so this comfortably spans the retained window with room for re-runs.
+ */
+const RUN_LOOKUP_LIMIT = 200;
 const MAX_DAYS = 8;
 
 // The typed client cannot infer a select() built by string concatenation, so
@@ -127,15 +134,40 @@ export async function findBarcodeJourney(
     .order("id", { ascending: true })
     .limit(MAX_FLAGGED);
 
-  const sourceQ = sb
+  // ONE RUN PER DATE. source_rows keeps the raw feed of EVERY run, and a date
+  // is reconciled many times — the nightly cron, the D-3 re-check sweep, any
+  // manual re-run — each inserting a fresh copy of the same rows. Unscoped, a
+  // unit's journey listed one Odoo record twelve times for a single day
+  // (measured 2026-08-02 on 0TEPQU24021023: 56 rows for 6 real records), and
+  // the duplicates ate the MAX_SOURCE_ROWS budget so genuinely older days fell
+  // off the end. Every other reader of the raw tables already scopes this way.
+  const runIdsRes = await sb
+    .from("reconciliation_runs")
+    .select("id, business_date")
+    .in("status", ["success", "partial"])
+    .order("business_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(RUN_LOOKUP_LIMIT);
+  const latestRunPerDate = new Map<string, string>();
+  for (const r of (runIdsRes.data ?? []) as { id: string; business_date: string }[]) {
+    // The ordering above puts each date's newest run first.
+    if (!latestRunPerDate.has(r.business_date)) latestRunPerDate.set(r.business_date, r.id);
+  }
+  const runIds = [...latestRunPerDate.values()];
+
+  let sourceQ = sb
     .from("source_rows")
     .select("business_date, city, source, direction, status, so_number, ticket_id, product, job_type")
-    .eq("barcode_canonical", canon)
+    .eq("barcode_canonical", canon);
+  // No runs readable (or the table unreachable) — fall back to unscoped rather
+  // than returning nothing. A journey with repeats beats no journey.
+  if (runIds.length > 0) sourceQ = sourceQ.in("run_id", runIds);
+  const sourceRes = await sourceQ
     .order("business_date", { ascending: false })
     .order("id", { ascending: true })
     .limit(MAX_SOURCE_ROWS);
 
-  const [flaggedRes, sourceRes] = await Promise.all([flaggedQ, sourceQ]);
+  const flaggedRes = await flaggedQ;
 
   if (flaggedRes.error) return { status: "lookup_failed", message: flaggedRes.error.message };
 

@@ -13,11 +13,7 @@ import { buildTrends, type CoverageRow } from "./trends";
 import { isRerunFresh } from "../followup/build";
 import { readWarehouseCalendarRows } from "../../db/persist";
 import { LOOKBACK_DAYS, summariseAgeing, type AgeingSummary } from "./ageing";
-import {
-  latestFullyCoveredDate,
-  readFourWayCoverage,
-  type FourWayCoverage,
-} from "./coverage";
+import { readFourWayCoverage, type FourWayCoverage } from "./coverage";
 import { labelFor, teamFor, type Tier } from "../../ui/variance-labels";
 import type { City } from "../../sample-data";
 import type {
@@ -477,21 +473,25 @@ export async function buildDigestFromDb(
 
   for (const c of cities) c.trend = trends?.byCity.get(c.city) ?? null;
 
-  // The four-way check. Two reads, both best-effort for the same reason as the
-  // history above, and both allowed to come back null — an omitted section beats
-  // a section that claims a check it cannot evidence.
+  // The four-way check, ON THE EMAIL'S OWN DAY. Best-effort for the same reason
+  // as the history above, and allowed to come back null — an omitted section
+  // beats a section that claims a check it cannot evidence.
   //
-  // The date is RESOLVED, not assumed. Zero guard registers have ever been
-  // uploaded before their own date's 16:30 run (trends.ts:37-42), so on
-  // `businessDate` itself present_p is false almost everywhere and a literal
-  // four-way check would score 0/N for every city, every day. This walks back to
-  // the newest day whose four sources all reported, and moves forward on its own
-  // once register timing improves.
-  const coverage = await (async () => {
-    const date = await latestFullyCoveredDate(db, businessDate);
-    if (!date) return undefined;
-    return (await readFourWayCoverage(db, date)) ?? undefined;
-  })().catch(() => undefined);
+  // This used to walk back to the newest day whose four books all filed, because
+  // no guard register had ever been uploaded before its own date's 16:30 run, so
+  // a literal four-way check scored 0/N for every city every day. Two changes
+  // retired that reasoning and coverage.ts has documented the new one since
+  // 2026-08-02: the reconcile moved to 20:00 IST (8 of 38 registers had landed
+  // by 16:30, against 15 by 20:00), and the section became a table that prints
+  // "-" for a book that never filed instead of a cross. A late register now
+  // reads as absent rather than as a failure.
+  //
+  // The walk-back stayed at this call site, and it is silent when it fires:
+  // measured 2026-08-02, the 23 July digest carried 22 July's four-way check
+  // under a 23 July heading, with nothing anywhere saying the date had moved.
+  const coverage = await readFourWayCoverage(db, businessDate)
+    .then((c) => c ?? undefined)
+    .catch(() => undefined);
 
   const sum = (f: (c: CityDigestRow) => number) => cities.reduce((n, c) => n + f(c), 0);
 

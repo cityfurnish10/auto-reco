@@ -81,12 +81,23 @@ export async function GET(req: NextRequest) {
   const foldedA = foldPass(aId, date, byRun.get(aId)!);
   const foldedB = foldPass(bId, date, byRun.get(bId)!);
 
-  // Detail keyed by unit, worst tier first so a two-row unit shows its worst face.
+  // Detail keyed by unit, worst tier first so a two-row unit shows its worst
+  // face. The comment said this; the code was first-row-wins, so which of a
+  // unit's rows got shown came down to the order the rows happened to arrive in
+  // — a unit flagged both "Stock at risk" and "For information" could present
+  // itself as the latter. Tier 1 is the worst, so the lower number wins.
+  const tierOfDetail = (d: (typeof detail)[number]) =>
+    labelFor(d.variance_name, {
+      direction: (d.direction as "IN" | "OUT" | "CROSS" | null) ?? null,
+      jobType: d.job_type,
+      bucket: (d.bucket as "REAL" | "INFO" | null) ?? null,
+      note: d.note,
+    }).tier;
   const byUnit = new Map<string, (typeof detail)[number]>();
   for (const d of detail) {
     const k = unitKeyOfRow(d);
     const prev = byUnit.get(k);
-    if (!prev) byUnit.set(k, d);
+    if (!prev || tierOfDetail(d) < tierOfDetail(prev)) byUnit.set(k, d);
   }
   const closedUnits = new Set(
     classifyRows(

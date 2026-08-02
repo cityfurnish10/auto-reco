@@ -220,12 +220,26 @@ export async function countFlaggedItems(
   // reading `noActionNeeded` will quote it back verbatim — observed on live
   // data — and internal jargon in the answer defeats the whole point of
   // translating the payload in the first place.
-  const bySeverity: Record<string, number> = {
-    [TIER[1].heading]: 0,
-    [TIER[2].heading]: 0,
-    [TIER[3].heading]: 0,
-  };
-  for (const r of rows) bySeverity[TIER[tierOfRow(r)].heading]++;
+  // ONLY WHEN THE ROW SET IS THE WHOLE DAY. When severity is anything but
+  // "all", applyFilters has already narrowed the query with .in("variance_name",
+  // namesReachingTier(...)) — a superset of the asked-for tier, but a strict
+  // subset of everything. Tallying all three headings over those rows produces a
+  // split of a restricted set and presents it as the split of the day, so the
+  // two tiers the caller did not ask about read far lower than they are.
+  // Withheld rather than corrected: the honest number needs a second query, and
+  // an absent field is something the model can say nothing about.
+  const bySeverity: Record<string, number> | undefined =
+    severity === "all"
+      ? (() => {
+          const t: Record<string, number> = {
+            [TIER[1].heading]: 0,
+            [TIER[2].heading]: 0,
+            [TIER[3].heading]: 0,
+          };
+          for (const r of rows) t[TIER[tierOfRow(r)].heading]++;
+          return t;
+        })()
+      : undefined;
 
   const groupBy = args.groupBy ?? "none";
   let breakdown: { key: string; count: number }[] | undefined;
@@ -295,7 +309,12 @@ export async function listFlaggedItems(
   return {
     status: "found" as ToolStatus,
     shown: Math.min(matching.length, limit),
-    totalMatching: res.count ?? matching.length,
+    // EXACT ONLY. res.count is the count of the DB query, and when severity is
+    // not "all" that query is a superset narrowed afterwards in JS — so this
+    // used to report more matches than the tool could list, and the model
+    // quoted the bigger number. Omitted when it cannot be trusted; `shown` is
+    // always true.
+    totalMatching: severity === "all" ? res.count ?? matching.length : undefined,
     covers: { city: args.city ?? "all cities", dates: win.label },
     items: matching.slice(0, limit).map((r) => {
       const f = describeFlag(r);
