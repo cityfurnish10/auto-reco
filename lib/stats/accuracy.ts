@@ -58,27 +58,56 @@ export interface CityTotals {
 export function aggregate(rows: StatRow[], from: string, to: string): Map<string, CityTotals> {
   const map = new Map<string, CityTotals>();
   for (const r of rows) {
-    if (r.business_date < from || r.business_date > to) continue;
-    // A CLOSED warehouse is excluded from its own accuracy window.
-    //
-    // It is not neutral, which is what made this a live bug rather than a
-    // rounding quibble. isMovement is `P || S || D || odooSameDay`, so Odoo
-    // postings still count movements on a shut day, while run.ts gates the
-    // Odoo-only REAL class on `!offDay` — leaving (movements > 0, real = 0).
-    // Measured 2026-07-23: MUMBAI 67/0, PUNE 33/0.
-    //
-    // Averaged over a week that inflates the rate (Mumbai 70.2% shipped against
-    // 68.8% true). On the LATEST window it is worse: that window is a single
-    // business date, and because Friday's run reconciles Thursday, the board IS
-    // a Thursday for about a day every week — where accuracyOf(67, 0) = 100.0%
-    // and a variance rate of 0 sorts the closed warehouse FIRST. Mumbai has been
-    // taking the trophy for being shut.
-    if (isCityOff(r.city as City, r.business_date)) continue;
+    if (!scorable(r, from, to)) continue;
     const a = map.get(r.city) ?? { movements: 0, real: 0, high: 0 };
     a.movements += r.movements;
     a.real += r.real_count;
     a.high += r.high_count;
     map.set(r.city, a);
+  }
+  return map;
+}
+
+/**
+ * Does this city-day belong in an accuracy denominator?
+ *
+ * A CLOSED warehouse is excluded from its own accuracy window.
+ *
+ * It is not neutral, which is what made this a live bug rather than a rounding
+ * quibble. isMovement is `P || S || D || odooSameDay`, so Odoo postings still
+ * count movements on a shut day, while run.ts gates the Odoo-only REAL class on
+ * `!offDay` — leaving (movements > 0, real = 0). Measured 2026-07-23:
+ * MUMBAI 67/0, PUNE 33/0.
+ *
+ * Averaged over a week that inflates the rate (Mumbai 70.2% shipped against
+ * 68.8% true). On the LATEST window it is worse: that window is a single
+ * business date, and because Friday's run reconciles Thursday, the board IS a
+ * Thursday for about a day every week — where accuracyOf(67, 0) = 100.0% and a
+ * variance rate of 0 sorts the closed warehouse FIRST. Mumbai has been taking
+ * the trophy for being shut.
+ *
+ * EXPORTED AND SHARED so the rule has one home. It used to live inline in
+ * aggregate() while the analytics page's daily trend summed the same rows with
+ * no exclusion at all — same word "accuracy", two denominators, on one screen.
+ */
+export function scorable(r: StatRow, from: string, to: string): boolean {
+  if (r.business_date < from || r.business_date > to) return false;
+  return !isCityOff(r.city as City, r.business_date);
+}
+
+/** Per-DAY totals across all cities, on the same basis as `aggregate`. */
+export function dailyTotals(
+  rows: StatRow[],
+  from: string,
+  to: string
+): Map<string, { movements: number; real: number }> {
+  const map = new Map<string, { movements: number; real: number }>();
+  for (const r of rows) {
+    if (!scorable(r, from, to)) continue;
+    const a = map.get(r.business_date) ?? { movements: 0, real: 0 };
+    a.movements += r.movements;
+    a.real += r.real_count;
+    map.set(r.business_date, a);
   }
   return map;
 }

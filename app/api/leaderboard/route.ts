@@ -17,18 +17,11 @@ import { getCurrentAppUser } from "@/lib/db/current-user";
 import { CITIES } from "@/lib/sample-data";
 // One definition of the metric, shared with /api/analytics and the dashboard —
 // three roundings of the same ratio would let the pages disagree by 0.1pp.
-import { accuracyOf, aggregate, daysBefore } from "@/lib/stats/accuracy";
+import { accuracyOf, aggregate, daysBefore, type StatRow } from "@/lib/stats/accuracy";
+import { readCityStats } from "@/lib/stats/city-stats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-interface StatRow {
-  business_date: string;
-  city: string;
-  movements: number;
-  real_count: number;
-  high_count: number;
-}
 
 interface LbRow {
   rank: number;
@@ -110,12 +103,12 @@ export async function GET() {
   }
 
   const db = createAdminClient();
-  const { data, error } = await db
-    .from("run_city_stats")
-    .select("business_date, city, movements, real_count, high_count");
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  const rows = (data ?? []) as StatRow[];
+  let rows: StatRow[];
+  try {
+    rows = await readCityStats(db);
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+  }
   const dates = [...new Set(rows.map((r) => r.business_date))].sort(); // ascending
   if (dates.length === 0) {
     return NextResponse.json({ empty: true, windows: null });

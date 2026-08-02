@@ -10,20 +10,12 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
-import { CITIES, type City } from "@/lib/sample-data";
-import { isCityOff } from "@/lib/engine/schedule";
-import { accuracyOf, daysBefore } from "@/lib/stats/accuracy";
+import { CITIES } from "@/lib/sample-data";
+import { accuracyOf, daysBefore, dailyTotals, scorable, type StatRow } from "@/lib/stats/accuracy";
+import { readCityStats } from "@/lib/stats/city-stats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-interface StatRow {
-  business_date: string;
-  city: string;
-  movements: number;
-  real_count: number;
-  high_count: number;
-}
 
 function cityAggregate(rows: StatRow[], from: string, to: string) {
   return CITIES.map((city) => {
@@ -31,11 +23,9 @@ function cityAggregate(rows: StatRow[], from: string, to: string) {
     let real = 0;
     let high = 0;
     for (const r of rows) {
-      if (r.city !== city || r.business_date < from || r.business_date > to) continue;
-      // Same exclusion as lib/stats/accuracy.ts aggregate(): a shut warehouse
-      // still books Odoo movements while its Odoo-only loss class is disabled,
-      // so leaving the day in inflates the rate rather than cancelling out.
-      if (isCityOff(city as City, r.business_date)) continue;
+      // `scorable` carries the shut-warehouse exclusion the leaderboard and the
+      // daily trend below both use — one rule, one home.
+      if (r.city !== city || !scorable(r, from, to)) continue;
       movements += r.movements;
       real += r.real_count;
       high += r.high_count;
@@ -51,12 +41,12 @@ export async function GET() {
   }
 
   const db = createAdminClient();
-  const { data, error } = await db
-    .from("run_city_stats")
-    .select("business_date, city, movements, real_count, high_count");
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  const rows = (data ?? []) as StatRow[];
+  let rows: StatRow[];
+  try {
+    rows = await readCityStats(db);
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+  }
   if (rows.length === 0) {
     return NextResponse.json({ empty: true });
   }
@@ -65,15 +55,15 @@ export async function GET() {
   const maxDate = dates[dates.length - 1];
 
   // Overall accuracy per day (last 30 days present in the data).
+  //
+  // ON THE SAME BASIS AS EVERY OTHER FIGURE ON THIS PAGE. This loop used to sum
+  // the raw rows with no shut-warehouse exclusion, while the KPI tile above the
+  // chart and the per-city chart beside it both excluded them — so one screen
+  // printed two accuracies for one day under one word. Measured 2026-07-30:
+  // the trend bar read 89.7% where the tile's basis gives 82.8%, a 6.9pp gap
+  // bought entirely by 278 movements from three warehouses that were shut.
   const cutoff = daysBefore(maxDate, 29);
-  const byDate = new Map<string, { movements: number; real: number }>();
-  for (const r of rows) {
-    if (r.business_date < cutoff) continue;
-    const a = byDate.get(r.business_date) ?? { movements: 0, real: 0 };
-    a.movements += r.movements;
-    a.real += r.real_count;
-    byDate.set(r.business_date, a);
-  }
+  const byDate = dailyTotals(rows, cutoff, maxDate);
   const days = [...byDate.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([date, v]) => ({

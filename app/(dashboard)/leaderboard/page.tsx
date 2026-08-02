@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { useLeaderboard, type WindowKey } from "@/lib/hooks/use-leaderboard";
 import { Icon, type IconName } from "@/components/icon";
+import { clampPct } from "@/lib/stats/accuracy";
+import { MIN_MOVEMENTS } from "@/lib/ui/stat-captions";
 
 const TREND_ICON: Record<string, { icon: IconName; cls: string }> = {
   up: { icon: "trending_up", cls: "text-success" },
@@ -10,13 +12,17 @@ const TREND_ICON: Record<string, { icon: IconName; cls: string }> = {
   flat: { icon: "trending_flat", cls: "text-text-muted" },
 };
 
-// Below this many movements a percentage says more about the sample than the
+// Below MIN_MOVEMENTS a percentage says more about the sample than the
 // warehouse: 3 movements and 0 variances is 100%, and it was taking the trophy
 // off cities running thousands of movements at 96%. The API's ranking is left
 // alone — re-ordering it here would put a rank number next to a row that isn't
 // in that position — but the medal goes to the best city that actually cleared
 // the bar, and thin rows say so.
-const MIN_MOVEMENTS = 50;
+//
+// IMPORTED, not retyped. It was declared here AND in lib/ui/stat-captions.ts,
+// which is where the dashboard's "too few to compare" line reads it from — two
+// copies of one threshold, so a change to either would have silently given the
+// two pages different ideas of a thin sample.
 
 const WINDOWS: { key: WindowKey; label: string }[] = [
   { key: "latest", label: "Latest" },
@@ -147,7 +153,10 @@ export default function LeaderboardPage() {
           </div>
           <div className="mt-4">
             <h3 className="kpi-value text-danger">{totalReal.toLocaleString()}</h3>
-            <p className="text-xs text-text-muted">{pct(totalMovements ? (totalReal / totalMovements) * 100 : null)} of the {totalMovements.toLocaleString()} units moved</p>
+            {/* clampPct, like every other percentage in the app. This one was
+                printing the raw quotient — 1.7218543046357615% — beside a tile
+                that rounds the same ratio to one decimal. */}
+            <p className="text-xs text-text-muted">{pct(totalMovements ? clampPct((totalReal / totalMovements) * 100) : null)} of the {totalMovements.toLocaleString()} units moved</p>
           </div>
         </div>
 
