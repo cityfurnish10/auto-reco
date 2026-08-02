@@ -127,7 +127,7 @@ exports[`digest — model snapshot > richDay 1`] = `
       },
     ],
     "id": "cities",
-    "title": "2 · At risk, by city",
+    "title": "1 · At risk, by city",
   },
   {
     "blocks": [
@@ -144,6 +144,289 @@ exports[`digest — model snapshot > richDay 1`] = `
 
 exports[`digest — model snapshot > threePart 1`] = `
 [
+  {
+    "blocks": [
+      {
+        "columns": [
+          {
+            "label": "City",
+          },
+          {
+            "align": "right",
+            "label": "Units moved",
+          },
+          {
+            "align": "right",
+            "label": "At risk",
+          },
+          {
+            "label": "Guard register",
+          },
+        ],
+        "kind": "table",
+        "rows": [
+          [
+            {
+              "text": "Delhi",
+              "tone": undefined,
+            },
+            {
+              "align": "right",
+              "text": "147",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "5",
+              "tone": "danger",
+            },
+            {
+              "text": "Received",
+              "tone": "muted",
+            },
+          ],
+          [
+            {
+              "text": "Bangalore",
+              "tone": undefined,
+            },
+            {
+              "align": "right",
+              "text": "121",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "4",
+              "tone": "danger",
+            },
+            {
+              "text": "Received",
+              "tone": "muted",
+            },
+          ],
+          [
+            {
+              "text": "Mumbai (week off)",
+              "tone": "muted",
+            },
+            {
+              "align": "right",
+              "text": "172",
+            },
+            {
+              "align": "right",
+              "strong": false,
+              "text": "0",
+              "tone": undefined,
+            },
+            {
+              "text": "Weekly off",
+              "tone": "muted",
+            },
+          ],
+        ],
+      },
+    ],
+    "id": "cities",
+    "title": "1 · At risk, by city",
+  },
+  {
+    "blocks": [
+      {
+        "kind": "para",
+        "text": "Items raised in the last 7 days and still not settled, by the day they were raised.",
+      },
+      {
+        "columns": [
+          {
+            "label": "City",
+          },
+          {
+            "align": "right",
+            "label": "24 Jul",
+          },
+          {
+            "align": "right",
+            "label": "25 Jul",
+          },
+          {
+            "align": "right",
+            "label": "26 Jul",
+          },
+          {
+            "align": "right",
+            "label": "27 Jul",
+          },
+          {
+            "align": "right",
+            "label": "28 Jul",
+          },
+          {
+            "align": "right",
+            "label": "Total",
+          },
+        ],
+        "kind": "table",
+        "rows": [
+          [
+            {
+              "strong": true,
+              "text": "Delhi",
+            },
+            {
+              "align": "right",
+              "heat": 4,
+              "text": "12",
+            },
+            {
+              "align": "right",
+              "heat": 0,
+              "text": "0",
+            },
+            {
+              "align": "right",
+              "heat": 1,
+              "text": "1",
+            },
+            {
+              "align": "right",
+              "heat": 0,
+              "text": "0",
+            },
+            {
+              "align": "right",
+              "heat": 1,
+              "text": "1",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "14",
+              "tone": "danger",
+            },
+          ],
+          [
+            {
+              "strong": true,
+              "text": "Bangalore",
+            },
+            {
+              "align": "right",
+              "heat": 1,
+              "text": "3",
+            },
+            {
+              "align": "right",
+              "heat": 1,
+              "text": "1",
+            },
+            {
+              "align": "right",
+              "heat": 0,
+              "text": "0",
+            },
+            {
+              "align": "right",
+              "heat": 1,
+              "text": "2",
+            },
+            {
+              "align": "right",
+              "heat": 0,
+              "text": "0",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "6",
+              "tone": "danger",
+            },
+          ],
+          [
+            {
+              "strong": true,
+              "text": "Pune",
+            },
+            {
+              "align": "right",
+              "heat": 0,
+              "text": "0",
+            },
+            {
+              "align": "right",
+              "heat": 0,
+              "text": "0",
+            },
+            {
+              "align": "right",
+              "heat": 1,
+              "text": "3",
+            },
+            {
+              "align": "right",
+              "heat": 0,
+              "text": "0",
+            },
+            {
+              "align": "right",
+              "heat": 0,
+              "text": "0",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "3",
+              "tone": "danger",
+            },
+          ],
+          [
+            {
+              "text": "All cities",
+              "tone": "muted",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "15",
+              "tone": "muted",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "1",
+              "tone": "muted",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "4",
+              "tone": "muted",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "2",
+              "tone": "muted",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "1",
+              "tone": "muted",
+            },
+            {
+              "align": "right",
+              "strong": true,
+              "text": "23",
+            },
+          ],
+        ],
+      },
+    ],
+    "id": "ageing",
+    "title": "2 · Open more than two days",
+  },
   {
     "blocks": [
       {
@@ -541,290 +824,7 @@ exports[`digest — model snapshot > threePart 1`] = `
       },
     ],
     "id": "coverage",
-    "title": "1 · Four-way check",
-  },
-  {
-    "blocks": [
-      {
-        "columns": [
-          {
-            "label": "City",
-          },
-          {
-            "align": "right",
-            "label": "Units moved",
-          },
-          {
-            "align": "right",
-            "label": "At risk",
-          },
-          {
-            "label": "Guard register",
-          },
-        ],
-        "kind": "table",
-        "rows": [
-          [
-            {
-              "text": "Delhi",
-              "tone": undefined,
-            },
-            {
-              "align": "right",
-              "text": "147",
-            },
-            {
-              "align": "right",
-              "strong": true,
-              "text": "5",
-              "tone": "danger",
-            },
-            {
-              "text": "Received",
-              "tone": "muted",
-            },
-          ],
-          [
-            {
-              "text": "Bangalore",
-              "tone": undefined,
-            },
-            {
-              "align": "right",
-              "text": "121",
-            },
-            {
-              "align": "right",
-              "strong": true,
-              "text": "4",
-              "tone": "danger",
-            },
-            {
-              "text": "Received",
-              "tone": "muted",
-            },
-          ],
-          [
-            {
-              "text": "Mumbai (week off)",
-              "tone": "muted",
-            },
-            {
-              "align": "right",
-              "text": "172",
-            },
-            {
-              "align": "right",
-              "strong": false,
-              "text": "0",
-              "tone": undefined,
-            },
-            {
-              "text": "Weekly off",
-              "tone": "muted",
-            },
-          ],
-        ],
-      },
-    ],
-    "id": "cities",
-    "title": "2 · At risk, by city",
-  },
-  {
-    "blocks": [
-      {
-        "kind": "para",
-        "text": "Items raised in the last 7 days and still not settled, by the day they were raised.",
-      },
-      {
-        "columns": [
-          {
-            "label": "City",
-          },
-          {
-            "align": "right",
-            "label": "24 Jul",
-          },
-          {
-            "align": "right",
-            "label": "25 Jul",
-          },
-          {
-            "align": "right",
-            "label": "26 Jul",
-          },
-          {
-            "align": "right",
-            "label": "27 Jul",
-          },
-          {
-            "align": "right",
-            "label": "28 Jul",
-          },
-          {
-            "align": "right",
-            "label": "Total",
-          },
-        ],
-        "kind": "table",
-        "rows": [
-          [
-            {
-              "strong": true,
-              "text": "Delhi",
-            },
-            {
-              "align": "right",
-              "heat": 4,
-              "text": "12",
-            },
-            {
-              "align": "right",
-              "heat": 0,
-              "text": "0",
-            },
-            {
-              "align": "right",
-              "heat": 1,
-              "text": "1",
-            },
-            {
-              "align": "right",
-              "heat": 0,
-              "text": "0",
-            },
-            {
-              "align": "right",
-              "heat": 1,
-              "text": "1",
-            },
-            {
-              "align": "right",
-              "strong": true,
-              "text": "14",
-              "tone": "danger",
-            },
-          ],
-          [
-            {
-              "strong": true,
-              "text": "Bangalore",
-            },
-            {
-              "align": "right",
-              "heat": 1,
-              "text": "3",
-            },
-            {
-              "align": "right",
-              "heat": 1,
-              "text": "1",
-            },
-            {
-              "align": "right",
-              "heat": 0,
-              "text": "0",
-            },
-            {
-              "align": "right",
-              "heat": 1,
-              "text": "2",
-            },
-            {
-              "align": "right",
-              "heat": 0,
-              "text": "0",
-            },
-            {
-              "align": "right",
-              "strong": true,
-              "text": "6",
-              "tone": "danger",
-            },
-          ],
-          [
-            {
-              "strong": true,
-              "text": "Pune",
-            },
-            {
-              "align": "right",
-              "heat": 0,
-              "text": "0",
-            },
-            {
-              "align": "right",
-              "heat": 0,
-              "text": "0",
-            },
-            {
-              "align": "right",
-              "heat": 1,
-              "text": "3",
-            },
-            {
-              "align": "right",
-              "heat": 0,
-              "text": "0",
-            },
-            {
-              "align": "right",
-              "heat": 0,
-              "text": "0",
-            },
-            {
-              "align": "right",
-              "strong": true,
-              "text": "3",
-              "tone": "danger",
-            },
-          ],
-          [
-            {
-              "text": "All cities",
-              "tone": "muted",
-            },
-            {
-              "align": "right",
-              "strong": true,
-              "text": "15",
-              "tone": "muted",
-            },
-            {
-              "align": "right",
-              "strong": true,
-              "text": "1",
-              "tone": "muted",
-            },
-            {
-              "align": "right",
-              "strong": true,
-              "text": "4",
-              "tone": "muted",
-            },
-            {
-              "align": "right",
-              "strong": true,
-              "text": "2",
-              "tone": "muted",
-            },
-            {
-              "align": "right",
-              "strong": true,
-              "text": "1",
-              "tone": "muted",
-            },
-            {
-              "align": "right",
-              "strong": true,
-              "text": "23",
-            },
-          ],
-        ],
-      },
-    ],
-    "id": "ageing",
-    "title": "3 · Open more than two days",
+    "title": "3 · Four-way check",
   },
   {
     "blocks": [

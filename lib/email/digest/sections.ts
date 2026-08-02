@@ -261,7 +261,7 @@ function coverageSection(data: DigestData, patternLimit: number = DEFAULT_PATTER
   if (blocks.length === 0 || (scored === 0 && cov.cities.every((c) => isCityOff(c.city as City, cov.date))))
     return null;
 
-  return { id: "coverage", title: "1 · Four-way check", blocks };
+  return { id: "coverage", title: "3 · Four-way check", blocks };
 }
 
 // ─── part three: what has been open too long ─────────────────────────────────
@@ -347,7 +347,7 @@ function ageingSection(data: DigestData): Section | null {
     });
   }
 
-  return { id: "ageing", title: "3 · Open more than two days", blocks };
+  return { id: "ageing", title: "2 · Open more than two days", blocks };
 }
 
 /** "Delhi 31, Bangalore 25" — or "+3 cities" once the list stops being useful. */
@@ -523,16 +523,10 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
   // interpret those counts.
   sections.push(...movementSummary(data));
 
-  // PART ONE. Before the at-risk detail, because it answers the prior question:
-  // did the four records agree at all? Omitted entirely when it cannot be
-  // evidenced — see coverageSection.
-  const coverage = coverageSection(data);
-  if (coverage) sections.push(coverage);
-
   if (data.cities.length > 0) {
     sections.push({
       id: "cities",
-      title: "2 · At risk, by city",
+      title: "1 · At risk, by city",
       blocks: [citySnapshot(data.cities, null, data.date, data.calendar)],
     });
   }
@@ -542,6 +536,16 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
   // with". Replaces the separate follow-up email that used to go out at D+3.
   const ageing = ageingSection(data);
   if (ageing) sections.push(ageing);
+
+  // THE FOUR-WAY CHECK, LAST (owner, 2026-08-02). It used to open the email as
+  // "part one", on the reasoning that "did the books agree at all?" precedes
+  // the at-risk detail. In practice it is the longest section by far — up to
+  // nine rows per city — and it is reference material: a reader scans the
+  // day's numbers and the chase list first, then comes here to see which book
+  // is behind a gap. Putting it after them means the email opens with what
+  // needs doing instead of with forty rows of evidence.
+  const coverage = coverageSection(data);
+  if (coverage) sections.push(coverage);
 
   const footer: Block[] = [];
   if (opts.attachmentNote) {

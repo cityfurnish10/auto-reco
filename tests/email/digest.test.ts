@@ -331,13 +331,22 @@ describe("digest — the founder's three parts", () => {
   const text = () => renderDigestText(threePart, URL);
 
   it("renders all three numbered parts, in order", () => {
+    // The four-way check moved to the END (owner, 2026-08-02): it is the
+    // longest section and it is reference material, so the email opens with
+    // what needs doing rather than with forty rows of evidence.
     const t = text();
-    const one = t.indexOf("1 · FOUR-WAY CHECK");
-    const two = t.indexOf("2 · AT RISK, BY CITY");
-    const three = t.indexOf("3 · OPEN MORE THAN TWO DAYS");
+    const one = t.indexOf("1 · AT RISK, BY CITY");
+    const two = t.indexOf("2 · OPEN MORE THAN TWO DAYS");
+    const three = t.indexOf("3 · FOUR-WAY CHECK");
     expect(one).toBeGreaterThan(-1);
     expect(two).toBeGreaterThan(one);
     expect(three).toBeGreaterThan(two);
+  });
+
+  it("puts the movement summary above all three, and the link below them", () => {
+    const t = text();
+    expect(t.indexOf("INWARD ·")).toBeLessThan(t.indexOf("1 · AT RISK"));
+    expect(t.indexOf("3 · FOUR-WAY CHECK")).toBeLessThan(t.indexOf("View in dashboard"));
   });
 
   it("drops the intro sentence that restated the key in prose", () => {

@@ -108,7 +108,7 @@ describe("the four-way section", () => {
   it("names each pattern and what it means, and never states a rate", () => {
     const d = digest({ date: "2026-07-30", cities: [city()] });
     const t = textOf(d);
-    expect(t).toContain("1 · Four-way check");
+    expect(t).toContain("3 · Four-way check");
     expect(t).toContain("Delhi · 150 moved");
     expect(t).toContain("All clear");
     expect(t).toContain("Guard post not logging");

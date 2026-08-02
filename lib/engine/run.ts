@@ -226,6 +226,11 @@ export function runReconciliation(
   }
 
   const byDir = (dir: Direction) => valid.filter((r) => r.direction === dir);
+  // The per-barcode ladder must see only serialized, valid units. The movement
+  // summary is different: it is the count each book recorded, so count-only
+  // PP/spare/consumable rows still belong in the email/dashboard totals.
+  const countableRows = [...valid, ...spareRows, ...ppBoxRows];
+  const countByDir = (dir: Direction) => countableRows.filter((r) => r.direction === dir);
   const inViews = buildViews(byDir("IN"), city, "IN");
   const outViews = buildViews(byDir("OUT"), city, "OUT");
   for (const v of Array.from(inViews.values())) v.date = runDate;
@@ -527,8 +532,8 @@ export function runReconciliation(
   const stamped: VarianceRowOut[] = variances.map((v) => ({ ...v, reported }));
 
   // Section 9 — count layer per direction.
-  const count_in = computeCountLayer(byDir("IN"), runDate);
-  const count_out = computeCountLayer(byDir("OUT"), runDate);
+  const count_in = computeCountLayer(countByDir("IN"), runDate);
+  const count_out = computeCountLayer(countByDir("OUT"), runDate);
 
   // Summary.
   const real_variances = stamped.filter((v) => v.bucket === "REAL");
