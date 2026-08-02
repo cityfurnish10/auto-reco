@@ -10,43 +10,21 @@
 
 import type { Block, Section } from "./model";
 
-// Shading for a plaintext bar. Hoisted out of the retired grouped-column
-// renderer so the block glyph survives it.
-const BAR_GLYPH = "█";
-const CELL_BAR_WIDTH = 10;
-
-/**
- * A cell's printable string — the text, plus its bar when it has one.
- *
- * Built BEFORE the column-width pass below, which measures `.length`: appending
- * the glyphs afterwards would leave every column short by the bar and the table
- * would shear.
- */
-function cellText(c: { text: string; bar?: number }): string {
-  if (c.bar === undefined) return c.text;
-  const filled = Math.max(0, Math.min(CELL_BAR_WIDTH, Math.round((c.bar / 100) * CELL_BAR_WIDTH)));
-  return filled > 0 ? `${c.text} ${BAR_GLYPH.repeat(filled)}` : c.text;
-}
-
+// Column widths come from the CONTENT, never from Column.width — that is a
+// percentage, and a percentage means nothing in a monospace part.
 function tableLines(b: Extract<Block, { kind: "table" }>): string[] {
   const widths = b.columns.map((c, i) =>
-    Math.max(c.label.length, ...b.rows.map((r) => (r[i] ? cellText(r[i]) : "").length))
+    Math.max(c.label.length, ...b.rows.map((r) => (r[i]?.text ?? "").length))
   );
   const pad = (s: string, i: number) =>
     b.columns[i].align === "right" ? s.padStart(widths[i]) : s.padEnd(widths[i]);
 
   const lines = [b.columns.map((c, i) => pad(c.label.toUpperCase(), i)).join("  ")];
   lines.push(widths.map((w) => "-".repeat(w)).join("  "));
-  for (const r of b.rows) lines.push(r.map((c, i) => pad(cellText(c), i)).join("  "));
+  for (const r of b.rows) lines.push(r.map((c, i) => pad(c.text, i)).join("  "));
   if (b.footnote) lines.push("", b.footnote);
   return lines;
 }
-
-// Shading for a plaintext bar, densest first — one glyph per series, matching
-// the order of the HTML chart's key.
-const BAR_GLYPHS = ["█", "▓", "▒", "░"];
-const BAR_WIDTH = 40; // fits a 72-column part with room to indent
-
 
 function blockLines(b: Block): string[] {
   switch (b.kind) {

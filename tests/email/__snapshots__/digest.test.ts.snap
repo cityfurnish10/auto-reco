@@ -438,22 +438,28 @@ exports[`digest — model snapshot > threePart 1`] = `
         "columns": [
           {
             "label": "Guard",
+            "width": "12%",
           },
           {
             "label": "Sheet",
+            "width": "12%",
           },
           {
             "label": "DT",
+            "width": "7%",
           },
           {
             "label": "Odoo",
+            "width": "11%",
           },
           {
             "align": "right",
             "label": "Count",
+            "width": "13%",
           },
           {
             "label": "What it means",
+            "width": "45%",
           },
         ],
         "kind": "table",
@@ -477,9 +483,8 @@ exports[`digest — model snapshot > threePart 1`] = `
             },
             {
               "align": "right",
-              "bar": 100,
               "strong": true,
-              "text": "62",
+              "text": "62/150",
               "tone": "warn",
             },
             {
@@ -506,9 +511,8 @@ exports[`digest — model snapshot > threePart 1`] = `
             },
             {
               "align": "right",
-              "bar": 58,
               "strong": true,
-              "text": "36",
+              "text": "36/150",
               "tone": "warn",
             },
             {
@@ -535,9 +539,8 @@ exports[`digest — model snapshot > threePart 1`] = `
             },
             {
               "align": "right",
-              "bar": 47,
               "strong": true,
-              "text": "29",
+              "text": "29/150",
               "tone": "warn",
             },
             {
@@ -564,9 +567,8 @@ exports[`digest — model snapshot > threePart 1`] = `
             },
             {
               "align": "right",
-              "bar": 37,
               "strong": true,
-              "text": "23",
+              "text": "23/150",
               "tone": "good",
             },
             {
@@ -585,22 +587,28 @@ exports[`digest — model snapshot > threePart 1`] = `
         "columns": [
           {
             "label": "Guard",
+            "width": "12%",
           },
           {
             "label": "Sheet",
+            "width": "12%",
           },
           {
             "label": "DT",
+            "width": "7%",
           },
           {
             "label": "Odoo",
+            "width": "11%",
           },
           {
             "align": "right",
             "label": "Count",
+            "width": "13%",
           },
           {
             "label": "What it means",
+            "width": "45%",
           },
         ],
         "kind": "table",
@@ -624,9 +632,8 @@ exports[`digest — model snapshot > threePart 1`] = `
             },
             {
               "align": "right",
-              "bar": 100,
               "strong": true,
-              "text": "56",
+              "text": "56/131",
               "tone": "warn",
             },
             {
@@ -653,9 +660,8 @@ exports[`digest — model snapshot > threePart 1`] = `
             },
             {
               "align": "right",
-              "bar": 70,
               "strong": true,
-              "text": "39",
+              "text": "39/131",
               "tone": "good",
             },
             {
@@ -682,9 +688,8 @@ exports[`digest — model snapshot > threePart 1`] = `
             },
             {
               "align": "right",
-              "bar": 32,
               "strong": true,
-              "text": "18",
+              "text": "18/131",
               "tone": "warn",
             },
             {
@@ -711,9 +716,8 @@ exports[`digest — model snapshot > threePart 1`] = `
             },
             {
               "align": "right",
-              "bar": 32,
               "strong": true,
-              "text": "18",
+              "text": "18/131",
               "tone": "warn",
             },
             {
@@ -742,22 +746,28 @@ exports[`digest — model snapshot > threePart 1`] = `
         "columns": [
           {
             "label": "Guard",
+            "width": "12%",
           },
           {
             "label": "Sheet",
+            "width": "12%",
           },
           {
             "label": "DT",
+            "width": "7%",
           },
           {
             "label": "Odoo",
+            "width": "11%",
           },
           {
             "align": "right",
             "label": "Count",
+            "width": "13%",
           },
           {
             "label": "What it means",
+            "width": "45%",
           },
         ],
         "kind": "table",
@@ -781,9 +791,8 @@ exports[`digest — model snapshot > threePart 1`] = `
             },
             {
               "align": "right",
-              "bar": 100,
               "strong": true,
-              "text": "20",
+              "text": "20/31",
               "tone": "warn",
             },
             {
@@ -810,9 +819,8 @@ exports[`digest — model snapshot > threePart 1`] = `
             },
             {
               "align": "right",
-              "bar": 55,
               "strong": true,
-              "text": "11",
+              "text": "11/31",
               "tone": "warn",
             },
             {

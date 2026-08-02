@@ -28,23 +28,30 @@ export interface Cell {
   strong?: boolean;
   align?: Align;
   heat?: Heat;
-  /**
-   * 0-100 — a filled bar behind this cell, colour from `tone`.
-   *
-   * GEOMETRY, NOT TEXT, exactly like `heat` and the retired bar segments: it is
-   * never pushed by visibleStrings, so nothing guards it. That is only safe
-   * because the number it depicts is always ALSO this cell's `text` — a bar
-   * whose value existed nowhere else could drift silently between the two
-   * renderers forever. Mutually exclusive with `heat`, whose white tile border
-   * would fight the fill.
-   */
-  bar?: number;
+}
+
+/**
+ * A table column.
+ *
+ * `width` is a percentage ("45%") and applies to the HTML part only — the
+ * plaintext renderer measures its columns from the content, which is the right
+ * answer in a monospace part. It exists because a table left to size itself
+ * gives every column the same weight: the four-way check's tick columns hold
+ * one glyph each and its last column holds a sentence, and the sentence was
+ * wrapping to four lines while "Guard" sat in a column three times wider than
+ * its content. Widths are hints; a client that ignores them still renders a
+ * correct table.
+ */
+export interface Column {
+  label: string;
+  align?: Align;
+  width?: string;
 }
 
 export type Block =
   | { kind: "para"; text: string; tone?: Tone; strong?: boolean }
   | { kind: "callout"; tone: "warn" | "danger" | "note"; title: string; lines: string[] }
-  | { kind: "table"; columns: { label: string; align?: Align }[]; rows: Cell[][]; footnote?: string }
+  | { kind: "table"; columns: Column[]; rows: Cell[][]; footnote?: string }
   | { kind: "list"; items: { text: string; sub?: string; tone?: Tone }[] }
   | { kind: "cta"; label: string; href: string };
 

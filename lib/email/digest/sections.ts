@@ -22,7 +22,7 @@
 import type { Block, Heat, Section, Tone } from "./model";
 import { renderText } from "./render-text";
 import type { ActionItem, CityDigestRow, DigestData, RegisterState } from "./types";
-import { directionSkew, fullyReported } from "./coverage";
+import { directionSkew, fullyReported, type SourceKey } from "./coverage";
 import {
   DEFAULT_PATTERN_LIMIT,
   filedNote,
@@ -180,6 +180,18 @@ function movementSummary(data: DigestData): Section[] {
  * in the sense a reader will take, so this section counts units per pattern and
  * never divides.
  */
+/**
+ * Width per tick column, sized to its own HEADER — the widest thing it holds.
+ * The cells below are a single glyph, so anything more is padding.
+ *
+ * Measured against the card's real geometry: a 600px shell less 28px of side
+ * padding gives the table 544px, and each cell spends 20px of that on its own
+ * padding. "GUARD" sets at ~42px, "ODOO" ~35px, "DT" ~15px — hence 12/12/7/11,
+ * every header on one line with a few pixels to spare. Count takes 13% (enough
+ * for "202/434"), which leaves 45% — about 225px — for the sentence.
+ */
+const MARK_COL_WIDTH: Record<SourceKey, string> = { P: "12%", S: "12%", D: "7%", O: "11%" };
+
 function coverageSection(data: DigestData, patternLimit: number = DEFAULT_PATTERN_LIMIT): Section | null {
   const cov = data.coverage;
   if (!cov || cov.cities.length === 0) return null;
@@ -220,10 +232,15 @@ function coverageSection(data: DigestData, patternLimit: number = DEFAULT_PATTER
 
     blocks.push({
       kind: "table",
+      // COLUMN WEIGHTS, per the owner (2026-08-02). Left to size itself the
+      // table gave every column the same pull: "What it means" wrapped to four
+      // lines — "Guard / + sheet / both / skipped" — while the tick columns
+      // held one glyph in three times the room they needed. Four narrow marks,
+      // a short count, and the rest to the sentence.
       columns: [
-        ...SOURCE_ORDER.map((k) => ({ label: SOURCE_LABEL[k] })),
-        { label: "Count", align: "right" as const },
-        { label: "What it means" },
+        ...SOURCE_ORDER.map((k) => ({ label: SOURCE_LABEL[k], width: MARK_COL_WIDTH[k] })),
+        { label: "Count", align: "right" as const, width: "13%" },
+        { label: "What it means", width: "45%" },
       ],
       rows: rows.map((r) => [
         ...r.marks.map((m) => ({
@@ -233,10 +250,14 @@ function coverageSection(data: DigestData, patternLimit: number = DEFAULT_PATTER
           tone: (m === "yes" ? "good" : m === "no" ? "danger" : "muted") as Tone,
         })),
         {
-          text: n(r.count),
+          // "102/191", not a bar. The bar showed each row against the city's
+          // BIGGEST row, which answers a question nobody asked and cost the
+          // widest column in the table; against the city's own movement count
+          // the number is comparable across cities and the reader can still
+          // add the column up to the heading above it.
+          text: `${n(r.count)}/${n(c.total)}`,
           align: "right" as const,
           strong: true,
-          bar: r.share,
           tone: (r.key === "PSDO" ? "good" : "warn") as Tone,
         },
         { text: r.action, tone: (r.key === "PSDO" ? "good" : "normal") as Tone },

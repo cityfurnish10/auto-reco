@@ -93,8 +93,6 @@ export interface PatternRow {
   marks: Mark[];
   count: number;
   action: string;
-  /** 0-100, this row against the city's biggest row — the bar width. */
-  share: number;
 }
 
 /**
@@ -136,8 +134,6 @@ export function patternRows(
   const head = entries.slice(0, limit);
   const tail = entries.slice(limit);
   const tailCount = tail.reduce((s, [, n]) => s + n, 0);
-  const biggest = entries[0]?.[1] ?? 0;
-  const share = (n: number) => (biggest > 0 ? Math.round((n / biggest) * 100) : 0);
 
   const rows: PatternRow[] = head.map(([key, count]) => ({
     key,
@@ -148,7 +144,6 @@ export function patternRows(
     ),
     count,
     action: actionFor(key, c),
-    share: share(count),
   }));
 
   if (tailCount > 0) {
@@ -164,7 +159,6 @@ export function patternRows(
       marks: SOURCE_ORDER.map(() => "na"),
       count: tailCount,
       action: `${OTHER_ROW_LABEL}: ${named}`,
-      share: share(tailCount),
     });
   }
   return rows;

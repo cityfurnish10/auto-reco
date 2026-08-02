@@ -53,23 +53,7 @@ function cellHtml(c: Cell): string {
   // that IS the heatmap's grid.
   const border = heat ? "border:2px solid #ffffff;" : "border:1px solid #e5e7eb;";
 
-  // A filled bar behind the number. Percentage widths on <td> are the only
-  // horizontal-bar primitive Outlook honours — the same reason the tables
-  // everywhere else are nested <table role="presentation"> rather than divs.
-  const pct = c.bar === undefined ? null : Math.max(0, Math.min(100, Math.round(c.bar)));
-  const body =
-    pct === null
-      ? esc(c.text)
-      : `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="table-layout:fixed;"><tr>` +
-        `<td style="white-space:nowrap;padding-right:6px;text-align:right;font-size:13px;color:${color};font-weight:${weight};">${esc(c.text)}</td>` +
-        `<td width="60%" style="width:60%;"><table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="table-layout:fixed;"><tr>` +
-        (pct > 0
-          ? `<td width="${pct}%" style="width:${pct}%;background:${TONE_COLOR[c.tone ?? "normal"]};height:8px;font-size:0;line-height:0;border-radius:2px;">&nbsp;</td>`
-          : "") +
-        (pct < 100 ? `<td style="font-size:0;line-height:0;">&nbsp;</td>` : "") +
-        `</tr></table></td></tr></table>`;
-
-  return `<td style="padding:8px 10px;${border}${bg}font-size:13px;color:${color};font-weight:${weight};text-align:center;">${body}</td>`;
+  return `<td style="padding:8px 10px;${border}${bg}font-size:13px;color:${color};font-weight:${weight};text-align:center;">${esc(c.text)}</td>`;
 }
 
 function blockHtml(b: Block): string {
@@ -88,17 +72,25 @@ function blockHtml(b: Block): string {
     }
 
     case "table": {
+      // The width goes on the header cell AND in its style, because Outlook
+      // reads the attribute and everything else reads the property. Columns
+      // without one are left to the client, exactly as before.
       const head = b.columns
-        .map(
-          (col) =>
-            `<th style="padding:8px 10px;border:1px solid #e5e7eb;background:#f9fafb;text-align:center;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#6b7280;font-weight:600;">${esc(col.label)}</th>`
-        )
+        .map((col) => {
+          const w = col.width ? ` width="${esc(col.width)}"` : "";
+          const ws = col.width ? `width:${col.width};` : "";
+          return `<th${w} style="${ws}padding:8px 10px;border:1px solid #e5e7eb;background:#f9fafb;text-align:center;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#6b7280;font-weight:600;">${esc(col.label)}</th>`;
+        })
         .join("");
       const body = b.rows.map((r) => `<tr>${r.map(cellHtml).join("")}</tr>`).join("");
       const foot = b.footnote
         ? `<p style="margin:8px 0 0;font-size:12px;color:#9ca3af;">${esc(b.footnote)}</p>`
         : "";
-      return `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;margin:0 0 12px;"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>${foot}`;
+      // table-layout:fixed only where the author has said what the columns are
+      // worth — it is what makes a declared width binding rather than a
+      // suggestion the content can overrule.
+      const layout = b.columns.some((c) => c.width) ? "table-layout:fixed;" : "";
+      return `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="${layout}border-collapse:collapse;margin:0 0 12px;"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>${foot}`;
     }
 
     case "list": {

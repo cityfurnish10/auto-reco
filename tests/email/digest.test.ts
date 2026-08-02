@@ -9,6 +9,7 @@ import {
   WORD_BUDGET,
   type DigestData,
 } from "../../lib/email/digest";
+import { renderHtml } from "../../lib/email/digest/render-html";
 
 const URL = "https://auto-reco.vercel.app/dashboard";
 
@@ -222,6 +223,30 @@ describe("digest — renderers cannot drift apart", () => {
 });
 
 // ─── vocabulary ──────────────────────────────────────────────────────────────
+
+describe("digest — column widths", () => {
+  const table = (columns: { label: string; width?: string }[]) =>
+    renderHtml(
+      [{ id: "t", blocks: [{ kind: "table", columns, rows: [columns.map(() => ({ text: "x" }))] }] }],
+      "1 Jan 2026",
+      "Kicker"
+    );
+
+  it("emits a declared width as BOTH the attribute and the property", () => {
+    // Outlook reads the attribute; everything else reads the property. One
+    // without the other is a width that works in half the inboxes.
+    const html = table([{ label: "Wide", width: "45%" }]);
+    expect(html).toContain('width="45%"');
+    expect(html).toContain("width:45%;");
+  });
+
+  it("fixes the layout only when the author said what the columns are worth", () => {
+    // Otherwise a declared width is a suggestion the content can overrule —
+    // and every table without widths keeps sizing itself, as it always has.
+    expect(table([{ label: "Wide", width: "45%" }])).toContain("table-layout:fixed");
+    expect(table([{ label: "Plain" }])).not.toContain("table-layout:fixed");
+  });
+});
 
 describe("digest — vocabulary", () => {
   it.each(FIXTURES)("uses no internal jargon (%s)", (_name, d) => {

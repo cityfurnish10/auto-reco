@@ -99,10 +99,13 @@ describe("patternRows — the rows always add up", () => {
     expect(rows.map((r) => r.key)).toEqual(["PSDO"]);
   });
 
-  it("scales the bar against the city's own biggest row", () => {
+  it("carries the raw count, and nothing derived from the other rows", () => {
+    // The bar that used to sit here scaled each row against the city's BIGGEST
+    // row, which answers a question nobody asked and cost the widest column in
+    // the table. The section now prints count/total, which is comparable across
+    // cities and still adds up to the heading above it.
     const rows = patternRows(city({ patterns: { PSDO: 100, "-SDO": 50 } }), 20);
-    expect(rows[0].share).toBe(100);
-    expect(rows[1].share).toBe(50);
+    expect(rows.map((r) => r.count)).toEqual([100, 50]);
   });
 });
 

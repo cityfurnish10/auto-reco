@@ -121,6 +121,32 @@ describe("the four-way section", () => {
     expect(Object.values(c.patterns).reduce((a, b) => a + b, 0)).toBe(c.total);
   });
 
+  it("prints the count against the city's own total, not a bar", () => {
+    // The owner, 2026-08-02: drop the bar, show match/total. The bar scaled
+    // each row against the city's BIGGEST row — a comparison nobody asked for
+    // that cost the widest column in the table.
+    const t = textOf(digest({ date: "2026-07-30", cities: [city()] }));
+    expect(t).toContain("62/150");
+    expect(t).toContain("23/150");
+  });
+
+  it("gives the sentence column more room than every tick column together", () => {
+    // The failure that prompted this: "Guard + sheet both skipped" wrapping to
+    // four lines beside a Guard column three times wider than its own glyph.
+    const table = buildSections(digest({ date: "2026-07-30", cities: [city()] }), {
+      dashboardUrl: "https://x.test/dashboard",
+    })
+      .find((s) => s.id === "coverage")!
+      .blocks.find((b) => b.kind === "table")!;
+    const pct = (label: string) =>
+      Number((table.columns.find((c) => c.label === label)?.width ?? "0%").replace("%", ""));
+    const marks = ["Guard", "Sheet", "DT", "Odoo"].reduce((s, l) => s + pct(l), 0);
+    expect(pct("What it means")).toBeGreaterThan(marks);
+    expect(pct("What it means")).toBeGreaterThan(pct("Count") * 3);
+    // And the declared widths have to add up, or a fixed layout distorts.
+    expect(marks + pct("Count") + pct("What it means")).toBe(100);
+  });
+
   it("a book that never filed is a dash, never a cross", () => {
     // The cross accuses; the dash reports. Measured 30 Jul: Mumbai's guard and
     // sheet books did not file at all, and rendering those as crosses would
