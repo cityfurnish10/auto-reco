@@ -35,7 +35,7 @@
 // comfortably more than one day's entries without pulling months of history.
 
 import { google, sheets_v4 } from "googleapis";
-import type { Connector, CityTaggedRow } from "./types";
+import type { Connector, CityTaggedRow, PullContext } from "./types";
 import { normalizeCity } from "./types";
 import { parseJsonEnv, readServiceAccountKey } from "./google-service-account";
 import { detectDateOrder, resolveSheetDate } from "./sheets-mapping";
@@ -50,7 +50,11 @@ import type { Direction } from "../engine/types";
 const ROW_BUFFER = 1500;
 const DEFAULT_OUTWARD_SHEET = "Outward";
 const DEFAULT_INWARD_SHEET = "Inward";
-const HEADER_SCAN_ROWS = 5;
+// Deep enough to survive a couple of stray title rows above the header. Pune's
+// Inward tab carried two "INWARD" banner rows on 2026-08-02.
+const HEADER_SCAN_ROWS = 10;
+/** Spellings of the one column without which a row cannot be filed to a day. */
+const DATE_HEADERS = ["date", "movement date", "entry date"];
 
 interface SheetConfigEntry {
   spreadsheetId: string;
@@ -86,15 +90,25 @@ function str(v: unknown): string | undefined {
   return String(v).trim();
 }
 
-// The title row above the header ("OUTWARD"/"Inward ") means the header
-// isn't always row 0 — find the first of the first few rows that contains a
-// "date" cell, rather than assuming a fixed offset.
-function findHeaderRowIndex(values: unknown[][]): number {
+/**
+ * Which row is the header — or NULL if this tab has no header at all.
+ *
+ * The title row above the header ("OUTWARD"/"Inward ") means the header isn't
+ * always row 0, so it is found rather than assumed.
+ *
+ * NULL, NOT 0, when nothing matches. Returning 0 made "the header is on row 0"
+ * and "this tab has no header" the same answer, and the caller resolved both by
+ * skipping the tab with a bare `continue`. On 2026-08-02 Pune's Inward tab had
+ * its header row replaced by a second "INWARD" banner and 16,578 rows went
+ * missing without a word anywhere. Now the caller can tell the two apart and
+ * say so.
+ */
+export function findHeaderRowIndex(values: unknown[][]): number | null {
   for (let i = 0; i < Math.min(values.length, HEADER_SCAN_ROWS); i++) {
-    const row = values[i].map((c) => String(c ?? "").trim().toLowerCase());
-    if (row.includes("date")) return i;
+    const row = (values[i] ?? []).map((c) => String(c ?? "").trim().toLowerCase());
+    if (row.some((c) => DATE_HEADERS.includes(c))) return i;
   }
-  return 0;
+  return null;
 }
 
 // header text → column index, case-insensitive, first match wins across
@@ -110,7 +124,7 @@ function buildColumnIndex(headerRow: unknown[]) {
     return -1;
   };
   return {
-    date: col("date"),
+    date: col(...DATE_HEADERS),
     barcode: col("barcode", "barcodes", "barcode/id"),
     soNumber: col("so number", "so_number", "so no"),
     // Vendor rows (Inward tab) carry a PO Number and a blank SO — used as the
@@ -137,7 +151,7 @@ function buildColumnIndex(headerRow: unknown[]) {
 export const sheetsConnector: Connector = {
   source: "SHEET",
   label: "Google Sheets",
-  async pull(runDate: string): Promise<CityTaggedRow[]> {
+  async pull(runDate: string, ctx?: PullContext): Promise<CityTaggedRow[]> {
     const config = readSheetsConfig();
     // Distinguish "never set up" from "set up and broken". The single old
     // message covered both, so three days of a malformed SHEETS_CONFIG read as
@@ -191,9 +205,29 @@ export const sheetsConnector: Connector = {
         }
         if (values.length < 2) continue; // header only, or empty
 
+        // A TAB WE CANNOT READ IS AN OUTAGE, NOT A ZERO. Both branches below
+        // used to be a bare `continue`, so a structural break in one tab was
+        // indistinguishable from a quiet day. Say which tab, and demote the
+        // city so nothing downstream reads the missing direction as evidence.
         const headerIdx = findHeaderRowIndex(values);
+        if (headerIdx === null) {
+          ctx?.warn(
+            `${cityKey}/${tab.name} has no header row (no Date column in the first ${HEADER_SCAN_ROWS} rows) — ${values.length} rows skipped. Restore the header and re-run.`
+          );
+          ctx?.incomplete(city);
+          continue;
+        }
         const idx = buildColumnIndex(values[headerIdx]);
-        if (idx.date === -1 || idx.barcode === -1) continue; // can't reconcile without these
+        if (idx.date === -1 || idx.barcode === -1) {
+          const missing = [idx.date === -1 && "Date", idx.barcode === -1 && "Barcode"]
+            .filter(Boolean)
+            .join(" and ");
+          ctx?.warn(
+            `${cityKey}/${tab.name} header is missing its ${missing} column — ${values.length} rows skipped.`
+          );
+          ctx?.incomplete(city);
+          continue;
+        }
 
         // Date resolution reconciles the raw serial (UNFORMATTED) with the
         // displayed string (FORMATTED) — see resolveSheetDate. The sheets are

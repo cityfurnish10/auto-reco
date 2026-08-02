@@ -117,6 +117,10 @@ export async function runReconcilePipeline(
       if (!r.ok) {
         pipelineWarnings.push(`${r.source} source failed: ${r.message ?? "unknown error"}`);
       }
+      // A source that answered, but not for everything it was asked for — a tab
+      // it could not parse, a city it lost. pullAll has already demoted those
+      // cities' reported flags; this is the half a human reads.
+      for (const w of r.warnings) pipelineWarnings.push(w);
     }
     // Which cities the guard demoted, as a set rather than a regex over prose —
     // the run snapshot stores it so the Stock Analyser can tell a truncated pull

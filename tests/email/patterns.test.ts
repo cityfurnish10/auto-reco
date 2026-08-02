@@ -131,6 +131,44 @@ describe("patternRows — a book that never filed", () => {
     }
   });
 
+  it("MERGES patterns that differ only in a book that did not file", () => {
+    // Measured 2026-08-02 on Pune, whose ops sheet lost its inward tab: PSDO
+    // and P-DO both render as tick, dash, tick, tick with the same wording, so
+    // the table showed "In every book that filed · 30" directly above "In every
+    // book that filed · 29" and a reader could not tell them apart.
+    const rows = patternRows(
+      city({
+        reported: { P: true, S: false, D: true, O: true },
+        total: 59,
+        patterns: { PSDO: 30, "P-DO": 29 },
+      }),
+      20
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].count).toBe(59);
+    expect(rows[0].marks).toEqual(["yes", "na", "yes", "yes"]);
+  });
+
+  it("still sums to the city total after that merge", () => {
+    const c = city({
+      reported: { P: true, S: false, D: true, O: true },
+      total: 90,
+      patterns: { PSDO: 30, "P-DO": 29, "-SDO": 20, "--DO": 11 },
+    });
+    const rows = patternRows(c, 20);
+    expect(rows.reduce((s, r) => s + r.count, 0)).toBe(c.total);
+    expect(rows).toHaveLength(2); // {P,D,O} and {D,O}
+  });
+
+  it("leaves a fully-reported city's rows exactly as they were", () => {
+    // The fold has to be the identity when all four filed, or it would quietly
+    // rewrite every normal day.
+    const c = city();
+    expect(patternRows(c, 20).map((r) => r.key)).toEqual(
+      Object.entries(c.patterns).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([k]) => k)
+    );
+  });
+
   it("describes what the books that DID file saw", () => {
     expect(actionFor("--DO", partial)).toBe("In every book that filed");
     expect(actionFor("---O", partial)).toBe("Missing from DT");

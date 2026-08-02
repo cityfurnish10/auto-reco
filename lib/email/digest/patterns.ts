@@ -109,7 +109,26 @@ export function patternRows(
   c: CityCoverage,
   limit: number = DEFAULT_PATTERN_LIMIT
 ): PatternRow[] {
-  const entries = Object.entries(c.patterns ?? {})
+  // FOLD ONTO THE BOOKS THAT FILED, FIRST.
+  //
+  // A book that did not file renders as a dash on every row, so two patterns
+  // differing only in that book's letter come out as the same row twice — same
+  // ticks, same wording, two different counts, nothing to tell them apart.
+  // Measured 2026-08-02 on Pune, whose ops sheet lost a tab: "In every book
+  // that filed · 30" sat directly above "In every book that filed · 29".
+  //
+  // Projecting the key onto the filed books merges them into one row of 59.
+  // The projection is the identity when all four filed, so a normal city is
+  // untouched, and it preserves the sum — the counts are added, never dropped.
+  const project = (key: string) =>
+    SOURCE_ORDER.map((k, i) => (c.reported[k] ? (key[i] ?? "-") : "-")).join("");
+  const folded: Record<string, number> = {};
+  for (const [key, count] of Object.entries(c.patterns ?? {})) {
+    const p = project(key);
+    folded[p] = (folded[p] ?? 0) + count;
+  }
+
+  const entries = Object.entries(folded)
     .filter(([, n]) => n > 0)
     // Count desc, then key, so two equal counts never swap between renders.
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));

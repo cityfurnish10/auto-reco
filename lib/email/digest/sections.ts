@@ -246,7 +246,13 @@ function coverageSection(data: DigestData, patternLimit: number = DEFAULT_PATTER
     // The one finding a per-city total hides: a whole direction unlogged.
     // Measured on Bangalore — 0 of 64 arriving units reached all four records
     // against 39 of 67 leaving. It survived the chart's removal on purpose.
-    const skew = directionSkew(c);
+    //
+    // ONLY WHERE ALL FOUR FILED. "Reach all four" is not a measurement when one
+    // book is absent — it is zero by construction. Measured 2026-08-02: Pune's
+    // ops sheet lost its inward tab, and this printed "Pune logs almost nothing
+    // arriving: 0 of 87 reach all four", blaming a warehouse for a spreadsheet
+    // we could not read.
+    const skew = fullyReported(c) ? directionSkew(c) : null;
     if (skew) {
       blocks.push({
         kind: "para",

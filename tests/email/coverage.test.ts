@@ -140,6 +140,36 @@ describe("the four-way section", () => {
     expect(t).not.toContain("Guard post not logging · Bangalore");
   });
 
+  it("never calls a direction unlogged when a book did not file", () => {
+    // "0 of 87 reach all four" is arithmetic, not a finding, when one of the
+    // four is absent — it cannot be anything else. Measured 2026-08-02: Pune's
+    // ops sheet lost its inward tab and the email blamed the warehouse for it.
+    const t = textOf(
+      digest({
+        date: "2026-07-31",
+        cities: [
+          city({
+            city: "PUNE",
+            reported: { P: true, S: false, D: true, O: true },
+            inbound: { total: 87, all4: 0 },
+            outbound: { total: 54, all4: 30 },
+          }),
+        ],
+      })
+    );
+    expect(t).not.toContain("logs almost nothing");
+  });
+
+  it("still reports the skew for a city where all four filed", () => {
+    const t = textOf(
+      digest({
+        date: "2026-07-31",
+        cities: [city({ inbound: { total: 64, all4: 0 }, outbound: { total: 67, all4: 39 } })],
+      })
+    );
+    expect(t).toContain("logs almost nothing arriving");
+  });
+
   it("marks a city shut for its weekly off and tabulates nothing for it", () => {
     // 2026-07-30 is a Thursday; Pune is closed.
     const d = digest({

@@ -29,17 +29,31 @@ export interface PullAllResult {
   reportedByCity: Record<City, ReportedSources>;
 }
 
-async function runOne(c: Connector, runDate: string): Promise<ConnectorResult> {
+async function runOne(
+  c: Connector,
+  runDate: string,
+  incompleteByCity: Map<City, Set<SourceKind>>
+): Promise<ConnectorResult> {
   const startedAt = new Date().toISOString();
   const t0 = Date.now();
+  const warnings: string[] = [];
+  const ctx = {
+    warn: (message: string) => warnings.push(`${c.label}: ${message}`),
+    incomplete: (city: City) => {
+      const set = incompleteByCity.get(city) ?? new Set<SourceKind>();
+      set.add(c.source);
+      incompleteByCity.set(city, set);
+    },
+  };
   try {
-    const rows = await c.pull(runDate);
+    const rows = await c.pull(runDate, ctx);
     return {
       source: c.source,
       label: c.label,
       ok: true,
       rows,
       rowsPulled: rows.length,
+      warnings,
       startedAt,
       finishedAt: new Date().toISOString(),
       durationMs: Date.now() - t0,
@@ -52,6 +66,7 @@ async function runOne(c: Connector, runDate: string): Promise<ConnectorResult> {
       rows: [],
       rowsPulled: 0,
       message: err instanceof Error ? err.message : String(err),
+      warnings,
       startedAt,
       finishedAt: new Date().toISOString(),
       durationMs: Date.now() - t0,
@@ -59,8 +74,49 @@ async function runOne(c: Connector, runDate: string): Promise<ConnectorResult> {
   }
 }
 
+const FLAG: Record<SourceKind, keyof ReportedSources> = {
+  PHYSICAL: "P",
+  SHEET: "S",
+  DT: "D",
+  ODOO: "O",
+};
+
+/**
+ * Which sources actually reported, per city.
+ *
+ * Reported = the connector succeeded AND returned ≥1 row for that city AND did
+ * not raise the city as incomplete. That last clause is the one with teeth: a
+ * partial answer is not an answer. A source that lost one of a city's two tabs
+ * still returns rows for the other and would otherwise read as fully reported —
+ * the exact shape that turns "we could not read it" into a confident zero in
+ * the digest and a flood of false absences in the ladder.
+ */
+export function deriveReportedByCity(
+  results: ConnectorResult[],
+  incompleteByCity: ReadonlyMap<City, ReadonlySet<SourceKind>>
+): Record<City, ReportedSources> {
+  return Object.fromEntries(
+    CITIES.map((city) => {
+      const rep: ReportedSources = { P: false, S: false, D: false, O: false };
+      const incomplete = incompleteByCity.get(city);
+      for (const r of results) {
+        if (!r.ok) continue;
+        if (incomplete?.has(r.source)) continue;
+        if (r.rows.some((row) => (row as CityTaggedRow).city === city)) {
+          rep[FLAG[r.source]] = true;
+        }
+      }
+      return [city, rep];
+    })
+  ) as Record<City, ReportedSources>;
+}
+
 export async function pullAll(runDate: string): Promise<PullAllResult> {
-  const results = await Promise.all(CONNECTORS.map((c) => runOne(c, runDate)));
+  // Filled by any connector that reached a city but could not read all of it.
+  const incompleteByCity = new Map<City, Set<SourceKind>>();
+  const results = await Promise.all(
+    CONNECTORS.map((c) => runOne(c, runDate, incompleteByCity))
+  );
 
   const rowsByCity = Object.fromEntries(
     CITIES.map((city) => [city, [] as SourceRow[]])
@@ -73,25 +129,7 @@ export async function pullAll(runDate: string): Promise<PullAllResult> {
     }
   }
 
-  // reported = the connector succeeded AND returned ≥1 row for that city.
-  const FLAG: Record<SourceKind, keyof ReportedSources> = {
-    PHYSICAL: "P",
-    SHEET: "S",
-    DT: "D",
-    ODOO: "O",
-  };
-  const reportedByCity = Object.fromEntries(
-    CITIES.map((city) => {
-      const rep: ReportedSources = { P: false, S: false, D: false, O: false };
-      for (const r of results) {
-        if (!r.ok) continue;
-        if (r.rows.some((row) => (row as CityTaggedRow).city === city)) {
-          rep[FLAG[r.source]] = true;
-        }
-      }
-      return [city, rep];
-    })
-  ) as Record<City, ReportedSources>;
+  const reportedByCity = deriveReportedByCity(results, incompleteByCity);
 
   return {
     rowsByCity,
