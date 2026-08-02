@@ -11,17 +11,19 @@
 // (see trimToBudget) so a busy day drops the least important section rather than
 // truncating mid-sentence.
 //
-// THREE PARTS, in the order the founder asked for them:
-//   1 · Four-way check          did all four records agree, per city, drawn
-//   2 · At risk                 what is actually missing, and who fixes it
-//   3 · Open more than two days what we still have not dealt with
-// Part 3 replaced a separate follow-up email that used to go out three days
-// after each digest; a second mail nobody had asked for was worse at the job
-// than a section in the one they already open.
+// THE SHAPE, top to bottom:
+//   Inward / Outward            what each book recorded, per city
+//   1 · Open more than two days what we still have not dealt with
+//   2 · Four-way check          which books saw each unit, and what to do
+// The ageing part replaced a separate follow-up email that used to go out three
+// days after each digest; a second mail nobody had asked for was worse at the
+// job than a section in the one they already open. An "At risk, by city" table
+// sat between the two numbered parts until 2026-08-02 — it summarised the two
+// tables that bracketed it, so the owner had it removed.
 
 import type { Block, Heat, Section, Tone } from "./model";
 import { renderText } from "./render-text";
-import type { ActionItem, CityDigestRow, DigestData, RegisterState } from "./types";
+import type { DigestData } from "./types";
 import { directionSkew, fullyReported, type SourceKey } from "./coverage";
 import {
   DEFAULT_PATTERN_LIMIT,
@@ -30,8 +32,7 @@ import {
   SOURCE_LABEL,
   SOURCE_ORDER,
 } from "./patterns";
-import { isCityOff, registerDueOn } from "../../engine/schedule";
-import { addDays } from "../../engine/dates";
+import { isCityOff } from "../../engine/schedule";
 import type { City } from "../../sample-data";
 import { LOOKBACK_DAYS } from "./ageing";
 
@@ -53,25 +54,6 @@ export function fmtDateShort(d: string): string {
   if (!m || !day) return d;
   return `${day} ${months[m - 1]}`;
 }
-
-const WEEKDAY = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-function weekdayName(d: string): string {
-  const [y, m, day] = d.split("-").map(Number);
-  return y && m && day ? WEEKDAY[new Date(Date.UTC(y, m - 1, day)).getUTCDay()] : "";
-}
-
-const REGISTER_TEXT: Record<RegisterState, string> = {
-  received: "Received",
-  // Three different asks of three different people, so three different words.
-  missing: "Not received",
-  // Overridden with the actual weekday where the date is known — "Due Friday".
-  delayed: "Due after day off",
-  pending: "Not read yet",
-  // "Reading failed" reads as if the guard failed. It was our scanner, and
-  // the owner does not need to know which.
-  failed: "Unreadable",
-  off: "Weekly off",
-};
 
 const n = (x: number) => x.toLocaleString("en-IN");
 
@@ -288,7 +270,7 @@ function coverageSection(data: DigestData, patternLimit: number = DEFAULT_PATTER
   if (blocks.length === 0 || (scored === 0 && cov.cities.every((c) => isCityOff(c.city as City, cov.date))))
     return null;
 
-  return { id: "coverage", title: "3 · Four-way check", blocks };
+  return { id: "coverage", title: "2 · Four-way check", blocks };
 }
 
 // ─── part three: what has been open too long ─────────────────────────────────
@@ -374,118 +356,9 @@ function ageingSection(data: DigestData): Section | null {
     });
   }
 
-  return { id: "ageing", title: "2 · Open more than two days", blocks };
+  return { id: "ageing", title: "1 · Open more than two days", blocks };
 }
 
-/** "Delhi 31, Bangalore 25" — or "+3 cities" once the list stops being useful. */
-function cityBreakdown(item: ActionItem): string {
-  const named = item.cities.slice(0, 2);
-  const rest = item.cities.length - named.length;
-  const parts = named.map((c) => `${cityName(c.city)} ${c.count}`);
-  if (rest > 0) parts.push(`+${rest} ${rest === 1 ? "city" : "cities"}`);
-  return parts.join(", ");
-}
-
-
-
-function citySnapshot(
-  cities: CityDigestRow[],
-  footnote: string | null,
-  businessDate?: string,
-  calendar?: DigestData["calendar"]
-): Block {
-  const rows = cities.map((c) => [
-    // The marker rides the CITY cell, not the register column. The register cell
-    // already reads "Weekly off" on a full off day, but on the day BEFORE — whose
-    // morning half is the holiday — it reads "Not received", which blames the
-    // guard for a day nobody was there. A business day runs 3pm to 3pm, so a
-    // one-day closure lands inside two of them.
-    {
-      text: c.weekOff
-        ? `${cityName(c.city)} (week off)`
-        : cityName(c.city),
-      tone: c.weekOff ? ("muted" as const) : undefined,
-    },
-    { text: n(c.movements), align: "right" as const },
-    { text: n(c.tier1), align: "right" as const, tone: c.tier1 > 0 ? ("danger" as const) : undefined, strong: c.tier1 > 0 },
-    {
-      // "delayed" names the actual handover day: the city's weekly off sits
-      // between this board and the register, so Wednesday's book from a
-      // Thursday-off warehouse is DUE FRIDAY — a schedule, not an alarm, which
-      // is also why it renders muted rather than danger.
-      text:
-        c.register === "delayed" && businessDate
-          ? `Due ${weekdayName(
-              registerDueOn(c.city as City, businessDate, calendar) ?? addDays(businessDate, 2)
-            )}`
-          : REGISTER_TEXT[c.register],
-      tone: c.register === "missing" || c.register === "failed" ? ("danger" as const)
-        : c.register === "pending" ? ("warn" as const)
-        : ("muted" as const),
-    },
-  ]);
-  return {
-    kind: "table",
-    columns: [
-      { label: "City" },
-      { label: "Units moved", align: "right" },
-      { label: "At risk", align: "right" },
-      { label: "Guard register" },
-    ],
-    rows,
-    // The caveat sits UNDER the rows it qualifies, not sixty words below in a
-    // footer. The slot already existed in the model and in both renderers and
-    // had never been used.
-    ...(footnote ? { footnote } : {}),
-  };
-}
-
-function actionList(actions: ActionItem[], limit: number): Block[] {
-  const shown = actions.slice(0, limit);
-  const hidden = actions.length - shown.length;
-  const blocks: Block[] = [
-    {
-      kind: "list",
-      items: shown.map((a, i) => ({
-        // ONE risk sentence, on the largest tier-1 job. It is the only place in
-        // the email where a label gets defined, and it is the sentence that makes
-        // an owner walk to the gate rather than forward the mail. Three would
-        // cost a quarter of the budget to justify work that gets delegated
-        // anyway; zero is what shipped, on the false premise that the dashboard
-        // was showing it.
-        text: i === 0 && a.tier === 1 && a.risk
-          ? `${a.label} — ${n(a.count)} ${a.count === 1 ? "unit" : "units"} (${cityBreakdown(a)}). ${a.risk} ${a.action}`
-          : `${a.label} — ${n(a.count)} ${a.count === 1 ? "unit" : "units"} (${cityBreakdown(a)}). ${a.action}`,
-        sub: a.team,
-        tone: a.tier === 1 ? "danger" : "warn",
-      })),
-    },
-  ];
-  if (hidden > 0) {
-    // "jobs", not "kinds of item": after the regrouping fix each line IS one job
-    // — one problem with one fix and one owner.
-    blocks.push({
-      kind: "para",
-      text: `+${hidden} more ${hidden === 1 ? "job" : "jobs"}, all on the dashboard.`,
-      tone: "muted",
-    });
-  }
-  return blocks;
-}
-
-function informationalLine(d: DigestData): string | null {
-  // The tier-3 TOTAL, not the top three kinds. "123 odoo posting delay" is a
-  // count followed by a lower-cased singular proper noun — not English, and the
-  // labels have no plural form to fix it with.
-  //
-  // Self-contained, and deliberately so. This line used to open "The other N"
-  // and borrowed its referent from the button underneath ("Open all 219 items").
-  // The button now only says where it goes, so the sentence names both numbers
-  // itself and the arithmetic still closes: tier1 + tier2 + this = open.
-  const { tier3, open } = d.totals;
-  if (tier3 === 0) return null;
-  return `Of the ${n(open)} items open today, ${n(tier3)} need nothing from anyone.`;
-}
 
 
 export interface SectionOpts {
@@ -550,17 +423,16 @@ export function buildSections(data: DigestData, opts: SectionOpts = {}): Section
   // interpret those counts.
   sections.push(...movementSummary(data));
 
-  if (data.cities.length > 0) {
-    sections.push({
-      id: "cities",
-      title: "1 · At risk, by city",
-      blocks: [citySnapshot(data.cities, null, data.date, data.calendar)],
-    });
-  }
-
-  // PART THREE. After the day's own numbers, because it is a different
-  // question: not "what happened yesterday" but "what have we still not dealt
-  // with". Replaces the separate follow-up email that used to go out at D+3.
+  // THE AT-RISK TABLE IS GONE (owner, 2026-08-02). It listed units moved, units
+  // at risk and the register state per city — and every one of those is already
+  // on the screen elsewhere in the same email: the movement summary above gives
+  // the counts per book, and the four-way check below gives the gaps per city
+  // with the combination that caused each one. It was a summary of two tables
+  // that bracket it.
+  //
+  // After the day's own numbers, because it is a different question: not "what
+  // happened yesterday" but "what have we still not dealt with". Replaces the
+  // separate follow-up email that used to go out at D+3.
   const ageing = ageingSection(data);
   if (ageing) sections.push(ageing);
 

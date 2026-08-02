@@ -37,6 +37,23 @@ const city = (over: Partial<DigestData["cities"][number]>) => ({
   ...over,
 });
 
+// One city's four-way coverage. The section is the only surface left that
+// prints a per-city line, so the tests that used to reach the at-risk table go
+// through here now.
+const coverageCity = (
+  over: Partial<NonNullable<DigestData["coverage"]>["cities"][number]> = {}
+): NonNullable<DigestData["coverage"]>["cities"][number] => ({
+  city: "DELHI",
+  total: 150,
+  byCount: [23, 62, 29, 36],
+  missing: { P: 51, S: 10, D: 40, O: 12 },
+  reported: { P: true, S: true, D: true, O: true },
+  inbound: { total: 75, all4: 12 },
+  outbound: { total: 75, all4: 11 },
+  patterns: { PSDO: 23, "-SDO": 62, "-S-O": 29, "---O": 36 },
+  ...over,
+});
+
 const action = (over: Partial<DigestData["actions"][number]>) => ({
   label: "System-Only Entry",
   tier: 1 as const,
@@ -94,9 +111,24 @@ const allOff = digest({
   cities: [city({ register: "off" }), city({ city: "PUNE", register: "off" })],
 });
 
+// `counts` so the hostile city name reaches a rendered table. It used to arrive
+// there through the at-risk section; with that gone, the movement summary is
+// the surface that prints a city name, and the escaping test has to keep
+// exercising a real one.
 const hostile = digest({
   totals: { movements: 5, tier1: 1, tier2: 0, tier3: 0, open: 1 },
-  cities: [city({ city: 'A&B"<script>', tier1: 1, open: 1 })],
+  cities: [
+    city({
+      city: 'A&B"<script>',
+      tier1: 1,
+      open: 1,
+      counts: {
+        physIn: 1, physOut: 1, sheetIn: 1, sheetOut: 1,
+        odooIn: 1, odooOut: 1, dtIn: 1, dtOut: 1,
+        reported: { P: true, S: true, D: true, O: true },
+      },
+    }),
+  ],
   actions: [action({ label: "O'Brien & <b>Co</b>", count: 1, cities: [{ city: 'A&B"<script>', count: 1 }] })],
 });
 
@@ -287,31 +319,33 @@ describe("digest — budget", () => {
     expect(words, `rendered ${words} words`).toBeLessThanOrEqual(WORD_BUDGET);
   });
 
-  it("badges ONE date per week and schedules the late register on its neighbour", () => {
-    // The week per the owner: Thursday is the off day, so only the Thursday
-    // board carries "(week off)". The Wednesday board's register from that city
-    // is not missing — it is handed over on Friday, after the holiday, and the
-    // cell says which day rather than raising an alarm that fires every week.
-    const d = digest({
-      // A real Wednesday, so "delayed" is coherent: Mumbai works this board,
-      // Thursday is its off day, and the book lands Friday. The old fixture
-      // forced delayed onto a Sunday and pinned the "+2" approximation
-      // ("Due Tuesday") — the true handover day for a Sunday book is Monday,
-      // which is exactly why the +2 literal had to go.
+  it("marks a shut city as shut, and expects nothing of it", () => {
+    // The "(week off)" badge and the "Due Friday" register cell lived in the
+    // at-risk table, which the owner removed on 2026-08-02. What survives is
+    // the four-way check's own line for a closed city — and it still has to
+    // name only the city that is actually shut. Thursday is the off day, so a
+    // Wednesday board carries no badge at all.
+    const wed = digest({
       date: "2026-07-29",
       totals: { movements: 100, tier1: 1, tier2: 0, tier3: 0, open: 1 },
-      cities: [
-        city({ city: "MUMBAI", tier1: 1, open: 1, register: "delayed" }),
-        city({ city: "PUNE", weekOff: "full", register: "off" }),
-        city({ city: "DELHI" }),
-      ],
+      cities: [city({ city: "MUMBAI", tier1: 1, open: 1, register: "delayed" })],
+      coverage: { date: "2026-07-29", cities: [coverageCity({ city: "MUMBAI" })] },
     });
-    const text = renderDigestText(d, URL);
-    expect(text).not.toContain("Mumbai (week off)");
-    expect(text).toContain("Pune (week off)");
-    expect(text).not.toContain("Delhi (week off)");
-    expect(text).toContain("Due Friday");
-    expect(text).not.toContain("Not received");
+    expect(renderDigestText(wed, URL)).not.toContain("weekly off");
+
+    // 2026-07-30 is a Thursday: Pune is shut, Delhi is not.
+    const thu = digest({
+      date: "2026-07-30",
+      totals: { movements: 100, tier1: 1, tier2: 0, tier3: 0, open: 1 },
+      cities: [city({ city: "PUNE", weekOff: "full", register: "off" })],
+      coverage: {
+        date: "2026-07-30",
+        cities: [coverageCity({ city: "PUNE", total: 0, patterns: {} }), coverageCity({ city: "DELHI" })],
+      },
+    });
+    const t = renderDigestText(thu, URL);
+    expect(t).toContain("Pune — weekly off, nothing expected.");
+    expect(t).not.toContain("Delhi — weekly off");
   });
 });
 
@@ -355,23 +389,24 @@ describe("digest — the incomplete run outranks everything", () => {
 describe("digest — the founder's three parts", () => {
   const text = () => renderDigestText(threePart, URL);
 
-  it("renders all three numbered parts, in order", () => {
-    // The four-way check moved to the END (owner, 2026-08-02): it is the
-    // longest section and it is reference material, so the email opens with
-    // what needs doing rather than with forty rows of evidence.
+  it("renders both numbered parts, in order", () => {
+    // The four-way check sits at the END (owner, 2026-08-02): it is the longest
+    // section and it is reference material, so the email opens with what needs
+    // doing rather than with forty rows of evidence. "At risk, by city" used to
+    // be part one and was removed the same day — it summarised the two tables
+    // that bracketed it.
     const t = text();
-    const one = t.indexOf("1 · AT RISK, BY CITY");
-    const two = t.indexOf("2 · OPEN MORE THAN TWO DAYS");
-    const three = t.indexOf("3 · FOUR-WAY CHECK");
+    const one = t.indexOf("1 · OPEN MORE THAN TWO DAYS");
+    const two = t.indexOf("2 · FOUR-WAY CHECK");
     expect(one).toBeGreaterThan(-1);
     expect(two).toBeGreaterThan(one);
-    expect(three).toBeGreaterThan(two);
+    expect(t).not.toContain("AT RISK, BY CITY");
   });
 
-  it("puts the movement summary above all three, and the link below them", () => {
+  it("puts the movement summary above both, and the link below them", () => {
     const t = text();
-    expect(t.indexOf("INWARD ·")).toBeLessThan(t.indexOf("1 · AT RISK"));
-    expect(t.indexOf("3 · FOUR-WAY CHECK")).toBeLessThan(t.indexOf("View in dashboard"));
+    expect(t.indexOf("INWARD ·")).toBeLessThan(t.indexOf("1 · OPEN MORE THAN TWO DAYS"));
+    expect(t.indexOf("2 · FOUR-WAY CHECK")).toBeLessThan(t.indexOf("View in dashboard"));
   });
 
   it("drops the intro sentence that restated the key in prose", () => {
