@@ -24,6 +24,7 @@ export interface StatLike {
   real: number;
   movements: number;
   openReal?: number;
+  closedReal?: number;
   openOver3d?: number;
   oldestOpenAt?: string | null;
 }
@@ -60,6 +61,23 @@ export function queueCaption(agg: StatLike | null | undefined): string {
   const stale = agg.openOver3d ?? 0;
   if (stale === 0) return "All raised today";
   return `${n(stale)} older than 3 days · oldest ${ageLabel(agg.oldestOpenAt ?? null)}`;
+}
+
+/**
+ * "31 of 68 raised on this day's list" — what the Closed tile settled.
+ *
+ * This tile used to relate itself to NOTHING, and said so: `closed` counted
+ * every bucket while `real` counted losses, so the ratio could exceed 100%.
+ * Now that both are loss-only the denominator is honest and the tile can carry
+ * the one fact that makes its number mean something — how much of the day's
+ * list it represents.
+ */
+export function closedCaption(agg: StatLike | null | undefined): string {
+  if (!agg) return "";
+  const closed = agg.closedReal ?? 0;
+  if (agg.real === 0) return "Nothing was flagged on this day";
+  if (closed === 0) return `None of ${n(agg.real)} settled yet`;
+  return `of ${n(agg.real)} raised on this day's list`;
 }
 
 /** "18 of 1,204 units moved · 98.5% traced" — the city-card line. */

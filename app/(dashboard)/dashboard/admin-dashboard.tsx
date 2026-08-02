@@ -24,7 +24,7 @@ import VarianceDetailModal from "./variance-detail-modal";
 import VarianceListModal, { type ListModalRequest } from "./variance-list-modal";
 import { isCityClosed } from "@/lib/engine/schedule";
 import { addDays } from "@/lib/engine/dates";
-import { cityRateLine, queueCaption, rateCaption } from "@/lib/ui/stat-captions";
+import { cityRateLine, closedCaption, queueCaption, rateCaption } from "@/lib/ui/stat-captions";
 import {
   PRIORITY_BADGE,
   STATUS_BADGE,
@@ -75,6 +75,9 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
   // Sticky: survives navigating to another page and back, so a date the
   // user deliberately picked is not silently reset to the latest run.
   const [dateF, setDateF] = useStickyState("admin.businessDate", ""); // "" = latest run
+  // Span every date rather than the latest run. Set only by the approvals bell,
+  // whose badge counts across all dates; cleared the moment a date is picked.
+  const [allDates, setAllDates] = useState(false);
   const [page, setPage] = useState(1);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -92,11 +95,23 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
 
   // The notification bell links here with ?status=pending_approval — seed the
   // status filter from the URL so a click lands on the approval queue.
+  //
+  // AND CLEAR THE OTHER FILTERS, because the badge counts across all of them.
+  // /api/variances/pending-count filters on status alone — every city, every
+  // bucket, every date — while this page arrives holding a sticky city and date
+  // from the last visit and a bucket defaulting to REAL. So the badge said 12,
+  // the click landed on one city's REAL rows for one day, and the queue looked
+  // like 3. The badge is the promise; this makes the page keep it.
   /* eslint-disable react-hooks/set-state-in-effect -- one-time URL seed on mount */
   useEffect(() => {
     const s = new URLSearchParams(window.location.search).get("status");
-    if (s === "pending_approval") setStatus("pending_approval");
-  }, []);
+    if (s !== "pending_approval") return;
+    setStatus("pending_approval");
+    setCityTab("ALL");
+    setBucket("ALL");
+    setDateF("");
+    setAllDates(true); // the badge counts every date, so the list must show them
+  }, [setCityTab, setDateF]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const { stats, loading: statsLoading, refetch: refetchStats } = useStats(dateF || undefined);
@@ -113,17 +128,18 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
       variance: q ? "ALL" : varianceName,
       responsible: q ? "ALL" : responsible,
       jobType: q ? "ALL" : opsType,
-      date: q ? undefined : dateF || undefined,
-      // A search must find the barcode whatever night it landed on; everything
-      // else stays scoped to a single run so the table agrees with the KPIs.
-      allDates: !!q,
+      date: q || allDates ? undefined : dateF || undefined,
+      // A search must find the barcode whatever night it landed on, and the
+      // approvals queue must show every date the badge counted; everything else
+      // stays scoped to a single run so the table agrees with the KPIs.
+      allDates: !!q || allDates,
       q: q || undefined,
       sort: sort.key,
       dir: sort.dir,
       page,
       pageSize: PAGE_SIZE,
     }),
-    [cityTab, bucket, source, priority, status, varianceName, responsible, opsType, dateF, q, sort, page]
+    [cityTab, bucket, source, priority, status, varianceName, responsible, opsType, dateF, allDates, q, sort, page]
   );
   const { rows, total, totalPages, businessDate, sortDegraded, loading, error, refetch } =
     useVariances(filters);
@@ -181,8 +197,9 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     return cityTab === "ALL"
       ? stats.overall
       : stats.byCity.find((c) => c.city === cityTab) ?? {
-          city: cityTab, total: 0, open: 0, openReal: 0, inProgress: 0, pendingApproval: 0, closed: 0,
-          pendingList: 0, high: 0, medium: 0, info: 0, real: 0, infoBucket: 0, ppBox: 0, consumable: 0,
+          city: cityTab, total: 0, open: 0, inProgress: 0, pendingApproval: 0, closed: 0,
+          pendingList: 0, openReal: 0, inProgressReal: 0, pendingApprovalReal: 0, closedReal: 0,
+          pendingListReal: 0, high: 0, medium: 0, info: 0, real: 0, infoBucket: 0, ppBox: 0, consumable: 0,
           // A city with no row in this run moved nothing we recorded. movements
           // 0 makes rateCaption say "No movements recorded for this day" rather
           // than inventing a perfect score out of a zero denominator.
@@ -194,6 +211,8 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     return (v: T) => {
       setter(v);
       setPage(1);
+      // Touching any filter means the user is driving now, not the bell.
+      setAllDates(false);
       // A filter change redefines what the user is looking at, so a selection
       // made under the old filters must not survive into a bulk action. Paging
       // deliberately does NOT clear it — see use-selection.ts.
@@ -448,7 +467,8 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.openReal ?? 0}</span>
           </button>
           <span className="text-xs text-text-muted mt-1">
-            {(agg?.pendingApproval ?? 0) > 0 ? (
+            {/* REAL-scoped, because that is what the click opens. */}
+            {(agg?.pendingApprovalReal ?? 0) > 0 ? (
               <button
                 onClick={() =>
                   setListRequest({
@@ -459,7 +479,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 }
                 className="text-accent font-semibold hover:underline"
               >
-                {agg?.pendingApproval} pending approval
+                {agg?.pendingApprovalReal} pending approval
               </button>
             ) : (
               queueCaption(agg)
@@ -475,21 +495,23 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             className="w-full text-left flex flex-col cursor-pointer"
           >
             <span className="kpi-label group-hover:underline">Closed today</span>
-            <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.closed ?? 0}</span>
-            {/* Deliberately NO "x% of today's N". `closed` counts every bucket
-                while `real` counts losses only, so the ratio can exceed 100%.
-                Until those two agree this tile states what it is and relates it
-                to nothing. */}
-            <span className="text-xs text-text-muted mt-1">Settled or written off on this day&apos;s list</span>
+            {/* LOSSES ONLY, matching the list this opens. It used to show
+                `closed` across every bucket, so the tile read 88 and the list
+                behind it held 31 — and the ratio to `real` could exceed 100%,
+                which is why this tile was left relating itself to nothing. */}
+            <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.closedReal ?? 0}</span>
+            <span className="text-xs text-text-muted mt-1">
+              {closedCaption(agg)}
+            </span>
           </button>
           {/* Pending-list items are stored as closed, so they land in the count
               above. Naming them stops the tile reading as "all finished". */}
-          {(agg?.pendingList ?? 0) > 0 && (
+          {(agg?.pendingListReal ?? 0) > 0 && (
             <Link
               href="/pending-list"
               className="text-xs text-status-warning hover:underline mt-1"
             >
-              {agg?.pendingList} of these are on the pending list
+              {agg?.pendingListReal} of these are on the pending list
             </Link>
           )}
         </div>

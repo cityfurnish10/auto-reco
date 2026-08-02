@@ -13,7 +13,7 @@ import VarianceDetailModal from "./variance-detail-modal";
 import VarianceListModal, { type ListModalRequest } from "./variance-list-modal";
 import { isCityClosed } from "@/lib/engine/schedule";
 import { addDays } from "@/lib/engine/dates";
-import { queueCaption, rateCaption } from "@/lib/ui/stat-captions";
+import { closedCaption, queueCaption, rateCaption } from "@/lib/ui/stat-captions";
 import {
   PRIORITY_BADGE,
   STATUS_BADGE,
@@ -353,9 +353,10 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
         >
           <div className="p-2 bg-surface-elevated rounded-control text-accent w-fit mb-4"><Icon name="approval" size={22} /></div>
           <p className="kpi-label group-hover:underline">With the admin</p>
-          <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.pendingApproval ?? 0}</h3>
+          {/* REAL-scoped, matching the list this tile opens. */}
+          <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.pendingApprovalReal ?? 0}</h3>
           <span className="text-xs text-text-muted mt-1 block">
-            {(cityAgg?.pendingApproval ?? 0) > 0
+            {(cityAgg?.pendingApprovalReal ?? 0) > 0
               ? "Submitted — nothing more for you to do on these"
               : "Nothing waiting on the admin"}
           </span>
@@ -366,15 +367,15 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
         >
           <div className="p-2 bg-success-soft text-success rounded-control w-fit mb-4"><Icon name="task_alt" size={22} /></div>
           <p className="kpi-label group-hover:underline">Closed today</p>
-          <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.closed ?? 0}</h3>
-          {/* Deliberately no "x% of today's N": `closed` counts every bucket
-              while `real` counts losses only, so that ratio can exceed 100%. */}
-          <span className="text-xs text-text-muted mt-1 block">Settled or written off today</span>
+          {/* LOSSES ONLY, matching the list this tile opens — it used to count
+              every bucket, so the number and the list behind it disagreed. */}
+          <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.closedReal ?? 0}</h3>
+          <span className="text-xs text-text-muted mt-1 block">{closedCaption(cityAgg)}</span>
           {/* Pending-list items are stored as closed, so they land in the count
               above. Naming them stops the tile reading as "all finished". */}
-          {(cityAgg?.pendingList ?? 0) > 0 && (
+          {(cityAgg?.pendingListReal ?? 0) > 0 && (
             <span className="text-xs text-status-warning mt-1 block">
-              {cityAgg?.pendingList} on the pending list
+              {cityAgg?.pendingListReal} on the pending list
             </span>
           )}
         </button>

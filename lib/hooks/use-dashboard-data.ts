@@ -258,12 +258,23 @@ export interface CityAgg {
   city: string;
   total: number;
   open: number;
-  openReal: number; // open AND bucket REAL — the loss-only "Open" count
   inProgress: number;
   pendingApproval: number;
   closed: number;
   /** Subset of `closed` parked on the Pending List rather than finished. */
   pendingList: number;
+  /**
+   * The same four statuses over LOSSES ONLY — what every KPI tile shows.
+   *
+   * Each tile opens a list filtered to `bucket: "REAL"`, so its number has to
+   * be counted the same way. Only `openReal` was; "Closed today" and "pending
+   * approval" counted every bucket and disagreed with the list they opened.
+   */
+  openReal: number;
+  inProgressReal: number;
+  pendingApprovalReal: number;
+  closedReal: number;
+  pendingListReal: number;
   high: number;
   medium: number;
   info: number;
