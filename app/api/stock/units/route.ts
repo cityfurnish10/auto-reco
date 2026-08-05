@@ -116,6 +116,26 @@ export async function GET(req: NextRequest) {
   const slice = units.slice((page - 1) * pageSize, page * pageSize);
   const source = klass === "newly-raised" ? foldedB : foldedA;
 
+  // THE SNAPSHOT KEY CARRIES THE CANONICAL, and it has to: those keys are
+  // persisted and diffed across runs, so their format cannot move. But the
+  // canonical is the fold, which may be a string no source system holds — so
+  // look the page's barcodes up and render what a typed source actually wrote.
+  // One extra query for at most `pageSize` rows, and only for the page shown.
+  const pageBarcodes = [...new Set(slice.map((u) => u.split("|")[2]).filter(Boolean))];
+  const display = new Map<string, string>();
+  if (pageBarcodes.length > 0) {
+    const { data: dRows } = await db
+      .from("variances")
+      .select("barcode, barcode_display")
+      .in("barcode", pageBarcodes)
+      .not("barcode_display", "is", null);
+    // Pre-0020 databases error here; the map simply stays empty and every row
+    // falls back to the canonical, which is what this page showed before.
+    for (const r of (dRows ?? []) as { barcode: string; barcode_display: string }[]) {
+      if (!display.has(r.barcode)) display.set(r.barcode, r.barcode_display);
+    }
+  }
+
   const rows = slice.map((unit) => {
     const [c, direction, barcode] = unit.split("|");
     const d = byUnit.get(unit);
@@ -136,7 +156,10 @@ export async function GET(req: NextRequest) {
       key: unit,
       city: c,
       direction,
-      barcode,
+      /** What a typed source recorded; the canonical when we have nothing better. */
+      barcode: display.get(barcode) ?? barcode,
+      /** The key it is stored and diffed under. */
+      barcodeCanonical: barcode,
       rowPresent: !!d,
       problem: label?.display ?? nameFromKey,
       tier: label?.tier ?? null,
