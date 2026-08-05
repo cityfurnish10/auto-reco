@@ -286,16 +286,22 @@ describe("digest — vocabulary", () => {
     // exempt — a link is not something a reader parses for vocabulary. Every
     // other surface, including raw markup, is checked.
     const deUrl = (s: string) => s.replace(/https?:\/\/\S+/g, "[link]");
-    const surfaces = [
+    const bodies = [
       deUrl(renderDigestHtml(d, URL)), // raw, to catch a leak in an id/class/attr
       deUrl(stripTags(renderDigestHtml(d, URL))),
       deUrl(renderDigestText(d, URL)),
-      digestSubject(d),
     ];
     // The one shared list, in tests/email/vocabulary.ts. Two copies of these
     // regexes would let the ban be enforced on one email and quietly not on
     // the other — which is exactly what happens as a codebase grows.
-    expectNoJargon(Object.fromEntries(surfaces.map((v, i) => [`surface ${i}`, v])));
+    expectNoJargon(Object.fromEntries(bodies.map((v, i) => [`body ${i}`, v])));
+
+    // THE SUBJECT IS THE OWNER'S OWN WORDING and says "Guards Register Reco"
+    // (2026-08-05), so it is checked against everything except "reco". The ban
+    // exists to keep the engine's shorthand out of prose a warehouse owner
+    // reads; it does not get to overrule the owner on their own subject line.
+    // The bodies above are still checked for it.
+    expectNoJargon({ subject: digestSubject(d) }, ["reco"]);
   });
 
   it.each(FIXTURES)("renders no placeholder garbage (%s)", (_name, d) => {
@@ -359,16 +365,19 @@ describe("digest — escaping", () => {
 });
 
 describe("digest — subject", () => {
-  it("is the movement register and its date, nothing else", () => {
-    expect(digestSubject(richDay)).toBe("Movement Register- 26-July-2026");
-    expect(digestSubject(threePart)).toBe("Movement Register- 26-July-2026");
+  it("names the register and its date, nothing else", () => {
+    // Owner's wording, 2026-08-05. Pinned because the subject is the one line
+    // that reaches a phone lock screen, and it is set by the owner rather than
+    // derived — a silent reword would land in the founder's inbox unreviewed.
+    expect(digestSubject(richDay)).toBe("Guards Register Reco 26-July-2026");
+    expect(digestSubject(threePart)).toBe("Guards Register Reco 26-July-2026");
   });
 
   it("says the same thing on an unfinished run", () => {
     // Recorded, not asserted as good: the subject used to replace everything
     // with "the check did not finish, do not act on these figures". A broken
     // run is now indistinguishable from a clean one until the mail is opened.
-    expect(digestSubject(incompleteRun)).toBe("Movement Register- 26-July-2026");
+    expect(digestSubject(incompleteRun)).toBe("Guards Register Reco 26-July-2026");
   });
 
   it("stays inside a readable length", () => {

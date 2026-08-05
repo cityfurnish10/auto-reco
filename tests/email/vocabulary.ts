@@ -23,10 +23,23 @@ const BANNED: [RegExp, string][] = [
   [/\b\w+_team\b/, "a raw team slug"],
 ];
 
-/** Assert no internal vocabulary reaches a reader, across every surface given. */
-export function expectNoJargon(surfaces: Record<string, string>): void {
+/**
+ * Assert no internal vocabulary reaches a reader, across every surface given.
+ *
+ * `exempt` lists labels to skip FOR THESE SURFACES ONLY. It exists for exactly
+ * one case: the owner set the subject line to "Guards Register Reco <date>"
+ * (2026-08-05), and "reco" is on the list. The ban is here to stop the engine's
+ * shorthand leaking into prose a warehouse owner reads — not to overrule the
+ * owner on their own subject. Narrow on purpose: the body is still checked for
+ * "reco", so this cannot become the hole the word walks back in through.
+ */
+export function expectNoJargon(
+  surfaces: Record<string, string>,
+  exempt: string[] = []
+): void {
   for (const [where, text] of Object.entries(surfaces)) {
     for (const [re, label] of BANNED) {
+      if (exempt.includes(label)) continue;
       expect(re.test(text), `${label} leaked into ${where}`).toBe(false);
     }
   }

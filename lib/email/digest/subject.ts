@@ -1,7 +1,11 @@
 import type { DigestData } from "./types";
 
 /**
- * Subject line: "Movement Register- 30-July-2026".
+ * Subject line: "Guards Register Reco 4-August-2026".
+ *
+ * Reworded by the owner (2026-08-05) from "Movement Register- <date>". The date
+ * format is unchanged, so the thread still sorts and searches the way people
+ * have got used to.
  *
  * Set by the owner, and deliberately carries no numbers. What it gives up is
  * recorded here because it was load-bearing: the old subject led with the
@@ -19,5 +23,5 @@ const MONTHS = [
 export function digestSubject(data: DigestData): string {
   const [y, m, d] = String(data.date).split("-").map(Number);
   const date = y && m && d ? `${d}-${MONTHS[m - 1]}-${y}` : String(data.date);
-  return `Movement Register- ${date}`;
+  return `Guards Register Reco ${date}`;
 }

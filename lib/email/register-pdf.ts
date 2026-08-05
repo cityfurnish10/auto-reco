@@ -67,7 +67,7 @@ export function registerAttachments(res: RegisterPdfResult | null): {
 }
 
 // "2026-07-30" -> "30-July-2026", the same convention as the email subject
-// ("Movement Register- 30-July-2026"), so the attachment strip and the subject
+// ("Guards Register Reco 30-July-2026"), so the attachment strip and the subject
 // visibly belong to the same day. The ISO form was correct but machine-facing:
 // a reader scanning five attachments should not have to parse y-m-d.
 const MONTHS = [
