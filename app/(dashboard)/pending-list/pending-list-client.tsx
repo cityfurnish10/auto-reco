@@ -44,6 +44,7 @@ import {
   opsTypeLabel,
   responsibleLabel,
 } from "@/lib/ui/variance-format";
+import { shownBarcode } from "@/lib/ui/barcode-display";
 
 const PAGE_SIZE = 25;
 
@@ -137,7 +138,7 @@ export default function PendingListClient({ user }: { user: SessionUser }) {
     }
     try {
       await patchVariance(resolving.id, "close", reason, note);
-      toast.success(`${resolving.barcode} resolved — off the pending list.`);
+      toast.success(`${shownBarcode(resolving)} resolved — off the pending list.`);
       setResolving(null);
       refetch();
     } catch (e) {
@@ -272,7 +273,7 @@ export default function PendingListClient({ user }: { user: SessionUser }) {
                     <RowCheckbox
                       checked={sel.has(v.id)}
                       onChange={() => onRowCheck(v.id, false)}
-                      label={`Select ${v.barcode}`}
+                      label={`Select ${shownBarcode(v)}`}
                     />
                   </span>
                   <button
@@ -282,7 +283,7 @@ export default function PendingListClient({ user }: { user: SessionUser }) {
                     }}
                     className="font-mono font-semibold text-text-primary text-sm break-all text-left hover:text-accent"
                   >
-                    {v.barcode}
+                    {shownBarcode(v)}
                   </button>
                 </div>
                 <span className={`${PRIORITY_BADGE[v.priority]} shrink-0`}>{v.priority}</span>
@@ -369,7 +370,7 @@ export default function PendingListClient({ user }: { user: SessionUser }) {
                     <RowCheckbox
                       checked={sel.has(v.id)}
                       onChange={(shift) => onRowCheck(v.id, shift)}
-                      label={`Select ${v.barcode}`}
+                      label={`Select ${shownBarcode(v)}`}
                     />
                   </td>
                   <td className="whitespace-nowrap text-text-secondary">{v.business_date}</td>
@@ -385,7 +386,7 @@ export default function PendingListClient({ user }: { user: SessionUser }) {
                       }}
                       className="font-mono font-semibold text-text-primary hover:text-accent hover:underline"
                     >
-                      {v.barcode}
+                      {shownBarcode(v)}
                     </button>
                   </td>
                   <td className="text-text-secondary text-xs">{opsTypeLabel(v.job_type)}</td>
@@ -469,7 +470,7 @@ export default function PendingListClient({ user }: { user: SessionUser }) {
       {resolving && (
         <CloseVarianceModal
           itemName={resolving.product ?? ""}
-          itemCode={resolving.barcode}
+          itemCode={shownBarcode(resolving)}
           title="Resolve from Pending List"
           confirmLabel="Resolve & Close"
           reasonLabel="How was this actually resolved?"

@@ -154,6 +154,36 @@ export function orFlags(a: SourceFlags, b: SourceFlags): SourceFlags {
   return { P: a.P || b.P, S: a.S || b.S, D: a.D || b.D, O: a.O || b.O };
 }
 
+/**
+ * The barcode to SHOW a human — the raw spelling a typed system recorded.
+ *
+ * `canonical` is the grouping key and a poor label. The fold (I→1 O→0 S→5 Z→2
+ * G→6) exists so a photographed handwritten register matches the typed systems,
+ * and it is applied to every source, so the stored barcode can be a string that
+ * appears in no system at all. Measured 2026-08-05 across 4,190 units seen by a
+ * typed source: 2,392 of them — 57.1% — displayed exactly that. Two were
+ * reported from the floor the same day; the worse one was an Odoo serial,
+ * AP8IS725090229, shown as AP815725090229, so searching Odoo for the row we had
+ * raised returned "no product move" and a correct finding read as an invented
+ * one.
+ *
+ * TRUST ORDER: Odoo, then the delivery app, then the ops sheet, then the guard
+ * register. The first three are typed and agree with each other — over those
+ * same 4,190 units the fold has never had to reconcile two different typed
+ * spellings — so the order matters only for which of them is PRESENT, not for
+ * settling a disagreement. The register comes last because its spelling is the
+ * one the fold exists to forgive.
+ *
+ * Falls back to the canonical when nothing filed a spelling, which is what
+ * every surface showed before this existed.
+ */
+export function displayBarcode(view: BarcodeView): string {
+  for (const p of [view.O, view.D, view.S, view.P]) {
+    if (p.rawBarcodes.length > 0) return p.rawBarcodes[0];
+  }
+  return view.canonical;
+}
+
 // True if the same canonical had more than one distinct raw spelling across
 // all sources → OCR noise (Section 6 All-Source Field Mismatch).
 export function rawBarcodesDiffer(view: BarcodeView): boolean {

@@ -114,7 +114,7 @@ export async function GET(req: NextRequest) {
   const closureReason = sp.get("closureReason");
   const q = sp.get("q")?.trim();
 
-  function build(orderCols: string[]) {
+  function build(orderCols: string[], searchDisplay: boolean) {
     let query = supabase.from("variances").select("*", { count: "exact" });
 
     for (const col of orderCols) {
@@ -166,6 +166,14 @@ export async function GET(req: NextRequest) {
         query = query.or(
           [
             `barcode.ilike.%${safe}%`,
+            // BOTH SPELLINGS, or fixing the display would break the search.
+            // The table now shows what a typed source recorded (0020), so a
+            // reader copies AP8IS725090229 out of it and types that back —
+            // matching only the canonical would answer "no results" for the
+            // exact string we had just printed. The canonical stays in the list
+            // because someone may paste an older row's folded barcode, and
+            // because rows written before 0020 have nothing else to match on.
+            ...(searchDisplay ? [`barcode_display.ilike.%${safe}%`] : []),
             `ticket_id.ilike.%${safe}%`,
             `so_number.ilike.%${safe}%`,
             `product.ilike.%${safe}%`,
@@ -178,15 +186,28 @@ export async function GET(req: NextRequest) {
   }
 
   const sort = SORTS[sortKey];
+  const missingCol = (e: { code?: string; message?: string } | null) =>
+    !!e && (e.code === "42703" || e.code === "PGRST204" || /does not exist|could not find/i.test(e.message ?? ""));
+
   let sortDegraded = false;
-  let { data, error, count } = await build(sort.cols);
+  let searchDisplay = true;
+  let { data, error, count } = await build(sort.cols, searchDisplay);
+
+  // Migration 0020 (barcode_display) not applied: drop it from the search and
+  // retry. Without this the whole table 500s on any search term the moment the
+  // code ships ahead of the migration — a strictly worse outcome than searching
+  // the canonical alone, which is what it did before 0020 existed.
+  if (error && missingCol(error)) {
+    searchDisplay = false;
+    ({ data, error, count } = await build(sort.cols, searchDisplay));
+  }
 
   // 42703 = undefined_column: migration 0011 (priority_rank / status_rank) has
   // not been applied. Retry alphabetically rather than 500, and tell the client
   // the order is not the one it asked for.
-  if (error && sort.fallback && (error.code === "42703" || /does not exist/i.test(error.message))) {
+  if (error && sort.fallback && missingCol(error)) {
     sortDegraded = true;
-    ({ data, error, count } = await build(sort.fallback));
+    ({ data, error, count } = await build(sort.fallback, searchDisplay));
   }
 
   if (error) {

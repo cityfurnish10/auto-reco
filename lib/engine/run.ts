@@ -24,6 +24,7 @@ import { grammarSuspect, isSummaryLine } from "./ocr-noise";
 import { bestGuardMatch } from "./fuzzy";
 import {
   buildViews,
+  displayBarcode,
   mergeGuardPresence,
   presenceOf,
 } from "./views";
@@ -43,6 +44,7 @@ import type {
 function baseRow(v: BarcodeView) {
   return {
     barcode: v.canonical,
+    barcode_display: displayBarcode(v),
     city: v.city,
     ticket_id: v.ticketId,
     so_number: v.soNumber,
@@ -487,6 +489,7 @@ export function runReconciliation(
         // convert it to `...row` — the explicit list IS the safety net.
         variances[i] = applyBucket({
           barcode: row.barcode,
+          barcode_display: row.barcode_display,
           city: row.city,
           direction: row.direction,
           variance_name: VARIANCE.ODOO_ONLY,
@@ -605,6 +608,7 @@ export function runReconciliation(
             : "CLEAN";
       movement_events.push({
         barcode: v.canonical,
+        barcode_display: displayBarcode(v),
         city,
         direction,
         // The city's DERIVED run date, which is what upsertVariances writes as

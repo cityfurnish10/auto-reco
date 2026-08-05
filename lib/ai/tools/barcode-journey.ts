@@ -25,6 +25,7 @@ import {
   type ToolStatus,
 } from "../grounding";
 import type { ToolContext } from "./context";
+import { sanitizeFreeText } from "../sanitize";
 
 const MAX_FLAGGED = 20;
 const MAX_SOURCE_ROWS = 40;
@@ -41,6 +42,8 @@ const MAX_DAYS = 8;
 // the shapes are declared and the results cast once.
 interface FlaggedRow {
   business_date: string;
+  /** Migration 0020 — absent on older rows, so every read of it is optional. */
+  barcode_display?: string | null;
   city: string;
   direction: string;
   variance_name: string;
@@ -88,7 +91,10 @@ interface JourneyDay {
 
 export interface JourneyResult {
   status: ToolStatus;
+  /** The spelling shown to the user — what a typed source recorded. */
   barcode?: string;
+  /** The canonical it matched on, so a follow-up can look it up again. */
+  matchedAs?: string;
   detailHeldFrom?: string | null;
   days?: JourneyDay[];
   truncated?: boolean;
@@ -121,18 +127,22 @@ export async function findBarcodeJourney(
   // values and therefore misses a raw barcode containing O, I, S, Z or G.
   const canon = canonicalize(raw);
 
-  const flaggedQ = sb
-    .from("variances")
-    .select(
-      "business_date, city, direction, variance_name, bucket, status, responsible, job_type," +
-        " so_number, ticket_id, product, customer," +
-        " present_p, present_s, present_d, present_o," +
-        " reported_p, reported_s, reported_d, reported_o"
-    )
-    .eq("barcode", canon)
-    .order("business_date", { ascending: false })
-    .order("id", { ascending: true })
-    .limit(MAX_FLAGGED);
+  // Built twice, not once: barcode_display is migration 0020 and migrations here
+  // are applied by hand, so a database one behind must still answer the journey.
+  const FLAGGED_COLS =
+    "business_date, city, direction, variance_name, bucket, status, responsible, job_type," +
+    " so_number, ticket_id, product, customer," +
+    " present_p, present_s, present_d, present_o," +
+    " reported_p, reported_s, reported_d, reported_o";
+  const flaggedQuery = (cols: string) =>
+    sb
+      .from("variances")
+      .select(cols)
+      .eq("barcode", canon)
+      .order("business_date", { ascending: false })
+      .order("id", { ascending: true })
+      .limit(MAX_FLAGGED);
+  const flaggedQ = flaggedQuery(`${FLAGGED_COLS}, barcode_display`);
 
   // ONE RUN PER DATE. source_rows keeps the raw feed of EVERY run, and a date
   // is reconciled many times — the nightly cron, the D-3 re-check sweep, any
@@ -167,7 +177,16 @@ export async function findBarcodeJourney(
     .order("id", { ascending: true })
     .limit(MAX_SOURCE_ROWS);
 
-  const flaggedRes = await flaggedQ;
+  let flaggedRes = await flaggedQ;
+  // Pre-0020 database: retry without the display column rather than failing the
+  // whole journey over a label.
+  if (
+    flaggedRes.error &&
+    (flaggedRes.error.code === "42703" || flaggedRes.error.code === "PGRST204" ||
+      /does not exist|could not find/i.test(flaggedRes.error.message ?? ""))
+  ) {
+    flaggedRes = await flaggedQuery(FLAGGED_COLS);
+  }
 
   if (flaggedRes.error) return { status: "lookup_failed", message: flaggedRes.error.message };
 
@@ -253,9 +272,22 @@ export async function findBarcodeJourney(
   const days = [...byKey.values()].sort((a, b) => b.date.localeCompare(a.date));
   const truncated = days.length > MAX_DAYS;
 
+  // ECHO THE SPELLING, NOT THE FOLD. The lookup above is canonical on purpose
+  // (that is what lets a user paste FUMYGB… and find a row stored as FUMY6B…),
+  // but answering with the fold hands back a barcode they never typed and
+  // cannot find in Odoo. Prefer what a typed source recorded; fall back to the
+  // user's own spelling, then the canonical.
+  const spelled =
+    flagged.find((r) => (r as { barcode_display?: string | null }).barcode_display)
+      ?.barcode_display ?? null;
+  const shown =
+    sanitizeFreeText(spelled, 40) ?? sanitizeFreeText(raw.toUpperCase().replace(/\s+/g, ""), 40) ?? canon;
+
   return {
     status: days.some((d) => d.flagged.length > 0) ? "found" : "clean",
-    barcode: canon,
+    barcode: shown,
+    /** The key it matched on — kept so a follow-up question can look it up again. */
+    matchedAs: canon,
     detailHeldFrom: ctx.detailHeldFrom,
     days: days.slice(0, MAX_DAYS),
     truncated,

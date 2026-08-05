@@ -13,6 +13,7 @@ import type { CityRunResult, MovementEvent } from "../../lib/engine/types";
 function event(over: Partial<MovementEvent> = {}): MovementEvent {
   return {
     barcode: "ITEM-1",
+    barcode_display: "ITEM-1",
     city: "MUMBAI",
     direction: "OUT",
     date: "2026-07-26",

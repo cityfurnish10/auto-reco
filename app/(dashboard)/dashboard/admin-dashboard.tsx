@@ -51,6 +51,7 @@ import {
   fetchAllVariances,
   type VarianceFilters,
 } from "@/lib/hooks/use-dashboard-data";
+import { shownBarcode } from "@/lib/ui/barcode-display";
 
 type CityTab = "ALL" | City;
 
@@ -817,7 +818,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     <RowCheckbox
                       checked={sel.has(v.id)}
                       onChange={() => onRowCheck(v.id, false)}
-                      label={`Select ${v.barcode}`}
+                      label={`Select ${shownBarcode(v)}`}
                     />
                   </span>
                   {/* A <div> can't take focus — this button is the keyboard route in. */}
@@ -828,7 +829,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     }}
                     className="font-mono font-semibold text-text-primary text-sm break-all text-left hover:text-accent"
                   >
-                    {v.barcode}
+                    {shownBarcode(v)}
                   </button>
                 </div>
                 <span className={`${PRIORITY_BADGE[v.priority]} shrink-0`}>{v.priority}</span>
@@ -866,7 +867,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setRejecting({ id: v.id, product: v.product ?? "", barcode: v.barcode });
+                      setRejecting({ id: v.id, product: v.product ?? "", barcode: shownBarcode(v) });
                     }}
                     disabled={busyId === v.id}
                     className="btn btn-compact btn-secondary flex-1 disabled:opacity-40"
@@ -879,7 +880,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setResolving({ id: v.id, product: v.product ?? "", barcode: v.barcode });
+                      setResolving({ id: v.id, product: v.product ?? "", barcode: shownBarcode(v) });
                     }}
                     disabled={busyId === v.id}
                     className="btn btn-compact btn-primary flex-1 disabled:opacity-40"
@@ -977,7 +978,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     <RowCheckbox
                       checked={sel.has(v.id)}
                       onChange={(shift) => onRowCheck(v.id, shift)}
-                      label={`Select ${v.barcode}`}
+                      label={`Select ${shownBarcode(v)}`}
                     />
                   </td>
                   <td className="whitespace-nowrap text-text-secondary">{v.business_date}</td>
@@ -992,7 +993,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                       }}
                       className="font-mono font-semibold text-text-primary hover:text-accent hover:underline"
                     >
-                      {v.barcode}
+                      {shownBarcode(v)}
                     </button>
                   </td>
                   <td className="text-text-secondary">{v.ticket_id ?? "—"}</td>
@@ -1038,7 +1039,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            setRejecting({ id: v.id, product: v.product ?? "", barcode: v.barcode });
+                            setRejecting({ id: v.id, product: v.product ?? "", barcode: shownBarcode(v) });
                           }}
                           disabled={busyId === v.id}
                           title="Reject — send back to the manager"
@@ -1052,7 +1053,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            setResolving({ id: v.id, product: v.product ?? "", barcode: v.barcode });
+                            setResolving({ id: v.id, product: v.product ?? "", barcode: shownBarcode(v) });
                           }}
                           disabled={busyId === v.id}
                           title="Close with a reason and comment"

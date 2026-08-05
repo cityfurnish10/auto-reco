@@ -12,6 +12,7 @@ const flags = { P: true, S: true, D: true, O: true };
 
 const v = (over: Partial<VarianceRowOut> = {}): VarianceRowOut => ({
   barcode: "CF1",
+  barcode_display: "CF1",
   city: "DELHI" as City,
   direction: "OUT",
   variance_name: VARIANCE.GATE_ONLY, // tier 1 outward

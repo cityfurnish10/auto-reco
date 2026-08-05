@@ -114,6 +114,12 @@ export type Bucket = "REAL" | "INFO";
 
 export interface VarianceRowOut {
   barcode: string;
+  /**
+   * The raw spelling a typed system recorded — what a human should see and
+   * what they can paste into Odoo. `barcode` above stays the canonical, because
+   * it is half the variances dedup key. See views.ts displayBarcode().
+   */
+  barcode_display: string;
   city: City;
   direction: OutputDirection;
   variance_name: string;
@@ -172,7 +178,9 @@ export interface CountLayer {
  * snapshot reports "no gate record" for exactly the units the merge repaired.
  */
 export interface MovementEvent {
-  barcode: string; // canonical
+  barcode: string; // canonical — the ledger's key
+  /** The raw spelling a typed system recorded. See views.ts displayBarcode(). */
+  barcode_display: string;
   city: City;
   direction: Direction;
   date: string;

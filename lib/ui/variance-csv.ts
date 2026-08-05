@@ -6,13 +6,16 @@
 
 import type { VarianceDB } from "@/lib/db/schema";
 import { opsTypeLabel } from "@/lib/ui/variance-format";
+import { shownBarcode } from "./barcode-display";
 
 const COLUMNS: { header: string; get: (v: VarianceDB) => string | number | null }[] = [
   { header: "Date", get: (v) => v.business_date },
   { header: "City", get: (v) => v.city },
   { header: "Direction", get: (v) => v.direction },
   { header: "Item Name", get: (v) => v.product },
-  { header: "Barcode", get: (v) => v.barcode },
+  // The spelling a typed source recorded — this file leaves the app and gets
+  // pasted into Odoo, so the fold would make every row a dead end.
+  { header: "Barcode", get: (v) => shownBarcode(v) },
   { header: "Ticket ID", get: (v) => v.ticket_id },
   { header: "Source", get: (v) => v.variance_source },
   // Exported as the readable label, matching what is on screen — a CSV column

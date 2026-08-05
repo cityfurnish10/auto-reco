@@ -13,6 +13,13 @@ import { addDays } from "../../engine/dates";
 import { TIER, VARIANCE_LABELS, labelFor } from "../../ui/variance-labels";
 import { describeFlag, describeOrder, type ToolStatus } from "../grounding";
 import type { ToolContext } from "./context";
+import { sanitizeFreeText } from "../sanitize";
+import { shownBarcode } from "../../ui/barcode-display";
+
+/** PostgREST reports an unknown column as 42703 or PGRST204. */
+const missingColumn = (e: { code?: string; message?: string } | null) =>
+  !!e && (e.code === "42703" || e.code === "PGRST204" ||
+    /does not exist|could not find/i.test(e.message ?? ""));
 
 export type Period =
   | "latest_day"
@@ -108,6 +115,8 @@ type Row = {
   responsible: string | null;
   note?: string | null;
   barcode?: string;
+  /** Migration 0020 — absent on older rows and before the migration. */
+  barcode_display?: string | null;
   so_number?: string | null;
   ticket_id?: string | null;
   product?: string | null;
@@ -288,17 +297,21 @@ export async function listFlaggedItems(
   // closure_note / submit_note / rejection_note are deliberately NOT selected:
   // staff-typed free text is the highest-value injection surface and a list
   // never needs it. closure_reason is a closed enum and would be safe.
-  const res = await applyFilters(
-    sb,
+  // barcode_display is migration 0020 and the migrations here are applied by
+  // hand, so ask for it and fall back to the pre-0020 column list rather than
+  // answering "lookup failed" on a database that is simply a migration behind.
+  const COLS_BASE =
     "business_date, city, barcode, direction, variance_name, bucket, job_type, status," +
-      " responsible, note, so_number, ticket_id, product, first_seen_at",
-    args,
-    win
-  )
-    .order("business_date", { ascending: false })
-    .order("id", { ascending: true })
-    // Over-fetch, because the exact tier filter runs in JS.
-    .limit(limit * 4);
+    " responsible, note, so_number, ticket_id, product, first_seen_at";
+  const run = (cols: string) =>
+    applyFilters(sb, cols, args, win)
+      .order("business_date", { ascending: false })
+      .order("id", { ascending: true })
+      // Over-fetch, because the exact tier filter runs in JS.
+      .limit(limit * 4);
+
+  let res = await run(`${COLS_BASE}, barcode_display`);
+  if (res.error && missingColumn(res.error)) res = await run(COLS_BASE);
 
   if (res.error) return { status: "lookup_failed" as ToolStatus, message: res.error.message };
 
@@ -321,7 +334,11 @@ export async function listFlaggedItems(
       return {
         date: r.business_date,
         city: r.city,
-        barcode: r.barcode,
+        // The spelling a typed source recorded, not the fold. The assistant
+        // quotes this back and a reader pastes it into Odoo, so the canonical
+        // would send them to "no product move". sanitizeFreeText because a
+        // barcode is source text like any other field here.
+        barcode: sanitizeFreeText(shownBarcode({ barcode: r.barcode ?? "", barcode_display: r.barcode_display }), 40) ?? r.barcode,
         problem: f.problem,
         severity: f.severity,
         action: f.action,

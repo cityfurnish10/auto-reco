@@ -36,6 +36,7 @@ import {
   opsTypeLabel,
   responsibleLabel,
 } from "@/lib/ui/variance-format";
+import { shownBarcode } from "@/lib/ui/barcode-display";
 
 // Past tense for the confirmation toast — "resolved", not "close".
 const ACTION_PAST: Record<string, string> = {
@@ -55,11 +56,22 @@ function Field({ label, value, mono }: { label: string; value?: string | null; m
   );
 }
 
-function SourceRowLine({ row }: { row: SourceRowDB }) {
+function SourceRowLine({ row, canonical }: { row: SourceRowDB; canonical?: string }) {
+  // THE SPELLING THIS SYSTEM ACTUALLY WROTE, shown only when it differs from
+  // the row's canonical. This panel answers "what did each system record", and
+  // the barcode is the field most often disputed — Odoo held AP8IS725090229
+  // while the page was titled AP815725090229, and the evidence that would have
+  // settled it in one glance was already fetched and thrown away here.
+  //
+  // Only on a difference: printing the same string under all four sources is
+  // noise, and this line is competing for space with the fields that vary.
+  const raw = row.barcode?.toUpperCase().replace(/\s+/g, "");
+  const spelled = raw && canonical && raw !== canonical ? `wrote ${raw}` : null;
   const bits = [
     row.direction,
     row.status,
     row.job_type,
+    spelled,
     row.ticket_id && `Ticket ${row.ticket_id}`,
     row.so_number && `SO ${row.so_number}`,
   ].filter(Boolean);
@@ -147,13 +159,13 @@ export default function VarianceDetailModal({
     setBusy(true);
     try {
       await patchVariance(v!.id, action);
-      toast.success(`${v!.barcode} — ${label}d.`);
+      toast.success(`${shownBarcode(v)} — ${label}d.`);
       onChanged();
       onClose();
     } catch (e) {
       // A toast, not alert(): this modal holds a focus trap, and a native
       // alert pulls focus out of it and blocks the thread.
-      toast.error(`Could not ${label} ${v!.barcode}.`, { detail: errText(e) });
+      toast.error(`Could not ${label} ${shownBarcode(v)}.`, { detail: errText(e) });
     } finally {
       setBusy(false);
     }
@@ -169,11 +181,11 @@ export default function VarianceDetailModal({
         note
       );
       setConfirming(null);
-      toast.success(`${v!.barcode} — ${ACTION_PAST[action]}.`);
+      toast.success(`${shownBarcode(v)} — ${ACTION_PAST[action]}.`);
       onChanged();
       onClose();
     } catch (e) {
-      toast.error(`Could not ${action} ${v!.barcode}.`, { detail: errText(e) });
+      toast.error(`Could not ${action} ${shownBarcode(v)}.`, { detail: errText(e) });
     }
   }
 
@@ -248,7 +260,7 @@ export default function VarianceDetailModal({
         size="lg"
         mobile="fullscreen"
         icon="inventory_2"
-        title={v.product || v.barcode}
+        title={v.product || shownBarcode(v)}
         subtitle={`${v.city} · ${v.business_date} · ${DIRECTION_LABEL[v.direction]}`}
         footer={actions}
         bodyClassName="p-6 space-y-6"
@@ -316,7 +328,7 @@ export default function VarianceDetailModal({
                       ) : rows.length > 0 ? (
                         <div className="mt-2">
                           {rows.map((r) => (
-                            <SourceRowLine key={r.id} row={r} />
+                            <SourceRowLine key={r.id} row={r} canonical={v.barcode} />
                           ))}
                         </div>
                       ) : (
@@ -354,9 +366,9 @@ export default function VarianceDetailModal({
             <div className="min-w-0">
               <p className="text-[11px] uppercase tracking-wider text-text-muted">Barcode</p>
               <p className="text-sm text-text-primary font-mono break-all flex items-center gap-1.5">
-                {v.barcode}
+                {shownBarcode(v)}
                 <button
-                  onClick={() => navigator.clipboard?.writeText(v.barcode)}
+                  onClick={() => navigator.clipboard?.writeText(shownBarcode(v))}
                   title="Copy barcode"
                   className="btn-icon w-6! h-6!"
                 >
@@ -416,7 +428,7 @@ export default function VarianceDetailModal({
       {confirming && (
         <CloseVarianceModal
           itemName={v.product ?? ""}
-          itemCode={v.barcode}
+          itemCode={shownBarcode(v)}
           title={
             confirming === "reject"
               ? "Reject Submission"

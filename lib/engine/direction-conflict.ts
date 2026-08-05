@@ -5,7 +5,7 @@
 // otherwise emit a Direction Conflict (High, direction CROSS).
 
 import { isNewRental, isRepairEquivalent, normalizeSO } from "./util";
-import { hasDone, orFlags, presenceOf } from "./views";
+import { displayBarcode, hasDone, orFlags, presenceOf } from "./views";
 import { VARIANCE } from "./variance-names";
 import type { BarcodeView, VarianceRowOut } from "./types";
 
@@ -57,6 +57,8 @@ export function detectDirectionConflicts(
 
     out.push({
       barcode: inView.canonical,
+      // The inward leg's label: it is the leg whose canonical keys the row.
+      barcode_display: displayBarcode(inView),
       city: inView.city,
       direction: "CROSS",
       variance_name: VARIANCE.REPLACEMENT_CONFIRM,

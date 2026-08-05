@@ -77,7 +77,15 @@ export interface VarianceDB {
   business_date: string;
   city: City;
   direction: OutputDirection;
+  /** CANONICAL — the dedup key and the join to source_rows.barcode_canonical. */
   barcode: string;
+  /**
+   * The spelling a typed source actually recorded (migration 0020). Optional:
+   * absent before the migration is applied and NULL on rows written before it,
+   * which is why every reader goes through shownBarcode() rather than reading
+   * this directly.
+   */
+  barcode_display?: string | null;
   variance_name: string;
 
   // Engine-derived

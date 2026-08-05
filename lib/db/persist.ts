@@ -193,6 +193,11 @@ export async function upsertVariances(
       business_date: v.date,
       city: v.city,
       barcode: v.barcode,
+      // Migration 0020. The canonical above is half the dedup key and a poor
+      // label — the fold can produce a string no source system holds, so a
+      // reader cannot paste it into Odoo. This is what a typed source actually
+      // wrote. Never join on it.
+      barcode_display: v.barcode_display,
       direction: v.direction,
       variance_name: v.variance_name,
       note: v.note,
@@ -237,20 +242,58 @@ export async function upsertVariances(
     // PostgREST reports an unknown column either as 42703 (undefined_column) or
     // as PGRST204 "Could not find the 'x' column ... in the schema cache", so
     // the message test covers both spellings.
-    if (error.code === "42703" || /does not exist|could not find/i.test(error.message)) {
-      const legacy = payload.map((p) => {
-        const copy: Record<string, unknown> = { ...p };
-        for (const k of PRESENCE_KEYS) delete copy[k];
-        return copy;
-      });
+    if (isMissingCol(error)) {
+      // TWO MIGRATIONS CAN BE MISSING, INDEPENDENTLY, so drop the newest first
+      // and only widen if that is not enough. Stripping both at once would
+      // throw away 0013's presence flags on a database that has 0013 and is
+      // merely missing 0020, and those flags are the difference between "this
+      // source says no" and "this source never filed".
+      const without = (keys: readonly string[]) =>
+        payload.map((p) => {
+          const copy: Record<string, unknown> = { ...p };
+          for (const k of keys) delete copy[k];
+          return copy;
+        });
+
+      const no0020 = without(["barcode_display"]);
+      const first = await db.from("variances").upsert(no0020, { onConflict });
+      if (!first.error) {
+        warnNo0020();
+        return no0020.length;
+      }
+      if (!isMissingCol(first.error)) {
+        throw new Error(`upsertVariances failed: ${first.error.message}`);
+      }
+
+      const legacy = without(["barcode_display", ...PRESENCE_KEYS]);
       const retry = await db.from("variances").upsert(legacy, { onConflict });
       if (retry.error) throw new Error(`upsertVariances failed: ${retry.error.message}`);
+      warnNo0020();
       warnNo0013();
       return legacy.length;
     }
     throw new Error(`upsertVariances failed: ${error.message}`);
   }
   return payload.length;
+}
+
+/**
+ * PostgREST reports an unknown column either as 42703 (undefined_column) or as
+ * PGRST204 "Could not find the 'x' column ... in the schema cache".
+ */
+function isMissingCol(e: { code?: string; message?: string } | null): boolean {
+  if (!e) return false;
+  return e.code === "42703" || e.code === "PGRST204" ||
+    /does not exist|could not find/i.test(e.message ?? "");
+}
+
+let warned0020 = false;
+function warnNo0020(): void {
+  if (warned0020) return;
+  warned0020 = true;
+  console.warn(
+    "[upsertVariances] migration 0020 not applied — barcode_display was not stored. Every surface falls back to the canonical barcode, which is what it showed before 0020, so nothing breaks; it just stays unsearchable in Odoo until the migration runs."
+  );
 }
 
 const PRESENCE_KEYS = [
@@ -728,6 +771,8 @@ export async function upsertMovementEvents(
       city: e.city,
       direction: e.direction,
       barcode: e.barcode,
+      // Migration 0020 — the label, not the key. See variances.barcode_display.
+      barcode_display: e.barcode_display,
       present_p: e.present.P,
       present_s: e.present.S,
       present_d: e.present.D,
@@ -759,21 +804,45 @@ export async function upsertMovementEvents(
 
   const onConflict = "business_date,city,direction,barcode";
   let written = 0;
+  // Sticky, so a database missing 0020 costs ONE failed request rather than one
+  // per chunk.
+  let drop0020 = false;
+  const strip = (chunk: Record<string, unknown>[]) =>
+    chunk.map((r) => {
+      const copy = { ...r };
+      delete copy.barcode_display;
+      return copy;
+    });
+
   // Chunked like saveSourceRows. ~1,100 events a night, so normally two calls.
   for (let i = 0; i < payload.length; i += 1000) {
-    const chunk = payload.slice(i, i + 1000);
+    const raw = payload.slice(i, i + 1000);
+    const chunk = drop0020 ? strip(raw) : raw;
     const { error } = await db.from("movement_events").upsert(chunk, { onConflict });
     if (error) {
-      // A missing TABLE is not a missing COLUMN: PostgREST reports it as
-      // PGRST205 ("Could not find the table ... in the schema cache") and
-      // Postgres as 42P01 (undefined_table). The 0013 guard next to this one
-      // tests 42703/PGRST204 and would NOT catch either, so copying it verbatim
-      // would let an unapplied 0015 throw on the nightly critical path.
-      if (
-        error.code === "42P01" ||
-        error.code === "PGRST205" ||
-        /does not exist|could not find/i.test(error.message)
-      ) {
+      // ORDER MATTERS HERE, and it is the difference between losing a cosmetic
+      // field and losing a whole night's ledger.
+      //
+      // A missing TABLE (0015 never applied) and a missing COLUMN (0020 never
+      // applied) both surface as "could not find", and the old guard treated
+      // every such message as a missing table and returned 0 — which would have
+      // discarded every movement event over one label column. So: settle the
+      // table case on its CODE first, where PostgREST gives us one, then try the
+      // column, and only fall back to the shared message last.
+      if (error.code === "42P01" || error.code === "PGRST205") {
+        warnNo0015();
+        return 0;
+      }
+      if (!drop0020 && isMissingCol(error)) {
+        const retry = await db.from("movement_events").upsert(strip(raw), { onConflict });
+        if (!retry.error) {
+          drop0020 = true;
+          warnNo0020Ledger();
+          written += raw.length;
+          continue;
+        }
+      }
+      if (/does not exist|could not find/i.test(error.message)) {
         warnNo0015();
         return 0;
       }
@@ -782,6 +851,15 @@ export async function upsertMovementEvents(
     written += chunk.length;
   }
   return written;
+}
+
+let warnedLedger0020 = false;
+function warnNo0020Ledger(): void {
+  if (warnedLedger0020) return;
+  warnedLedger0020 = true;
+  console.warn(
+    "[upsertMovementEvents] migration 0020 not applied — the ledger stored canonical barcodes only. Everything else was written normally."
+  );
 }
 
 let warned0016 = false;

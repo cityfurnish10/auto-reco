@@ -33,6 +33,7 @@ import {
   formatTs,
   opsTypeLabel,
 } from "@/lib/ui/variance-format";
+import { shownBarcode } from "@/lib/ui/barcode-display";
 
 const PAGE_SIZE = 50;
 
@@ -413,7 +414,7 @@ export default function VarianceListModal({
                     <RowCheckbox
                       checked={sel.has(v.id)}
                       onChange={() => onRowCheck(v.id, false)}
-                      label={`Select ${v.barcode}`}
+                      label={`Select ${shownBarcode(v)}`}
                     />
                   </span>
                   {/* A <div> can't take focus — this button is the keyboard route in. */}
@@ -424,7 +425,7 @@ export default function VarianceListModal({
                     }}
                     className="font-mono font-semibold text-text-primary text-sm break-all text-left hover:text-accent"
                   >
-                    {v.barcode}
+                    {shownBarcode(v)}
                   </button>
                 </div>
                 <span className={`${PRIORITY_BADGE[v.priority]} shrink-0`}>{v.priority}</span>
@@ -512,7 +513,7 @@ export default function VarianceListModal({
                     <RowCheckbox
                       checked={sel.has(v.id)}
                       onChange={(shift) => onRowCheck(v.id, shift)}
-                      label={`Select ${v.barcode}`}
+                      label={`Select ${shownBarcode(v)}`}
                     />
                   </td>
                   <td className="max-w-[200px] truncate" title={v.product ?? ""}>
@@ -528,7 +529,7 @@ export default function VarianceListModal({
                       }}
                       className="font-mono font-semibold text-text-primary hover:text-accent hover:underline"
                     >
-                      {v.barcode}
+                      {shownBarcode(v)}
                     </button>
                   </td>
                   {showCityColumn && <td>{v.city}</td>}
