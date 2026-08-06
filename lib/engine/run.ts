@@ -407,6 +407,47 @@ export function runReconciliation(
     suppressed.add(`${r.direction}::${canonicalize(r.barcode)}`);
   }
 
+  // THE RETURN LEG OF A FAILED DELIVERY (owner, 2026-08-05).
+  //
+  // Suppressing the failed leg alone is half the rule. A delivery marked "Not
+  // Delivered" comes BACK to the warehouse, and ops write that return as an
+  // inward row — genuinely "Received", genuinely done. But the unit never
+  // completed its outward journey, so Odoo still holds it In Transit and there
+  // is no inward posting to find, no DT scan of a delivery that did not happen.
+  // The ladder then reads the return as an ops-sheet-only or floor-only loss
+  // and raises a REAL against it.
+  //
+  // Measured over the 8 days to 2026-08-05: 202 units had an outward leg that
+  // failed outright, 189 of them carried the matching return, and 157 of those
+  // returns were raised — around twenty false REAL chase items a day, every one
+  // of them complaining that Odoo lacks an inward it was never going to have.
+  //
+  // OUTWARD-ONLY, deliberately. A failed PICKUP means nothing arrived, so there
+  // is no outward leg to suppress; inverting this would silence real dispatches.
+  // And only where the outward leg failed OUTRIGHT — notDoneRows has already had
+  // done-wins applied, so a unit any source marked done is not in here at all.
+  //
+  // Suppressed, not deleted: the unit still counts as a movement, still appears
+  // in the ledger and still shows in the four-way check. Only the accusation is
+  // withheld.
+  const failedOutward = new Set<string>();
+  for (const r of notDoneRows) {
+    if (r.direction === "OUT") failedOutward.add(canonicalize(r.barcode));
+  }
+  const returnLegs = new Set<string>();
+  for (const canon of failedOutward) {
+    const k = `IN::${canon}`;
+    if (inViews.has(canon) && !suppressed.has(k)) {
+      suppressed.add(k);
+      returnLegs.add(k);
+    }
+  }
+  if (returnLegs.size > 0) {
+    warnings.push(
+      `${returnLegs.size} inward leg${returnLegs.size === 1 ? "" : "s"} suppressed as the return of a failed delivery (the unit is still in transit in Odoo)`
+    );
+  }
+
   const classifyViews = (views: Map<string, BarcodeView>, direction: Direction) => {
     for (const v of Array.from(views.values())) {
       const k = `${direction}::${v.canonical}`;
@@ -632,11 +673,13 @@ export function runReconciliation(
         suppressedReason:
           outcome !== "SUPPRESSED"
             ? null
-            : silentOcr.has(k)
-              ? "silent_ocr"
-              : dtAllPending.has(k)
-                ? "dt_all_pending"
-                : "other",
+            : returnLegs.has(k)
+              ? "failed_delivery_return"
+              : silentOcr.has(k)
+                ? "silent_ocr"
+                : dtAllPending.has(k)
+                  ? "dt_all_pending"
+                  : "other",
       });
     }
   };
