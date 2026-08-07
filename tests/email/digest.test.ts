@@ -369,15 +369,15 @@ describe("digest — subject", () => {
     // Owner's wording, 2026-08-05. Pinned because the subject is the one line
     // that reaches a phone lock screen, and it is set by the owner rather than
     // derived — a silent reword would land in the founder's inbox unreviewed.
-    expect(digestSubject(richDay)).toBe("Guards Register Reco 26-July-2026");
-    expect(digestSubject(threePart)).toBe("Guards Register Reco 26-July-2026");
+    expect(digestSubject(richDay)).toBe("Guard Register Reco 26-07-2026");
+    expect(digestSubject(threePart)).toBe("Guard Register Reco 26-07-2026");
   });
 
   it("says the same thing on an unfinished run", () => {
     // Recorded, not asserted as good: the subject used to replace everything
     // with "the check did not finish, do not act on these figures". A broken
     // run is now indistinguishable from a clean one until the mail is opened.
-    expect(digestSubject(incompleteRun)).toBe("Guards Register Reco 26-July-2026");
+    expect(digestSubject(incompleteRun)).toBe("Guard Register Reco 26-07-2026");
   });
 
   it("stays inside a readable length", () => {

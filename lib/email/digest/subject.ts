@@ -1,11 +1,12 @@
 import type { DigestData } from "./types";
 
 /**
- * Subject line: "Guards Register Reco 4-August-2026".
+ * Subject line: "Guard Register Reco 05-08-2026".
  *
- * Reworded by the owner (2026-08-05) from "Movement Register- <date>". The date
- * format is unchanged, so the thread still sorts and searches the way people
- * have got used to.
+ * Owner's wording. It was "Movement Register- 30-July-2026", then "Guards
+ * Register Reco 4-August-2026" (2026-08-05), now singular with an all-digit
+ * day-month-year date (2026-08-06). Both parts are zero-padded, so every
+ * subject is the same length and a month of them lines up in an inbox.
  *
  * Set by the owner, and deliberately carries no numbers. What it gives up is
  * recorded here because it was load-bearing: the old subject led with the
@@ -15,13 +16,12 @@ import type { DigestData } from "./types";
  * finish, do not act on these figures" on an incomplete run. None of that is
  * visible now until the mail is opened.
  */
-const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
+const pad = (n: number) => String(n).padStart(2, "0");
 
 export function digestSubject(data: DigestData): string {
   const [y, m, d] = String(data.date).split("-").map(Number);
-  const date = y && m && d ? `${d}-${MONTHS[m - 1]}-${y}` : String(data.date);
-  return `Guards Register Reco ${date}`;
+  // Falls back to the raw ISO string rather than rendering "NaN-NaN-NaN" if the
+  // date is ever malformed — the subject is the one line that always ships.
+  const date = y && m && d ? `${pad(d)}-${pad(m)}-${y}` : String(data.date);
+  return `Guard Register Reco ${date}`;
 }
