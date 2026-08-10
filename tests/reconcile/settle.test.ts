@@ -101,24 +101,28 @@ function stubDb(opts: { floor?: string | null; rows?: Row[] }) {
 const TODAY = "2026-08-10";
 
 describe("settleUnactionableVariances", () => {
-  it("refuses to run at all when source_rows is empty", async () => {
+  it("never claims a row is unverifiable when source_rows is empty", async () => {
     // A fresh database, a restore in progress, or a prune that over-ran all look
     // identical here — and reading any of them as "every date has expired" would
-    // close the entire table.
-    const s = stubDb({ floor: null, rows: [row()] });
+    // close the entire table as unverifiable. The tier-3 branch is unaffected:
+    // it does not rest on retention at all.
+    const s = stubDb({ floor: null, rows: [row({ id: "real" }), row({ id: "t3", variance_name: "Odoo Entry Made Late — Posted Next Day", bucket: "INFO" })] });
     const res = await settleUnactionableVariances(s.db, { today: TODAY });
     expect(res.cutoff).toBeNull();
-    expect(res.skipped).toMatch(/source_rows is empty/);
-    expect(s.updates).toHaveLength(0);
+    expect(res.agedOut).toBe(0);
+    expect(res.noAction).toBe(1);
+    expect(res.leftOpen).toBe(1);
+    expect(s.updates.map((u) => u.patch.closure_reason)).toEqual([NO_ACTION_REASON]);
   });
 
   it("never settles a date the re-check sweep can still re-run", async () => {
     // Retention says the last five days are readable, but migration 0018 re-runs
     // D-2 … D-7 — so a five-day floor must NOT let the sweep reach D-6. Both
-    // conditions have to hold, which makes the cutoff the earlier of the two.
+    // conditions have to hold, which makes the aged-out cutoff the earlier one.
     const s = stubDb({ floor: "2026-08-05", rows: [] });
     const res = await settleUnactionableVariances(s.db, { today: TODAY });
     expect(res.cutoff).toBe("2026-08-02"); // TODAY − MIN_AGE_DAYS, not the floor
+    expect(res.noActionCutoff).toBe("2026-08-02");
     expect(MIN_AGE_DAYS).toBe(8);
   });
 
@@ -126,6 +130,59 @@ describe("settleUnactionableVariances", () => {
     const s = stubDb({ floor: "2026-07-20", rows: [] });
     const res = await settleUnactionableVariances(s.db, { today: TODAY });
     expect(res.cutoff).toBe("2026-07-20");
+    // The tier-3 cutoff does NOT follow the floor — it is age only.
+    expect(res.noActionCutoff).toBe("2026-08-02");
+  });
+
+  // ── migration 0022: nothing is pruned any more ────────────────────────────
+
+  it("keeps settling tier-3 rows once retention stops advancing", async () => {
+    // THE 0022 REGRESSION GUARD. With no prune, retentionFloor() returns the
+    // oldest date ever stored and never moves. Under the old single cutoff that
+    // collapsed the whole sweep to that date and silently switched OFF the
+    // tier-3 branch, which has nothing to do with retention.
+    // Months on: the floor is frozen at the oldest date ever kept, while the
+    // age cutoff has marched past it. Every row below is old enough to look at
+    // AND newer than the floor, so its evidence is on file.
+    const s = stubDb({
+      floor: "2026-08-03", // frozen forever once nothing is pruned
+      rows: [
+        row({ id: "t3", business_date: "2026-10-01", variance_name: "All Sources Agree — Barcode Text Differs (OCR/Typo)", bucket: "INFO" }),
+        row({ id: "real", business_date: "2026-10-01", variance_name: "Gate Register Only — No Ops / DT / Odoo Record", bucket: "REAL" }),
+      ],
+    });
+    const res = await settleUnactionableVariances(s.db, { today: "2026-12-01" });
+    expect(res.noActionCutoff).toBe("2026-11-23");
+    expect(res.cutoff).toBe("2026-08-03"); // the frozen floor, not the age cutoff
+    expect(res.noAction).toBe(1); // tier 3 still settles — the 0022 regression
+    expect(res.agedOut).toBe(0); // evidence is on file
+    expect(res.leftOpen).toBe(1); // the real finding stays open
+  });
+
+  it("leaves an actionable row open while its evidence is still on file", async () => {
+    // The whole point of keeping the raw feed: a real finding is never closed
+    // for the convenience of the queue.
+    const s = stubDb({
+      floor: "2026-07-01",
+      rows: [row({ id: "real", business_date: "2026-07-15", bucket: "REAL" })],
+    });
+    const res = await settleUnactionableVariances(s.db, { today: TODAY });
+    expect(res.agedOut).toBe(0);
+    expect(res.leftOpen).toBe(1);
+    expect(s.updates).toHaveLength(0);
+  });
+
+  it("still ages out a row from a date that WAS pruned before 0022", async () => {
+    // History contains dates whose raw feed is genuinely gone. The branch stays
+    // in the code for exactly those.
+    const s = stubDb({
+      floor: "2026-08-03",
+      rows: [row({ id: "old", business_date: "2026-07-15", bucket: "REAL" })],
+    });
+    const res = await settleUnactionableVariances(s.db, { today: TODAY });
+    expect(res.agedOut).toBe(1);
+    expect(res.leftOpen).toBe(0);
+    expect(s.updates[0].patch.closure_reason).toBe(AGED_OUT_REASON);
   });
 
   it("splits by the SAME label the dashboards read — tier 3 is 'no action'", async () => {

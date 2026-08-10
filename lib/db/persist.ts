@@ -306,6 +306,53 @@ export async function saveSourceRows(
     const { error } = await db.from("source_rows").insert(payload.slice(i, i + CHUNK));
     if (error) throw new Error(`saveSourceRows failed: ${error.message}`);
   }
+
+  // ONE COPY PER DATE PER SOURCE (2026-08-10).
+  //
+  // This is a plain INSERT, and a business date is reconciled about SEVEN times
+  // a day — once by the primary cron and six more by the pg_cron re-check sweep
+  // (D-2 … D-7). Every one of those stored another complete copy of the feed.
+  // Measured before this change: 108,647 rows for seven retained days, against
+  // ~2,786 rows in a single pull. A 5.6x multiplier.
+  //
+  // The 7-day prune was the only thing containing it, and the owner has asked
+  // for that prune to go so no date is ever unverifiable again. Unbounded, the
+  // duplication is the difference between ~1.6 GB and ~8.9 GB a year.
+  //
+  // WHY NOT AN UPSERT. There is no unique natural key and there must not be
+  // one: the same barcode logged twice within one source is a genuine finding
+  // (the "Duplicate Scan" variance), and the engine detects it from duplicate
+  // rows. Any key that collapsed them would delete a real result. So whole
+  // PULLS are replaced, never individual rows — the pull is inserted verbatim,
+  // duplicates and all, and the older copies are dropped afterwards.
+  //
+  // INSERT FIRST, THEN DELETE, so a reader is never shown a date with no rows.
+  // Briefly there are two copies; there is never zero. A crash between the two
+  // leaves the old copy intact and the next run cleans up both, because it
+  // deletes every run_id but its own.
+  //
+  // PER SOURCE, AND ONLY WHERE THIS PULL HAS ROWS. A connector that failed
+  // contributes nothing to `payload`, and replacing a good stored copy with
+  // that silence would destroy the evidence for the day — the same reasoning
+  // syncWarehouseCalendar already applies to an empty calendar read. Its rows
+  // are simply left alone.
+  const freshSources = [...new Set(payload.map((p) => String(p.source)))];
+  for (const source of freshSources) {
+    const { error } = await db
+      .from("source_rows")
+      .delete()
+      .eq("business_date", runDate)
+      .eq("source", source)
+      .neq("run_id", runId);
+    if (error) {
+      // Not fatal: the rows for this run are already written, so the reconcile
+      // has everything it needs. Failing here would mark a good run failed and
+      // lose the night over housekeeping.
+      console.warn(
+        `[saveSourceRows] could not drop superseded ${source} rows for ${runDate}: ${error.message}`
+      );
+    }
+  }
   return payload.length;
 }
 

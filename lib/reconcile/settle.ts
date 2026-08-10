@@ -75,10 +75,24 @@ export const SWEEP_REASONS: readonly string[] = [AGED_OUT_REASON, NO_ACTION_REAS
 export const MIN_AGE_DAYS = 8;
 
 export interface SettleResult {
-  /** The business date the sweep settled BELOW (exclusive). Null = it did nothing. */
+  /**
+   * The date below which a row counts as unverifiable (exclusive).
+   *
+   * Null once nothing is pruned — see the two-cutoff note in the sweep. That is
+   * the healthy state, not a failure: no evidence expires, so nothing is
+   * unverifiable.
+   */
   cutoff: string | null;
+  /** The date below which a tier-3 row is settled (exclusive). Always set. */
+  noActionCutoff: string;
   agedOut: number;
   noAction: number;
+  /**
+   * Rows old enough to look at, left open because they are actionable AND
+   * their evidence is still on file. Reported so "the sweep did nothing" and
+   * "the sweep looked and correctly declined" are never the same number.
+   */
+  leftOpen: number;
   /** Why nothing happened, when nothing happened. */
   skipped?: string;
   /** Rows examined. */
@@ -118,25 +132,33 @@ export async function settleUnactionableVariances(
   db: DB,
   opts: { today: string; dryRun?: boolean }
 ): Promise<SettleResult> {
-  const empty: SettleResult = {
-    cutoff: null,
-    agedOut: 0,
-    noAction: 0,
-    scanned: 0,
-    byCity: {},
-  };
-
+  // TWO CUTOFFS, BECAUSE THE TWO REASONS REST ON DIFFERENT FACTS (0022).
+  //
+  // Until 2026-08-10 there was one cutoff, because both reasons happened to be
+  // bounded by the same thing: source_rows was pruned at seven days, so "old
+  // enough that the re-check sweep has stopped visiting it" and "old enough
+  // that the evidence is gone" moved together.
+  //
+  // Migration 0022 stops pruning, and they come apart. retentionFloor() now
+  // returns the oldest date ever stored and never advances, so a single cutoff
+  // would collapse to that date and quietly switch the WHOLE sweep off —
+  // including the tier-3 branch, which has nothing to do with retention and
+  // must keep running.
+  //
+  //   noActionCutoff  age only. A row the engine itself labels "None." is not
+  //                   work, whatever evidence still exists behind it.
+  //   agedOutCutoff   age AND the evidence being gone. With nothing pruned this
+  //                   stops firing on its own, which is the correct outcome
+  //                   rather than a special case: nothing expires any more, so
+  //                   nothing can be unverifiable. It stays in the code because
+  //                   history contains dates that WERE pruned before 0022.
+  const noActionCutoff = addDays(opts.today, -MIN_AGE_DAYS);
   const floor = await retentionFloor(db);
-  if (!floor) {
-    // No raw rows at all. Could be a fresh database, a restore in progress, or
-    // a prune that over-ran. Any of those would make this sweep close the whole
-    // table, so it declines rather than guesses.
-    return { ...empty, skipped: "source_rows is empty — cannot tell which dates expired" };
-  }
-
-  const ageFloor = addDays(opts.today, -MIN_AGE_DAYS);
-  // Both conditions must hold, so the cutoff is the EARLIER of the two.
-  const cutoff = floor < ageFloor ? floor : ageFloor;
+  // Both conditions must hold for aged-out, so it is the EARLIER of the two.
+  // Null floor (empty source_rows — fresh database, restore in progress, a
+  // prune that over-ran) means we cannot claim anything expired, so we never
+  // do: declining is right for THIS branch and irrelevant to the other one.
+  const agedOutCutoff = floor === null ? null : floor < noActionCutoff ? floor : noActionCutoff;
 
   const rows: Row[] = [];
   for (let from = 0; ; from += 1000) {
@@ -144,7 +166,8 @@ export async function settleUnactionableVariances(
       .from("variances")
       .select("id, city, business_date, direction, variance_name, bucket, job_type, note")
       .eq("status", "open")
-      .lt("business_date", cutoff)
+      // The wider of the two cutoffs; agedOutCutoff is never later than this.
+      .lt("business_date", noActionCutoff)
       // Deterministic order — an unordered .range() can repeat or skip rows,
       // and a row skipped here simply stays open forever.
       .order("id", { ascending: true })
@@ -157,8 +180,8 @@ export async function settleUnactionableVariances(
   const byCity: Record<string, number> = {};
   const agedOutIds: string[] = [];
   const noActionIds: string[] = [];
+  let leftOpen = 0;
   for (const r of rows) {
-    byCity[r.city] = (byCity[r.city] ?? 0) + 1;
     // The same label the digest and both dashboards read, with the same context
     // fields — so a row the owner sees as "For information" on screen is settled
     // here for exactly that reason, and never for a different one.
@@ -168,14 +191,27 @@ export async function settleUnactionableVariances(
       bucket: (r.bucket as "REAL" | "INFO" | null) ?? null,
       note: r.note,
     });
-    if (label.tier === 3) noActionIds.push(r.id);
-    else agedOutIds.push(r.id);
+    if (label.tier === 3) {
+      noActionIds.push(r.id);
+    } else if (agedOutCutoff !== null && r.business_date < agedOutCutoff) {
+      agedOutIds.push(r.id);
+    } else {
+      // Actionable, and its evidence is still on file — so it stays open. This
+      // is the branch that did not exist before 0022, and it is the whole point
+      // of keeping the raw feed: a real finding is never closed for the
+      // convenience of the queue.
+      leftOpen++;
+      continue;
+    }
+    byCity[r.city] = (byCity[r.city] ?? 0) + 1;
   }
 
   const result: SettleResult = {
-    cutoff,
+    cutoff: agedOutCutoff,
+    noActionCutoff,
     agedOut: agedOutIds.length,
     noAction: noActionIds.length,
+    leftOpen,
     scanned: rows.length,
     byCity,
   };
