@@ -449,6 +449,43 @@ describe("Failed delivery & PP boxes (ops-practice rules)", () => {
     expect(res.variances.some((v) => v.barcode === canonicalize("OTINKD25041071"))).toBe(false);
   });
 
+  it("a PP box the GUARD described in the item column is a PP box too", () => {
+    // The register is handwritten and read by OCR — the same free-text medium
+    // as the sheet, used the same way: the "barcode" column holds a count and
+    // the item column holds the description. Measured 2026-08-10 over the
+    // retained window: 15 such units, all from the register, none known to DT
+    // or Odoo, one of them raising a REAL chase item against a television
+    // packing box.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "4311701PCF", product: "PP box TV", status: "done" }),
+      ],
+      "MUMBAI"
+    );
+    expect(res.summary.pp_box_count).toBe(1);
+    expect(res.variances.some((v) => v.barcode === canonicalize("4311701PCF"))).toBe(false);
+  });
+
+  it("but a unit DT or Odoo knows is never reclassified by a free-text column", () => {
+    // The guard that makes the rule above safe. A typed serialized system
+    // holding the barcode means this is tracked stock, and no handwritten item
+    // column may divert it into a count — that would erase a real movement from
+    // the ladder AND from the permanent ledger.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "FUCQPU26070002", product: "PP box TV", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "FUCQPU26070002", status: "done" }),
+      ],
+      "MUMBAI"
+    );
+    expect(res.summary.pp_box_count).toBe(0);
+    expect(
+      res.movement_events.some((e) => e.barcode === canonicalize("FUCQPU26070002"))
+    ).toBe(true);
+  });
+
   it("the remarks column can mark a row as a spare", () => {
     const res = runReconciliation(
       [

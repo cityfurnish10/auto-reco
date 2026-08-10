@@ -184,14 +184,47 @@ export function runReconciliation(
     if (r.source !== "SHEET") knownElsewhere.add(canonicalize(r.barcode));
   }
   // Ops-sheet hints: the item name or the remarks column saying this is a spare,
-  // a consumable, a PP box, or an item the product lookup could not resolve.
+  // a consumable, or an item the product lookup could not resolve.
   const sheetHintsSpare = (r: SourceRow): boolean =>
     !knownElsewhere.has(canonicalize(r.barcode)) &&
     (isSpareOrConsumable(r.product ?? "") ||
       isSpareOrConsumable(r.remarks ?? "") ||
       looksUnresolvedItem(r.product));
+
+  // PP BOXES ARE WRITTEN IN BOTH FREE-TEXT BOOKS, NOT JUST THE SHEET.
+  //
+  // The guard register is handwritten and read by OCR — the same free-text
+  // medium as the ops sheet, and the guards use it the same way: a packing-box
+  // line whose "barcode" column holds a COUNT ("1", "8", "37") and whose item
+  // column holds the description ("PP BOX", "pp box TV"). Treating the register
+  // as a corroborating system for this hint meant a box the guard described in
+  // the item column could never be recognised as one, because the register's own
+  // row was the thing vouching for it.
+  //
+  // Measured over the retained window on 2026-08-10: 45 such rows, 15 distinct
+  // units, every one of them from the register, and NOT ONE of them known to DT
+  // or Odoo on any day — so none is a serialized rental unit. One was raising a
+  // REAL "Gate Register Only" chase item against a television packing box.
+  //
+  // CORROBORATION NOW MEANS A TYPED SERIALIZED SYSTEM. That is the guard's real
+  // intent (barcode.ts:28-38): a unit DT or Odoo knows is tracked stock and no
+  // free-text column may reclassify it. A second handwritten book saying the
+  // same thing is not independent evidence. `knownElsewhere` above keeps its
+  // original wider meaning for the SPARE hint, whose text signals are weaker —
+  // "Not Found" is a blank product column as often as it is a consumable, and
+  // that is exactly the case the wider guard was measured to protect.
+  //
+  // The phrase itself carries the safety: /\bpp\s*box/i appears in no furniture
+  // catalogue name, so the hint is applied only to the two books that write
+  // free text and never to DT's or Odoo's product column.
+  const knownToTypedSystem = new Set<string>();
+  for (const r of working) {
+    if (r.source === "DT" || r.source === "ODOO") knownToTypedSystem.add(canonicalize(r.barcode));
+  }
+  const handwritten = (r: SourceRow) => r.source === "SHEET" || r.source === "PHYSICAL";
   const sheetHintsPpBox = (r: SourceRow): boolean =>
-    !knownElsewhere.has(canonicalize(r.barcode)) &&
+    handwritten(r) &&
+    !knownToTypedSystem.has(canonicalize(r.barcode)) &&
     (isPpBox(r.product ?? "") || isPpBox(r.remarks ?? ""));
 
   const ppBoxCanon = new Set<string>();

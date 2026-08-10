@@ -118,8 +118,22 @@ export function classify(
     return { variance_name: VARIANCE.ODOO_POSTED_NEXT_DAY, priority: "Info" };
 
   // 13. Every reported source present but barcodes differ → OCR noise.
+  //
+  // TWO sources at least, and that clause is not decoration. The reported-aware
+  // tests above are satisfied VACUOUSLY by a source that did not report: on a
+  // day when only the ops sheet filed, `(!rep.P || P) && (!rep.D || D) &&
+  // (!rep.O || O)` are all trivially true, so a SINGLE-source unit with two raw
+  // spellings would emit a row headed "All Sources Agree" — a sentence no
+  // evidence supports, on a unit nothing corroborates. The name is only
+  // truthful when at least two books hold the unit and merely spell it apart.
+  //
+  // Measured over the whole open queue on 2026-08-10 this changes nothing
+  // today: of 2,276 open rows under this name, 2,183 had all four sources
+  // present, 8 had three, and not one had fewer than three. It is the guard for
+  // the degraded-coverage day, not a reduction.
+  const presentCount = [P, S, D, O].filter(Boolean).length;
   const allReportedPresent =
-    (!rep.P || P) && (!rep.S || S) && (!rep.D || D) && (!rep.O || O) && (P || S || D || O);
+    (!rep.P || P) && (!rep.S || S) && (!rep.D || D) && (!rep.O || O) && presentCount >= 2;
   if (allReportedPresent && rawBarcodesDiffer(v))
     return { variance_name: VARIANCE.FIELD_MISMATCH, priority: "Info" };
 
