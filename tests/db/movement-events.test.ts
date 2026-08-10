@@ -174,4 +174,68 @@ describe("upsertMovementEvents", () => {
     await expect(upsertMovementEvents(s.db, "run-1", [cityResult([])])).resolves.toBe(0);
     expect(s.calls()).toBe(0);
   });
+
+  // ── migration 0021: the new suppression reason ────────────────────────────
+  //
+  // suppressed_reason carries a CHECK constraint, so a new value on a database
+  // still on 0015 is rejected outright — 23514, not a missing column. Losing a
+  // whole night's ledger over one diagnostic string is not an acceptable trade.
+
+  it("writes the nearby-day reason when the database has 0021", async () => {
+    const s = stubDb([{ error: null }]);
+    await upsertMovementEvents(s.db, "run-1", [
+      cityResult([event({ outcome: "SUPPRESSED", suppressedReason: "odoo_nearby_day" })]),
+    ]);
+    expect(s.payloads[0][0]).toMatchObject({
+      outcome: "SUPPRESSED",
+      suppressed_reason: "odoo_nearby_day",
+    });
+  });
+
+  it("downgrades the reason to 'other' on a 23514, keeping every other field", async () => {
+    const s = stubDb([
+      { error: { code: "23514", message: 'violates check constraint "movement_events_suppressed_reason_check"' } },
+      { error: null },
+    ]);
+    const n = await upsertMovementEvents(s.db, "run-1", [
+      cityResult([event({ outcome: "SUPPRESSED", suppressedReason: "odoo_nearby_day" })]),
+    ]);
+    expect(n).toBe(1);
+    // The retry, not the first attempt.
+    expect(s.payloads[1][0]).toMatchObject({
+      outcome: "SUPPRESSED",
+      suppressed_reason: "other",
+      // The whole point: nothing else was sacrificed to get the row in.
+      barcode: "ITEM-1",
+      barcode_display: "ITEM-1",
+      is_movement: true,
+    });
+  });
+
+  it("stays downgraded for later chunks rather than failing each one", async () => {
+    const many = Array.from({ length: 1500 }, (_, i) =>
+      event({ barcode: `ITEM-${i}`, outcome: "SUPPRESSED", suppressedReason: "odoo_nearby_day" })
+    );
+    const s = stubDb([
+      { error: { code: "23514", message: "check constraint" } },
+      { error: null }, // the retry of chunk 1
+      { error: null }, // chunk 2, already downgraded — no second failure
+    ]);
+    const n = await upsertMovementEvents(s.db, "run-1", [cityResult(many)]);
+    expect(n).toBe(1500);
+    expect(s.calls()).toBe(3);
+    expect(s.payloads[2][0]).toMatchObject({ suppressed_reason: "other" });
+  });
+
+  it("does not mask a DIFFERENT check violation as a missing 0021", async () => {
+    // If the retry fails too, the original error must still surface. Swallowing
+    // it would turn a real constraint bug into a silent partial write.
+    const s = stubDb([
+      { error: { code: "23514", message: "outcome check" } },
+      { error: { code: "23514", message: "outcome check" } },
+    ]);
+    await expect(
+      upsertMovementEvents(s.db, "run-1", [cityResult([event({ outcome: "SUPPRESSED" })])])
+    ).rejects.toThrow(/outcome check/);
+  });
 });

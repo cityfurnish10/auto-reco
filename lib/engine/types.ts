@@ -84,7 +84,9 @@ export interface BarcodeView {
   // date itself (createdOn == runDate). The Odoo pull spans ±1 day of postings
   // to catch posting lag; an "Odoo-only" variance may only fire for same-day
   // postings, so neighbours' movements pulled as match-targets never surface
-  // as false Odoo-only rows (each posting is judged once, in its own day's run).
+  // as false Odoo-only rows (each posting is judged at most once, in its own
+  // day's run — and not at all when a floor source documented the unit on a
+  // nearby day, where the movement was already reconciled; see run.ts).
   odooSameDay: boolean;
   // True when at least one Odoo posting for this barcode is dated runDate + 1 —
   // the 1-day late-entry buffer. A floor-confirmed movement whose only Odoo
@@ -203,6 +205,16 @@ export interface MovementEvent {
     | "dt_all_pending"
     | "silent_ocr"
     | "failed_delivery_return"
+    /**
+     * An Odoo-only posting for a unit a FLOOR source documented on a nearby
+     * day. The ±1 posting window pulls one Odoo row into three runs; on the two
+     * neighbouring days it has no floor company and used to file a variance
+     * against a movement already reconciled on its own day. See run.ts.
+     *
+     * Migration 0021 adds this to the movement_events CHECK. persist.ts stores
+     * it as "other" on a database that does not have 0021 yet.
+     */
+    | "odoo_nearby_day"
     | "other"
     | null;
 }

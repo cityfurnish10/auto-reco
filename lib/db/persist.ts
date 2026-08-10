@@ -16,19 +16,40 @@ type DB = SupabaseClient;
 
 // Floor history for the engine's date-misalignment demotions: every canonical
 // barcode a FLOOR source (guard / sheet / DT) logged on the days AROUND the run
-// date (−3 … +1, excluding the run day itself), per city, drawn from the stored
-// source_rows (7-day retention comfortably covers the window). A unit that is
+// date (−3 … +1, excluding the run day itself), per city. A unit that is
 // floor-documented on an adjacent day makes today's single-source-only row a
-// date echo, and an Odoo record created today for it a backlog entry — the
-// engine downgrades both to INFO instead of raising a REAL loss.
+// date echo, an Odoo record created today for it a backlog entry, and an
+// Odoo-only posting for it an echo of a movement already reconciled on its own
+// day — the engine demotes the first two and drops the third.
+//
+// READ FROM TWO PLACES, AND THE SECOND IS NOT OPTIONAL.
+//
+// source_rows is the richer record but prune_expired trims it at seven days,
+// and the pg_cron sweep (migration 0018) re-runs D-2 … D-7 every afternoon. On
+// the D-7 pass the window's own left edge is D-10 — long gone — so a lookup
+// that trusted source_rows alone would report "the floor never saw this unit"
+// purely because the evidence had been pruned, and every demotion above would
+// silently reverse on re-check. The same rows would then flip between REAL and
+// INFO from one pass to the next, on nothing but retention.
+//
+// movement_events (migration 0015) is deliberately excluded from prune_expired
+// and stores present_p / present_s / present_d per unit per day, which is
+// exactly this question. It is the long-term answer; source_rows is the recent
+// one. The union of the two is stable across the whole sweep window.
+//
+// An unapplied 0015 (missing TABLE → 42P01 / PGRST205) degrades to the
+// source_rows answer alone, which is what this function returned before.
 export async function loadRecentFloorBarcodes(
   db: DB,
   runDate: string
 ): Promise<Partial<Record<City, Set<string>>>> {
   const dates = [-3, -2, -1, 1].map((d) => addDays(runDate, d));
   const out: Partial<Record<City, Set<string>>> = {};
-  let from = 0;
-  for (;;) {
+  const add = (city: City, barcode: string) => {
+    (out[city] ??= new Set()).add(canonicalize(barcode));
+  };
+
+  for (let from = 0; ; from += 1000) {
     const { data, error } = await db
       .from("source_rows")
       .select("city, barcode")
@@ -38,13 +59,33 @@ export async function loadRecentFloorBarcodes(
       .order("id", { ascending: true })
       .range(from, from + 999);
     if (error) throw new Error(`loadRecentFloorBarcodes failed: ${error.message}`);
-    for (const r of data ?? []) {
-      const city = r.city as City;
-      (out[city] ??= new Set()).add(canonicalize(String(r.barcode ?? "")));
-    }
+    for (const r of data ?? []) add(r.city as City, String(r.barcode ?? ""));
     if (!data || data.length < 1000) break;
-    from += 1000;
   }
+
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db
+      .from("movement_events")
+      .select("city, barcode")
+      .in("business_date", dates)
+      // Any floor book having seen it. `.or()` rather than three round trips;
+      // Odoo presence is deliberately absent — an Odoo posting on a nearby day
+      // is the very thing these demotions are judging, so counting it as floor
+      // history would let Odoo corroborate itself.
+      .or("present_p.is.true,present_s.is.true,present_d.is.true")
+      .order("id", { ascending: true })
+      .range(from, from + 999);
+    if (error) {
+      if (error.code === "42P01" || error.code === "PGRST205") {
+        warnNo0015();
+        break;
+      }
+      throw new Error(`loadRecentFloorBarcodes (ledger) failed: ${error.message}`);
+    }
+    for (const r of data ?? []) add(r.city as City, String(r.barcode ?? ""));
+    if (!data || data.length < 1000) break;
+  }
+
   return out;
 }
 
@@ -327,10 +368,33 @@ export interface StaleResolution {
 //   • an old open row whose (direction, barcode) is now emitted under a
 //     DIFFERENT name is SUPERSEDED → delete it (the new row already exists,
 //     e.g. a REAL "Not Posted in Odoo" replaced by INFO "Posted Next Day");
+//   • an old open row for a unit the engine DELIBERATELY SUPPRESSED this run is
+//     also superseded → delete it (see the block below);
 //   • an old open row whose barcode is now fully clean (no variance at all)
 //     resolved LATE → downgrade in place to INFO with an "entry made late"
 //     note, re-stamping run_id so it still shows in this run's dashboard/KPIs.
 // Human-resolved rows (in_progress / pending_approval / closed) are untouched.
+//
+// THE SUPPRESSION BRANCH, AND WHY IT HAD TO EXIST BEFORE ANY NEW SUPPRESSION
+// COULD SHIP (2026-08-10).
+//
+// This pass reads ABSENCE as resolution. That is right for a gap that closed,
+// and wrong for every rule that makes the engine deliberately stop accusing a
+// unit: a suppressed unit is not absent because the problem cleared, it is
+// absent because the engine decided there was never a problem to report. Under
+// the old code such a row was rewritten with RESOLVED_LATE_NOTE — "this gap had
+// cleared on the next-day re-check" — which is a sentence about an event that
+// did not happen, printed on the dashboard and in the chat assistant.
+//
+// It already misfired for the three Section-7 suppressions and the failed-
+// delivery return leg. It would misfire for every unit the new Odoo nearby-day
+// rule silences, which is the largest suppressed population in the system.
+//
+// DELETE, not annotate, and on the same grounds as the superseded branch above:
+// the engine's positive decision that this is not a variance is stronger
+// evidence than the mere absence of a re-emit, and a row nobody will ever act
+// on is noise in the queue. The count is reported as `superseded`, and
+// movement_events keeps the permanent trace with its suppression reason.
 export async function resolveStaleOpenVariances(
   db: DB,
   runId: string,
@@ -365,6 +429,19 @@ export async function resolveStaleOpenVariances(
       emittedBarcodes.add(`${v.direction}::${v.barcode}`);
     }
 
+    // Units the engine positively decided not to accuse this run. Read from the
+    // ledger rather than from a new field on CityRunResult: movement_events
+    // already records every view's outcome and is the same object the run
+    // persists, so the two can never disagree about what was suppressed.
+    //
+    // A CROSS variance row covers both legs (run.ts builds its ledger keys that
+    // way), so the OUT leg of a suppressed IN can still legitimately carry a
+    // row; keying per direction keeps them independent.
+    const suppressedUnits = new Set<string>();
+    for (const e of cr.movement_events) {
+      if (e.outcome === "SUPPRESSED") suppressedUnits.add(`${e.direction}::${e.barcode}`);
+    }
+
     // Paginate — PostgREST caps un-ranged selects at 1000 rows and a big city's
     // day can exceed that; a truncated read here would silently skip stale rows.
     let data: { id: string; direction: string; barcode: string; variance_name: string }[] = [];
@@ -389,7 +466,13 @@ export async function resolveStaleOpenVariances(
     for (const row of data ?? []) {
       const key = `${row.direction}::${row.barcode}::${row.variance_name}`;
       if (emittedKeys.has(key)) continue; // still current — upsert refreshed it
-      if (emittedBarcodes.has(`${row.direction}::${row.barcode}`)) {
+      const unit = `${row.direction}::${row.barcode}`;
+      if (emittedBarcodes.has(unit)) {
+        supersededIds.push(row.id as string);
+      } else if (suppressedUnits.has(unit)) {
+        // Deliberately suppressed, NOT cleared. Unlike the resolved-late branch
+        // this needs no full-coverage guard: it rests on positive evidence from
+        // this run, exactly like the superseded branch it shares.
         supersededIds.push(row.id as string);
       } else if (fullCoverage) {
         resolvedIds.push(row.id as string);
@@ -814,10 +897,31 @@ export async function upsertMovementEvents(
       return copy;
     });
 
+  // Sticky in the same way, for migration 0021. suppressed_reason carries a
+  // CHECK constraint listing the allowed values (0015), so a NEW reason on a
+  // database still on 0015 is rejected outright — 23514 check_violation, not a
+  // missing column — and would cost the whole night's ledger over one
+  // diagnostic string. Downgrade it to the catch-all the old CHECK already
+  // allows and keep every other field.
+  let downgradeReason = false;
+  const NEW_REASONS = new Set(["odoo_nearby_day"]);
+  const downgrade = (chunk: Record<string, unknown>[]) =>
+    chunk.map((r) =>
+      NEW_REASONS.has(String(r.suppressed_reason ?? ""))
+        ? { ...r, suppressed_reason: "other" }
+        : r
+    );
+  const prepare = (rows: Record<string, unknown>[]) => {
+    let out = rows;
+    if (drop0020) out = strip(out);
+    if (downgradeReason) out = downgrade(out);
+    return out;
+  };
+
   // Chunked like saveSourceRows. ~1,100 events a night, so normally two calls.
   for (let i = 0; i < payload.length; i += 1000) {
     const raw = payload.slice(i, i + 1000);
-    const chunk = drop0020 ? strip(raw) : raw;
+    const chunk = prepare(raw);
     const { error } = await db.from("movement_events").upsert(chunk, { onConflict });
     if (error) {
       // ORDER MATTERS HERE, and it is the difference between losing a cosmetic
@@ -842,6 +946,21 @@ export async function upsertMovementEvents(
           continue;
         }
       }
+      // 23514 = check_violation: migration 0021 has not widened the
+      // suppressed_reason CHECK yet. Retry once with the new reason folded into
+      // the value the old constraint allows.
+      if (!downgradeReason && error.code === "23514") {
+        downgradeReason = true;
+        const retry = await db
+          .from("movement_events")
+          .upsert(prepare(raw), { onConflict });
+        if (!retry.error) {
+          warnNo0021Ledger();
+          written += raw.length;
+          continue;
+        }
+        downgradeReason = false; // a different CHECK failed — do not mask it
+      }
       if (/does not exist|could not find/i.test(error.message)) {
         warnNo0015();
         return 0;
@@ -851,6 +970,15 @@ export async function upsertMovementEvents(
     written += chunk.length;
   }
   return written;
+}
+
+let warnedLedger0021 = false;
+function warnNo0021Ledger(): void {
+  if (warnedLedger0021) return;
+  warnedLedger0021 = true;
+  console.warn(
+    "[upsertMovementEvents] migration 0021 not applied — Odoo nearby-day suppressions were stored as the generic 'other' reason. The suppression itself still happened; only its label in the ledger is coarser. Apply supabase/migrations/0021_variance_noise.sql."
+  );
 }
 
 let warnedLedger0020 = false;
