@@ -564,9 +564,14 @@ describe("Section 6 — variance ladder", () => {
     expect(res2.variances.filter((v) => v.variance_name === VARIANCE.ODOO_ONLY_TODAY)).toHaveLength(2);
   });
 
-  it("Odoo-only created today but floor logged the unit on an ADJACENT day → INFO (backlog entry)", () => {
-    // The clerk typed up an earlier day's movement today — the floor documented
-    // it on its own day (recentFloor), so this is a late entry, not a loss.
+  it("Odoo-only for a unit the floor documented on a NEARBY day → nothing at all", () => {
+    // Odoo's window is ±1 day, so ONE posting is pulled into THREE consecutive
+    // runs; on the two neighbours it has no floor company and used to raise a
+    // variance against a movement already reconciled on its own day. Measured
+    // 2026-08-10: 525 of 941 open "Odoo Posting Only" rows were exactly this.
+    //
+    // recentFloor is the positive evidence — a floor source logged this unit on
+    // an adjacent day — so there is nothing here to report.
     const res = runReconciliation(
       [
         ...anchor(),
@@ -576,9 +581,68 @@ describe("Section 6 — variance ladder", () => {
       undefined,
       new Set([canonicalize("FUTEST2301001")])
     );
+    expect(
+      res.variances.filter((x) => x.barcode === canonicalize("FUTEST2301001"))
+    ).toEqual([]);
+
+    // SUPPRESSED, never CLEAN. The ledger is the permanent record, and calling
+    // this unit reconciled would assert that four books agreed when only Odoo
+    // has it. The reason has to say which rule silenced it, or it is
+    // indistinguishable from a Section-7 suppression.
+    const ev = res.movement_events.find(
+      (e) => e.barcode === canonicalize("FUTEST2301001") && e.direction === "OUT"
+    );
+    expect(ev?.outcome).toBe("SUPPRESSED");
+    expect(ev?.suppressedReason).toBe("odoo_nearby_day");
+    // Still a movement: the accuracy denominator must not shrink just because
+    // the accusation was withheld.
+    expect(ev?.isMovement).toBe(true);
+  });
+
+  it("the nearby-day rule can only ever remove an INFO row, never a loss", () => {
+    // The only REAL an Odoo-only view can produce is ODOO_ONLY_TODAY, and its
+    // own gate already requires !recentFloor.has(canonical). So a unit with no
+    // nearby floor trace keeps its REAL chase item, and the same unit WITH one
+    // is silenced — the two branches of the same fact, pinned together so a
+    // future edit cannot widen the rule into the loss-bearing case.
+    const rows = [
+      ...anchor(),
+      r({ source: "ODOO", direction: "OUT", barcode: "FUTEST2301001", status: "done", createdOn: RUN, recordCreatedOn: RUN, soNumber: "ON-RET-MUM-42424", ticketId: "MUM/OUT/12345" }),
+    ];
+    const withoutFloor = runReconciliation(rows, "MUMBAI");
+    const chase = withoutFloor.variances.find(
+      (x) => x.barcode === canonicalize("FUTEST2301001")
+    );
+    expect(chase?.variance_name).toBe(VARIANCE.ODOO_ONLY_TODAY);
+    expect(chase?.bucket).toBe("REAL");
+
+    const withFloor = runReconciliation(
+      rows,
+      "MUMBAI",
+      undefined,
+      new Set([canonicalize("FUTEST2301001")])
+    );
+    expect(withFloor.summary.real_count).toBe(withoutFloor.summary.real_count - 1);
+  });
+
+  it("a unit a floor book DID see today is untouched by the nearby-day rule", () => {
+    // The rule reads the presence pattern, not the barcode: a unit the ops sheet
+    // logged today is not an Odoo-only echo however many nearby days also hold
+    // it, and its Odoo gap must still surface.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "FUTEST2301001", status: "done" }),
+        r({ source: "SHEET", direction: "OUT", barcode: "FUTEST2301001", status: "done" }),
+        r({ source: "DT", direction: "OUT", barcode: "FUTEST2301001", status: "done" }),
+      ],
+      "MUMBAI",
+      undefined,
+      new Set([canonicalize("FUTEST2301001")])
+    );
     const v = res.variances.find((x) => x.barcode === canonicalize("FUTEST2301001"));
-    expect(v?.variance_name).toBe(VARIANCE.ODOO_ONLY);
-    expect(v?.bucket).toBe("INFO");
+    expect(v?.variance_name).toBe(VARIANCE.FLOOR_DT_NOT_ODOO);
+    expect(v?.bucket).toBe("REAL");
   });
 
   it("gate-only → Gate-Only Dispatch (REAL)", () => {

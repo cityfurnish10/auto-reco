@@ -13,8 +13,15 @@
 // claimed HYD posts ±1). Attribution safety: an Odoo row from an adjacent
 // day can MATCH (suppress a false "Not in Odoo") but can never itself surface
 // as an "Odoo-Only" variance — the ladder's rung 9 requires a same-day
-// posting (BarcodeView.odooSameDay), so each posting is judged exactly once,
+// posting (BarcodeView.odooSameDay), so each posting is judged AT MOST once,
 // in its own day's run.
+//
+// AT MOST, not exactly (2026-08-10). The same-day rule holds each posting to
+// one run, but a posting can still be dated a day the floor did not work the
+// unit — the movement happened on the neighbouring day, where its floor record
+// lives. run.ts drops those unjudged (nearbyEcho): a posting whose unit a floor
+// source documented on a nearby day raises nothing, because the day that owns
+// the movement has already reconciled it.
 //
 // If the filter would empty an otherwise non-empty export, fall back to all
 // rows and record a warning (never silently emit a zero Odoo count).

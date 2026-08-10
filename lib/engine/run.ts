@@ -448,11 +448,82 @@ export function runReconciliation(
     );
   }
 
+  // ODOO'S ECHO OF A MOVEMENT THE FLOOR ALREADY SETTLED (owner, 2026-08-10).
+  //
+  // Odoo is windowed ±1 day (odoo-window.ts) so that a next-day posting still
+  // MATCHES the day it belongs to. The side effect is that one posting row is
+  // pulled into three consecutive runs, and on the two neighbouring days it has
+  // no floor company — so it grades as an Odoo-only row and files a variance
+  // against a movement that was reconciled on its own day, days ago.
+  //
+  // Traced end to end on FU95BF21033029 (Mumbai). The ledger has the guard and
+  // the ops sheet logging that unit on 26 Jul, 29 Jul and 1 Aug. One Odoo
+  // posting then appears and the window pulls it into the 3, 4 and 5 August
+  // runs: CLEAN, REAL, CLEAN. The same Odoo row, three days, and a chase item
+  // raised on the one day in the middle — for a unit the floor had recorded
+  // three times already.
+  //
+  // Measured by replaying the whole retained window on 2026-08-10: 941 open
+  // "Odoo Posting Only" rows became 308. Nine REAL rows across seven days also
+  // change, every one of them a unit the floor documented on a nearby day —
+  // five demote to "Entry Dated Wrong Day", three are Odoo-only echoes of the
+  // kind described here, and one was a television packing box.
+  //
+  // recentFloor is exactly the evidence required — canonical barcodes a FLOOR
+  // source logged on runDate−3 … runDate+1, excluding the run day. It already
+  // gates odooCreatedToday (a record born today for a floor-documented earlier
+  // movement is a backlog entry, never a REAL). This carries the same fact one
+  // step further: with the floor's own record sitting on its own day, there is
+  // nothing to report here at all.
+  //
+  // NARROW ON PURPOSE, and provably incapable of hiding a loss:
+  //   * only the Odoo-ONLY presence pattern, so a unit any floor book saw today
+  //     grades normally;
+  //   * only on POSITIVE evidence. An Odoo-only row whose unit the floor never
+  //     logged anywhere nearby still fires — that is the one that might be a
+  //     phantom posting;
+  //   * the only REAL an Odoo-only view can produce is ODOO_ONLY_TODAY, whose
+  //     own gate (createdTodayFlag, above) already requires
+  //     !recentFloor.has(canonical). So every row this removes was INFO.
+  //
+  // A SEPARATE SET, NOT `suppressed`. detectDirectionConflicts skips any pair
+  // with a suppressed leg, so folding these keys into `suppressed` would also
+  // silence a REAL same-day-replacement CROSS row. The two consumers below are
+  // the ladder (skip) and the ledger (record it as suppressed, with a reason) —
+  // nothing else.
+  const nearbyEcho = new Set<string>();
+  if (recentFloor.size > 0) {
+    const markEchoes = (views: Map<string, BarcodeView>, direction: Direction) => {
+      for (const v of Array.from(views.values())) {
+        const odooOnly = v.O.present && !v.P.present && !v.S.present && !v.D.present;
+        // AND the posting is dated the run day, which is what rung 9 requires
+        // before it will judge an Odoo-only view at all. Without this clause the
+        // set also swallows the ±1 match-targets — views that were never going
+        // to be judged on this day — and "suppressed" would then mean something
+        // weaker in the ledger than it means everywhere else. Measured on the
+        // retained window: 6,347 views without the clause, 871 with it, and the
+        // rows actually withheld are identical either way.
+        if (!odooOnly || !v.odooSameDay || !recentFloor.has(v.canonical)) continue;
+        nearbyEcho.add(`${direction}::${v.canonical}`);
+      }
+    };
+    markEchoes(inViews, "IN");
+    markEchoes(outViews, "OUT");
+    if (nearbyEcho.size > 0) {
+      warnings.push(
+        `${nearbyEcho.size} Odoo-only posting${nearbyEcho.size === 1 ? "" : "s"} not judged — the floor documented the unit on a nearby day, where it was already reconciled`
+      );
+    }
+  }
+
   const classifyViews = (views: Map<string, BarcodeView>, direction: Direction) => {
     for (const v of Array.from(views.values())) {
       const k = `${direction}::${v.canonical}`;
       if (silentOcr.has(k)) continue; // never output (Section 7/12)
       if (suppressed.has(k)) continue;
+      // Before the duplicate leg too: an Odoo-only echo posted twice in Odoo is
+      // twice the same echo, not a duplicate scan anyone should chase.
+      if (nearbyEcho.has(k)) continue;
 
       const hit = classify(v, reported);
       if (hit) {
@@ -644,7 +715,7 @@ export function runReconciliation(
           ? hits.some((h) => h.bucket === "REAL")
             ? "REAL"
             : "INFO"
-          : silentOcr.has(k) || suppressed.has(k)
+          : silentOcr.has(k) || suppressed.has(k) || nearbyEcho.has(k)
             ? "SUPPRESSED"
             : "CLEAN";
       movement_events.push({
@@ -679,7 +750,9 @@ export function runReconciliation(
                 ? "silent_ocr"
                 : dtAllPending.has(k)
                   ? "dt_all_pending"
-                  : "other",
+                  : nearbyEcho.has(k)
+                    ? "odoo_nearby_day"
+                    : "other",
       });
     }
   };
