@@ -100,7 +100,13 @@ export function runReconciliation(
   // Used when Section-3 derivation has nothing to work from — a city whose
   // register wasn't uploaded AND whose DT was quiet still reconciles its
   // Sheet+Odoo rows against this date instead of throwing.
-  fallbackDate?: string
+  fallbackDate?: string,
+  // `${direction}::${canonical}` for every unit ODOO posted in the days AFTER
+  // the run date (+1 … +3) — supplied by the pipeline from stored history,
+  // empty in demo/tests. Drives the late-posting demotion: a "not in Odoo"
+  // accusation is false when Odoo demonstrably holds the unit and simply posted
+  // it a few days after the goods moved. See loadRecentOdooPostings.
+  recentOdoo: ReadonlySet<string> = new Set()
 ): CityRunResult {
   const warnings: string[] = [];
   const rows = allRows;
@@ -549,6 +555,7 @@ export function runReconciliation(
     }
   }
 
+  let latePostings = 0;
   const classifyViews = (views: Map<string, BarcodeView>, direction: Direction) => {
     for (const v of Array.from(views.values())) {
       const k = `${direction}::${v.canonical}`;
@@ -570,14 +577,52 @@ export function runReconciliation(
           hit.variance_name === VARIANCE.SHEET_ONLY ||
           hit.variance_name === VARIANCE.DT_ONLY;
         const echo = soloOnly && recentFloor.has(v.canonical);
+
+        // THE ENTRY IS ALREADY MADE (owner + Bangalore ops, 2026-08-10).
+        //
+        // Every rung below accuses somebody of not posting to Odoo. That
+        // accusation is simply false when Odoo demonstrably holds the unit and
+        // merely posted it a few days after the goods moved — and for one whole
+        // flow it is false EVERY TIME.
+        //
+        // Vendor PO receipts are booked in a batch two days after the truck
+        // lands. Measured 2026-08-10: of 162 Bangalore "PO Inward" sheet rows on
+        // 6 August, ALL 162 had an Odoo receipt — 157 posted +2 days, 5 posted
+        // +3. The pull window is ±1, so not one of them could ever match, and
+        // the warehouse got 162 REAL chase items telling it to post entries the
+        // purchase team had already posted. Traced on FUIKLV26080001: ops sheet
+        // 6 Aug "PO Inward" PO-BAN-778 Received, Odoo BAN/IN/23314 created 8 Aug.
+        //
+        // recentOdoo is history read from the database, NOT a wider pull: the
+        // ±1 window governs what counts as PRESENT for the day and must not
+        // move, or three days of postings would collapse into one day's
+        // presence flags and the four-way check would start lying.
+        //
+        // Direction-keyed, so an outward posting can never excuse a missing
+        // inward one. Positive evidence only: a unit Odoo has never posted keeps
+        // its REAL row, which is the case that actually means something.
+        const odooBlamed =
+          hit.variance_name === VARIANCE.FLOOR_DT_NOT_ODOO ||
+          hit.variance_name === VARIANCE.GATE_OPS_NO_DT_ODOO ||
+          hit.variance_name === VARIANCE.GATE_ONLY ||
+          hit.variance_name === VARIANCE.SHEET_ONLY ||
+          hit.variance_name === VARIANCE.PICKUP_ODOO_OPEN;
+        const postedLate = odooBlamed && !v.O.present && recentOdoo.has(k);
+
+        const name = postedLate
+          ? VARIANCE.ODOO_POSTED_LATE
+          : echo
+            ? VARIANCE.ADJACENT_DAY
+            : hit.variance_name;
         variances.push(
           applyBucket({
             ...baseRow(v),
             direction,
-            variance_name: echo ? VARIANCE.ADJACENT_DAY : hit.variance_name,
-            priority: echo ? "Info" : hit.priority,
+            variance_name: name,
+            priority: postedLate || echo ? "Info" : hit.priority,
           })
         );
+        if (postedLate) latePostings++;
       }
 
       // Duplicate scans — unless DT-all-pending suppressed this barcode.
@@ -599,6 +644,11 @@ export function runReconciliation(
 
   classifyViews(inViews, "IN");
   classifyViews(outViews, "OUT");
+  if (latePostings > 0) {
+    warnings.push(
+      `${latePostings} "not in Odoo" finding${latePostings === 1 ? "" : "s"} downgraded — Odoo posted the unit within ${3} days either side, so the entry is made`
+    );
+  }
 
   // Bulk-flow collapse: ONE sale order posted as MANY Odoo-only-created-today
   // units is a single business event (a vendor truck received / a B2B bulk
@@ -840,7 +890,8 @@ export function runAllCities(
   now: Date = new Date(),
   reportedByCity?: Partial<Record<City, ReportedSources>>,
   recentFloorByCity?: Partial<Record<City, ReadonlySet<string>>>,
-  fallbackDate?: string
+  fallbackDate?: string,
+  recentOdooByCity?: Partial<Record<City, ReadonlySet<string>>>
 ): MultiCityRun {
   const perCity: CityRunResult[] = [];
   const skipped: { city: City; error: string }[] = [];
@@ -856,7 +907,8 @@ export function runAllCities(
           city,
           reportedByCity?.[city] ?? ALL_REPORTED,
           recentFloorByCity?.[city] ?? new Set(),
-          fallbackDate
+          fallbackDate,
+          recentOdooByCity?.[city] ?? new Set()
         )
       );
     } catch (err) {

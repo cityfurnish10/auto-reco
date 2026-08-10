@@ -108,6 +108,15 @@ export const VARIANCE_META: Record<string, VarianceMeta> = {
     responsible: "odoo_team",
     note: "The floor confirmed this movement for the day, and the Odoo entry does exist — it was just posted a day late (the 1-day buffer picked it up). No action; the entry is made.",
   },
+  [VARIANCE.ODOO_POSTED_LATE]: {
+    // INFO, and this one replaces a REAL. The floor's own book recorded the
+    // movement and Odoo DOES hold the unit — the posting simply landed a few
+    // days after the goods. Chasing "post this in Odoo" for an entry that is
+    // already made is the single most common false alarm the warehouses report.
+    bucket: "INFO",
+    responsible: "odoo_team",
+    note: "The floor recorded this movement and Odoo does have the unit — the entry was posted a few days after the goods moved, which is normal for vendor receipts. No action; the entry is made.",
+  },
   [VARIANCE.GATE_OPS_ODOO_NO_DT]: {
     bucket: "INFO",
     // The missing thing is the DT scan, so this belongs to the delivery team —

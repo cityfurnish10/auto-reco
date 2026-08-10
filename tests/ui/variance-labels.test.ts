@@ -30,9 +30,13 @@ const CONTEXTS: LabelContext[] = [
 ];
 
 describe("variance labels — coverage", () => {
-  it("covers all 22 canonical names exactly once", () => {
-    expect(NAMES).toHaveLength(22);
-    expect(new Set(NAMES).size).toBe(22);
+  it("covers all 23 canonical names exactly once", () => {
+    // The count is deliberately hard-coded rather than derived from VARIANCE:
+    // a new name has to be a conscious edit here, which is what forces its
+    // author to give it a label instead of letting it fall through to
+    // "Unclassified" on every screen. 23rd: ODOO_POSTED_LATE (2026-08-10).
+    expect(NAMES).toHaveLength(23);
+    expect(new Set(NAMES).size).toBe(23);
     expect(Object.keys(VARIANCE_LABELS).sort()).toEqual([...NAMES].sort());
   });
 

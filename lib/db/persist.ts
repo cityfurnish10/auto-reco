@@ -90,6 +90,96 @@ export async function loadRecentFloorBarcodes(
 }
 
 /**
+ * How many days AFTER the run date still count as "Odoo posted this".
+ *
+ * MEASURED, not chosen. Of 3,712 ops-sheet rows in the retained window whose
+ * unit Odoo also posted, the lag from the sheet's day to Odoo's posting was 0
+ * days for 1,846 and ±1 for another 631 — the shape the ±1 pull window was
+ * built for. Vendor receipts are a different process entirely: of 162 "PO
+ * Inward" sheet rows, EVERY SINGLE ONE was posted +2 (157) or +3 (5) days
+ * later, so not one could ever fall inside ±1. Three days covers 100% of them.
+ *
+ * FORWARD ONLY, and that is a correctness decision rather than a cautious one.
+ * A posting dated BEFORE the day the floor recorded the movement is not a late
+ * entry — it is either an earlier movement of the same unit or paperwork
+ * written up late on the floor's side, and neither is the thing the demotion
+ * says it is. The measured backward tail is real (−2: 218 rows, −3: 144) and
+ * mostly harmless, but calling it "Odoo posted a few days on" would put a
+ * sentence on the screen that the data does not support.
+ */
+export const ODOO_HISTORY_DAYS = 3;
+
+/**
+ * Canonical barcodes ODOO posted in the days AFTER the run date, keyed
+ * `${direction}::${canonical}` per city.
+ *
+ * WHY THIS IS NOT THE PULL WINDOW. filterOdooWindow spans ±1 day of postings so
+ * a next-day entry can MATCH the day it belongs to. Widening THAT to ±3 would
+ * triple the Odoo rows every run carries — against a 60s function ceiling the
+ * Sheets connector already spends 40s of — and would put three days of postings
+ * into one day's presence flags. This is history, read from what is already
+ * stored, and it is used for exactly one thing: refusing to accuse the warehouse
+ * of a missing Odoo entry that demonstrably exists.
+ *
+ * DIRECTION-KEYED, unlike the floor history above. A unit can move both ways in
+ * a week, and an outward posting must never excuse a missing inward one.
+ *
+ * Same two-source read as loadRecentFloorBarcodes, and for the same reason:
+ * source_rows is pruned at seven days, so the re-check sweep's older passes
+ * would otherwise see no Odoo history at all and re-raise everything.
+ */
+export async function loadRecentOdooPostings(
+  db: DB,
+  runDate: string
+): Promise<Partial<Record<City, Set<string>>>> {
+  const offsets: number[] = [];
+  for (let d = 1; d <= ODOO_HISTORY_DAYS; d++) offsets.push(d);
+  const dates = offsets.map((d) => addDays(runDate, d));
+  const out: Partial<Record<City, Set<string>>> = {};
+  const add = (city: City, direction: string, barcode: string) => {
+    (out[city] ??= new Set()).add(`${direction}::${canonicalize(barcode)}`);
+  };
+
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db
+      .from("source_rows")
+      .select("city, direction, barcode")
+      .eq("source", "ODOO")
+      .in("business_date", dates)
+      .order("id", { ascending: true })
+      .range(from, from + 999);
+    if (error) throw new Error(`loadRecentOdooPostings failed: ${error.message}`);
+    for (const r of data ?? []) {
+      add(r.city as City, String(r.direction ?? ""), String(r.barcode ?? ""));
+    }
+    if (!data || data.length < 1000) break;
+  }
+
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db
+      .from("movement_events")
+      .select("city, direction, barcode")
+      .in("business_date", dates)
+      .is("present_o", true)
+      .order("id", { ascending: true })
+      .range(from, from + 999);
+    if (error) {
+      if (error.code === "42P01" || error.code === "PGRST205") {
+        warnNo0015();
+        break;
+      }
+      throw new Error(`loadRecentOdooPostings (ledger) failed: ${error.message}`);
+    }
+    for (const r of data ?? []) {
+      add(r.city as City, String(r.direction ?? ""), String(r.barcode ?? ""));
+    }
+    if (!data || data.length < 1000) break;
+  }
+
+  return out;
+}
+
+/**
  * Which PASS this run is (migration 0017).
  *
  * Orthogonal to `trigger`, which records WHO started it. An admin's targeted

@@ -22,6 +22,7 @@ import {
   createRun,
   saveSourceRows,
   loadRecentFloorBarcodes,
+  loadRecentOdooPostings,
   upsertVariances,
   upsertMovementEvents,
   resolveStaleOpenVariances,
@@ -157,14 +158,33 @@ export async function runReconcilePipeline(
     //    recentFloorByCity feeds the date-misalignment demotions (register
     //    pages spanning days, Odoo backlog entries) — best-effort: without it
     //    the engine simply skips those demotions.
-    const recentFloorByCity = await loadRecentFloorBarcodes(db, runDate).catch((e) => {
-      console.warn("loadRecentFloorBarcodes failed:", e instanceof Error ? e.message : e);
-      return {};
-    });
+    //    recentOdooByCity is its mirror: what Odoo has posted on the days
+    //    around this one. It stops the engine telling a warehouse to post an
+    //    Odoo entry that already exists — vendor receipts are booked in a batch
+    //    two days after the goods land, so under the ±1 pull window every one of
+    //    them raised a false chase item. Both reads are independent, so they run
+    //    together rather than one after the other.
+    const [recentFloorByCity, recentOdooByCity] = await Promise.all([
+      loadRecentFloorBarcodes(db, runDate).catch((e) => {
+        console.warn("loadRecentFloorBarcodes failed:", e instanceof Error ? e.message : e);
+        return {};
+      }),
+      loadRecentOdooPostings(db, runDate).catch((e) => {
+        console.warn("loadRecentOdooPostings failed:", e instanceof Error ? e.message : e);
+        return {};
+      }),
+    ]);
     // runDate doubles as the engine's fallback date: a city with no register
     // upload AND a quiet DT (no derivable dates) still reconciles its other
     // sources against the requested day instead of failing.
-    const run = runAllCities(rowsByCity, new Date(), reportedByCity, recentFloorByCity, runDate);
+    const run = runAllCities(
+      rowsByCity,
+      new Date(),
+      reportedByCity,
+      recentFloorByCity,
+      runDate,
+      recentOdooByCity
+    );
     for (const s of run.skipped) {
       console.warn(`reconcile skipped ${s.city}: ${s.error}`);
     }

@@ -337,6 +337,11 @@ export const VARIANCE_LABELS: Record<VarianceName, LabelRule> = {
       "The floor confirmed the movement and the Odoo entry exists — it was made a day late."
     ),
   },
+  [VARIANCE.ODOO_POSTED_LATE]: {
+    base: ODOO_DELAY(
+      "The floor recorded the movement and Odoo does have the unit — the entry was posted a few days later, which is how vendor receipts are booked."
+    ),
+  },
   [VARIANCE.OPS_DT_ODOO_PENDING]: {
     base: ODOO_DELAY(
       "The sheet and the app have the movement; Odoo has not caught up yet. Normal lag."

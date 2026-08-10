@@ -30,6 +30,11 @@ export const VARIANCE = {
   ADJACENT_DAY: "Entry Dated Wrong Day — Unit Logged on Adjacent Day",
   ODOO_ONLY: "Odoo Posting Only — No Gate / Ops / DT Record",
   ODOO_POSTED_NEXT_DAY: "Odoo Entry Made Late — Posted Next Day",
+  // The same fact as ODOO_POSTED_NEXT_DAY, for a posting too far out to be in
+  // the ±1 pull window. Vendor PO receipts are the whole reason it exists:
+  // measured 2026-08-10, EVERY ONE of 162 "PO Inward" sheet rows had its Odoo
+  // receipt posted +2 or +3 days later, so the ±1 window could never match one.
+  ODOO_POSTED_LATE: "Odoo Entry Made Late — Posted a Few Days On",
   OPS_ODOO_NO_DT: "Ops + Odoo Confirm — No DT Scan",
   DT_ODOO_NO_SHEET: "DT + Odoo Confirm — Missing from Ops Sheet",
   GATE_OPS_ODOO_NO_DT: "Gate + Ops + Odoo Confirm — DT Scan Pending",

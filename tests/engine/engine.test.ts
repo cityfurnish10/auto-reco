@@ -662,6 +662,98 @@ describe("Section 6 — variance ladder", () => {
     expect(withFloor.summary.real_count).toBe(withoutFloor.summary.real_count - 1);
   });
 
+  it("a PO receipt Odoo posted two days later is a late entry, not a missing one", () => {
+    // THE BANGALORE CASE, 2026-08-06. The ops sheet booked 162 "PO Inward"
+    // units as Received; every one of them had an Odoo receipt, posted +2 days
+    // (157) or +3 (5). The pull window is ±1, so not one could ever match, and
+    // the warehouse got 162 REAL chase items telling it to post entries the
+    // purchase team had already posted.
+    //
+    // recentOdoo carries what Odoo posted on the surrounding days, direction
+    // keyed. With it, the accusation becomes what it actually is: late, made.
+    const rows = [
+      ...anchor(),
+      r({ source: "SHEET", direction: "IN", barcode: "FUIKLV26080001", status: "Received", jobType: "PO Inward", soNumber: "PO-BAN-778" }),
+    ];
+    const accused = runReconciliation(rows, "BANGALORE");
+    const before = accused.variances.find((x) => x.barcode === canonicalize("FUIKLV26080001"));
+    expect(before?.variance_name).toBe(VARIANCE.SHEET_ONLY);
+    expect(before?.bucket).toBe("REAL");
+
+    const withOdoo = runReconciliation(
+      rows,
+      "BANGALORE",
+      undefined,
+      new Set(),
+      undefined,
+      new Set([`IN::${canonicalize("FUIKLV26080001")}`])
+    );
+    const after = withOdoo.variances.find((x) => x.barcode === canonicalize("FUIKLV26080001"));
+    expect(after?.variance_name).toBe(VARIANCE.ODOO_POSTED_LATE);
+    expect(after?.bucket).toBe("INFO");
+    expect(after?.priority).toBe("Info");
+    // Still recorded, still visible — only the accusation is withdrawn.
+    expect(after?.present.O).toBe(false);
+  });
+
+  it("an OUTWARD posting never excuses a missing INWARD one", () => {
+    // Direction-keyed on purpose: a unit legitimately moves both ways in a
+    // week, and letting an outward Odoo posting settle an inward gap would
+    // silence exactly the case worth chasing.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "IN", barcode: "FUIKLV26080001", status: "Received", jobType: "PO Inward" }),
+      ],
+      "BANGALORE",
+      undefined,
+      new Set(),
+      undefined,
+      new Set([`OUT::${canonicalize("FUIKLV26080001")}`])
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("FUIKLV26080001"));
+    expect(v?.variance_name).toBe(VARIANCE.SHEET_ONLY);
+    expect(v?.bucket).toBe("REAL");
+  });
+
+  it("a unit Odoo has never posted keeps its chase item", () => {
+    // The whole point. Positive evidence only — the rule needs Odoo to actually
+    // hold the unit, so a genuine missing posting is untouched.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "IN", barcode: "FUIKLV26080001", status: "Received", jobType: "PO Inward" }),
+      ],
+      "BANGALORE",
+      undefined,
+      new Set(),
+      undefined,
+      new Set([`IN::${canonicalize("SOMETHINGELSE99")}`])
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("FUIKLV26080001"));
+    expect(v?.variance_name).toBe(VARIANCE.SHEET_ONLY);
+    expect(v?.bucket).toBe("REAL");
+  });
+
+  it("a unit Odoo posted ON the day is unaffected — that is presence, not history", () => {
+    // O is present, so no Odoo-blaming rung fires at all and the late-posting
+    // demotion must not reach in and relabel a perfectly ordinary row.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "SHEET", direction: "IN", barcode: "FUIKLV26080001", status: "Received" }),
+        r({ source: "ODOO", direction: "IN", barcode: "FUIKLV26080001", status: "done", createdOn: RUN }),
+      ],
+      "BANGALORE",
+      undefined,
+      new Set(),
+      undefined,
+      new Set([`IN::${canonicalize("FUIKLV26080001")}`])
+    );
+    const v = res.variances.find((x) => x.barcode === canonicalize("FUIKLV26080001"));
+    expect(v?.variance_name).not.toBe(VARIANCE.ODOO_POSTED_LATE);
+  });
+
   it("a unit a floor book DID see today is untouched by the nearby-day rule", () => {
     // The rule reads the presence pattern, not the barcode: a unit the ops sheet
     // logged today is not an Odoo-only echo however many nearby days also hold
