@@ -8,9 +8,9 @@
 // CRON_SECRET-gated, same as the reconcile job. GET (Vercel Cron) + POST (manual).
 // Optional ?date=YYYY-MM-DD to re-send a specific day's digest.
 
-import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { DISABLED_BODY, cronAuthorized, scheduledJobsDisabled } from "@/lib/reconcile/cron-guard";
 import {
   buildDigestFromDb,
   sendReconciliationDigest,
@@ -29,20 +29,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const header = req.headers.get("authorization") ?? "";
-  const expected = `Bearer ${secret}`;
-  const a = Buffer.from(header);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
 async function handle(req: NextRequest) {
-  if (!authorized(req)) {
+  if (!cronAuthorized(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  // Authorised FIRST, so an unauthenticated caller never learns which
+  // deployment owns the schedule.
+  if (scheduledJobsDisabled()) return NextResponse.json(DISABLED_BODY);
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json({ error: "Supabase not configured." }, { status: 500 });
   }
