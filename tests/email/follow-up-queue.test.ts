@@ -6,7 +6,7 @@ import {
 } from "../../lib/email/followup/queue";
 import { isRerunFresh } from "../../lib/email/followup/build";
 import { checkSheetCoverage, SHEET_TRUNCATION_FLOOR } from "../../lib/reconcile/sheet-guard";
-import { recheckTargetDate } from "../../lib/reconcile/cron-dates";
+import { recheckTargetDate, REPORTING_LAG_DAYS } from "../../lib/reconcile/cron-dates";
 import { addDays } from "../../lib/engine/dates";
 import type { TotalsSnapshot } from "../../lib/email/followup/snapshot";
 
@@ -60,18 +60,23 @@ describe("when the follow-up is due", () => {
   it("is scheduled BEFORE the drain, so cron jitter cannot slip it a day", () => {
     // The digest cron fires at 11:15Z. send_at must be earlier, or a negative
     // jitter misses `send_at <= now` and the row waits another 24 hours.
-    expect(followUpSendAt("2026-07-24")).toBe("2026-07-27T11:00:00.000Z");
+    expect(followUpSendAt("2026-07-24")).toBe("2026-07-28T11:00:00.000Z");
   });
 
-  it("is three days after the business date", () => {
-    // D's digest goes out on D+1, the follow-up two days after that.
-    expect(FOLLOW_UP_DELAY_DAYS).toBe(3);
-    expect(followUpSendAt("2026-07-24").slice(0, 10)).toBe(addDays("2026-07-24", 3));
+  it("trails the business date by the re-check's own offset", () => {
+    // NOT a literal. The follow-up must land on the afternoon the re-check pass
+    // re-runs that date; the re-check sits two days behind the primary, and the
+    // primary itself now trails by REPORTING_LAG_DAYS. Hard-coding 3 here is
+    // what would have broken silently the moment the lag moved to 1.
+    expect(FOLLOW_UP_DELAY_DAYS).toBe(3 + REPORTING_LAG_DAYS);
+    expect(followUpSendAt("2026-07-24").slice(0, 10)).toBe(
+      addDays("2026-07-24", FOLLOW_UP_DELAY_DAYS)
+    );
   });
 
   it("crosses a month and a year boundary", () => {
-    expect(followUpSendAt("2026-01-30").slice(0, 10)).toBe("2026-02-02");
-    expect(followUpSendAt("2026-12-30").slice(0, 10)).toBe("2027-01-02");
+    expect(followUpSendAt("2026-01-30").slice(0, 10)).toBe("2026-02-03");
+    expect(followUpSendAt("2026-12-30").slice(0, 10)).toBe("2027-01-03");
   });
 });
 

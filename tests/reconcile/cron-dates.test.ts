@@ -7,6 +7,7 @@ import {
   lastClosedBusinessDate,
   reconcileTargetDate,
   recheckTargetDate,
+  REPORTING_LAG_DAYS,
 } from "../../lib/reconcile/cron-dates";
 import { addDays } from "../../lib/engine/dates";
 import {
@@ -22,10 +23,6 @@ const atIst = (iso: string, istHour: number, istMin = 0) => {
   return new Date(Date.UTC(y, m - 1, d, istHour, istMin) - 5.5 * 3600e3);
 };
 
-const addOneDay = (iso: string) => {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
-};
 const minusOneDay = (iso: string) => {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
@@ -47,22 +44,35 @@ describe("business day — 15:00 → 15:00 IST", () => {
     expect(istDate(atIst("2026-07-26", 0, 30))).toBe("2026-07-26");
   });
 
-  it("the worked example: 25 Jul is reconciled AND emailed on the 26th afternoon", () => {
-    expect(reconcileTargetDate(atIst("2026-07-26", 16, 30))).toBe("2026-07-25");
-    expect(digestTargetDate(atIst("2026-07-26", 16, 45))).toBe("2026-07-25");
+  it("the worked example: 25 Jul is reconciled AND emailed on the 27th afternoon", () => {
+    // One day later than the window shutting. REPORTING_LAG_DAYS = 1 lets a day
+    // settle before it is judged: Odoo routinely posts a movement the day after
+    // the floor recorded it, and judging at 20:00 on the 26th filed those as
+    // "not posted in Odoo" chase items for entries that arrived hours later.
+    expect(reconcileTargetDate(atIst("2026-07-27", 16, 30))).toBe("2026-07-25");
+    expect(digestTargetDate(atIst("2026-07-27", 16, 45))).toBe("2026-07-25");
+  });
+
+  it("reports the lag it declares, not a number written twice", () => {
+    // The whole cadence is derived from this constant, so the test reads it
+    // rather than restating it — a changed lag must not need seven edits here.
+    for (const day of ["2026-07-25", "2026-11-30", "2027-02-28"]) {
+      const fires = addDays(day, 1 + REPORTING_LAG_DAYS);
+      expect(reconcileTargetDate(atIst(fires, 16, 30))).toBe(day);
+    }
   });
 
   it("both daily jobs always name the same business day", () => {
     for (const day of ["2026-07-23", "2026-08-01", "2026-12-31", "2027-03-01"]) {
-      const next = addOneDay(day);
+      const next = addDays(day, 1 + REPORTING_LAG_DAYS);
       expect(reconcileTargetDate(atIst(next, 16, 30))).toBe(day);
       expect(digestTargetDate(atIst(next, 16, 45))).toBe(day);
     }
   });
 
   it("crosses month and year boundaries", () => {
-    expect(reconcileTargetDate(atIst("2026-08-01", 16))).toBe("2026-07-31");
-    expect(digestTargetDate(atIst("2027-01-01", 16, 45))).toBe("2026-12-31");
+    expect(reconcileTargetDate(atIst("2026-08-01", 16))).toBe("2026-07-30");
+    expect(digestTargetDate(atIst("2027-01-01", 16, 45))).toBe("2026-12-30");
   });
 
   it("lastClosedBusinessDate is always exactly one day behind the open one", () => {
@@ -114,14 +124,14 @@ describe("business-day UTC windows", () => {
 
 
 describe("the re-check pass and the follow-up it feeds", () => {
-  // D's digest goes out on D+1; the follow-up on D+3. So D must be re-run on
-  // D+3, which is `primary - 2` on that afternoon. A third pipeline pass was
+  // D's digest goes out on D+1+lag; the follow-up two days after that. So D
+  // must be re-run that same afternoon, which is `primary - 2`. A third pipeline pass was
   // the alternative and does not fit the 60s ceiling (measured p50 36s a pass).
   it("re-runs the date whose follow-up is due the same afternoon", () => {
-    // 26 Jul: reconciled 27th, emailed 27th, followed up on the 29th.
-    expect(reconcileTargetDate(atIst("2026-07-27", 16, 30))).toBe("2026-07-26");
-    expect(recheckTargetDate(atIst("2026-07-29", 16, 30))).toBe("2026-07-26");
-    expect(followupTargetDate(atIst("2026-07-29", 16, 45))).toBe("2026-07-26");
+    // 26 Jul: reconciled 28th, emailed 28th, followed up on the 30th.
+    expect(reconcileTargetDate(atIst("2026-07-28", 16, 30))).toBe("2026-07-26");
+    expect(recheckTargetDate(atIst("2026-07-30", 16, 30))).toBe("2026-07-26");
+    expect(followupTargetDate(atIst("2026-07-30", 16, 45))).toBe("2026-07-26");
   });
 
   it("keeps the re-check and the follow-up on the same date, always", () => {
@@ -164,7 +174,7 @@ describe("Hobby cron jitter cannot move the target date", () => {
   it("would flip if the cadence were ever moved before 15:00 IST", () => {
     // The guard rail: 14:59 belongs to the PREVIOUS business day. Anyone
     // tempted to move the crons earlier has to confront this test.
-    expect(reconcileTargetDate(atIst("2026-07-29", 14, 59))).toBe("2026-07-27");
-    expect(reconcileTargetDate(atIst("2026-07-29", 15, 1))).toBe("2026-07-28");
+    expect(reconcileTargetDate(atIst("2026-07-29", 14, 59))).toBe("2026-07-26");
+    expect(reconcileTargetDate(atIst("2026-07-29", 15, 1))).toBe("2026-07-27");
   });
 });

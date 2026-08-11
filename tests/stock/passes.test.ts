@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultPair, lagDaysOf, toPasses, type RunRow } from "../../lib/stock/passes";
-import { recheckTargetDate } from "../../lib/reconcile/cron-dates";
+import { recheckTargetDate, REPORTING_LAG_DAYS } from "../../lib/reconcile/cron-dates";
+import { addDays } from "../../lib/engine/dates";
 
 const run = (over: Partial<RunRow>): RunRow => ({
   id: "r1",
@@ -66,10 +67,15 @@ describe("the lag, derived and never hardcoded", () => {
 
   it("agrees with the cron's own re-check target", () => {
     // If these ever disagree the page labels the wrong run as the re-check.
+    // The afternoon is derived, not written: the re-check trails the primary by
+    // two days and the primary now trails the closed day by REPORTING_LAG_DAYS,
+    // so a change to the lag moves this test with the code instead of breaking
+    // it into a number nobody can justify.
     const business = "2026-07-26";
-    const afternoon = new Date("2026-07-29T11:30:00Z"); // 17:00 IST
+    const lag = 3 + REPORTING_LAG_DAYS;
+    const afternoon = new Date(`${addDays(business, lag)}T11:30:00Z`); // 17:00 IST
     expect(recheckTargetDate(afternoon)).toBe(business);
-    expect(lagDaysOf(business, afternoon.toISOString())).toBe(3);
+    expect(lagDaysOf(business, afternoon.toISOString())).toBe(lag);
   });
 });
 

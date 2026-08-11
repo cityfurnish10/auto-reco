@@ -6,16 +6,27 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { addDays } from "../../engine/dates";
+import { REPORTING_LAG_DAYS } from "../../reconcile/cron-dates";
 import type { TotalsSnapshot } from "./snapshot";
 
 /**
- * Business date + 3.
+ * How long after a business date its follow-up email goes out.
  *
- * D's digest goes out on D+1, and the follow-up two days after that. The
- * reconcile cron's re-check pass re-runs D on the same afternoon — see
- * recheckTargetDate(), which must stay in step with this number.
+ * THE INVARIANT: the follow-up must land on the afternoon the re-check pass
+ * re-runs that date, or it reports numbers from before the re-run and tells the
+ * owner nothing has improved when it has.
+ *
+ * At 17:00 IST on day Y the re-check targets Y − 3 − REPORTING_LAG_DAYS
+ * (recheckTargetDate is `primary − 2`, and primary is `Y − 1 − lag`). The
+ * follow-up for date D fires on D + this number. Setting D equal to the
+ * re-check target gives `delay = 3 + REPORTING_LAG_DAYS`.
+ *
+ * DERIVED, not written down. It was the literal 3 while the lag was 0, and the
+ * comment merely asked the next person to keep the two "in step" by hand —
+ * which is precisely what changing the lag to 1 would have broken, silently and
+ * only in production, three days after the deploy.
  */
-export const FOLLOW_UP_DELAY_DAYS = 3;
+export const FOLLOW_UP_DELAY_DAYS = 3 + REPORTING_LAG_DAYS;
 
 /**
  * 11:00Z — fifteen minutes BEFORE the 11:15Z digest cron.
