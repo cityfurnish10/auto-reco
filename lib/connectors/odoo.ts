@@ -21,8 +21,15 @@
 // or METABASE_USERNAME + METABASE_PASSWORD.
 
 import type { Connector, CityTaggedRow } from "./types";
+import type { City } from "../sample-data";
 import type { Direction } from "../engine/types";
-import { businessDaySpanToUtcWindow, utcToBusinessDate } from "./ist-window";
+import { canonicalize } from "../engine/barcode";
+import { addDays } from "../engine/dates";
+import {
+  businessDayToUtcWindow,
+  businessDaySpanToUtcWindow,
+  utcToBusinessDate,
+} from "./ist-window";
 import { normalizeOdooWarehouse } from "./odoo-mapping";
 import { metabaseConfigured, runNativeSql } from "./metabase";
 
@@ -204,3 +211,147 @@ export const odooConnector: Connector = {
     return rows;
   },
 };
+
+/** Ceiling for the optional lookahead query. ~20x its measured 155-305ms. */
+const LOOKAHEAD_TIMEOUT_MS = 5_000;
+
+// Only what the lookahead needs. Deliberately NOT the pull query above: this
+// answers one yes/no question per unit ("has Odoo posted this since?"), so it
+// carries no customer, product or SO text and stays cheap even across four days.
+function buildLookaheadQuery(startUtc: string, endUtcExclusive: string): string {
+  const start = startUtc.slice(0, 19).replace("T", " ");
+  const end = endUtcExclusive.slice(0, 19).replace("T", " ");
+  return `
+SELECT
+    sl.name                                         AS barcode,
+    sw.code                                         AS warehouse_code,
+    sml.movement_type                               AS direction,
+    so.reference_no                                 AS reference_no
+FROM stock_move_line sml
+JOIN stock_picking          sp   ON sp.id  = sml.picking_id
+JOIN stock_picking_type     spt  ON spt.id = sp.picking_type_id
+JOIN stock_warehouse        sw   ON sw.id  = spt.warehouse_id
+JOIN stock_lot              sl   ON sl.id  = sml.lot_id
+LEFT JOIN sale_order        so   ON so.id  = sml.sale_order_id
+WHERE
+    sml.state = 'done'
+    AND sml.date >= '${start}'
+    AND sml.date <  '${end}'
+    AND sml.movement_type IN ('In', 'Out')
+ORDER BY sml.date ASC;
+`.trim();
+}
+
+/**
+ * Canonical barcodes Odoo posted on the business days AFTER `runDate`, keyed
+ * `${direction}::${canonical}` per city — the same shape as
+ * loadRecentOdooPostings, so the two union.
+ *
+ * WHY A LIVE READ AND NOT MORE HISTORY. loadRecentOdooPostings answers the same
+ * question from source_rows / movement_events, and on the run that matters it
+ * cannot answer it at all: those tables only hold D+1 once D+1 has ITSELF been
+ * reconciled, which happens a day or more after D's own run. Measured over the
+ * 21 business dates 2026-07-20 … 2026-08-09, the first run of a date fired
+ * before ANY forward day had been reconciled — 21 of 21. So on the primary pass
+ * the history set is empty, every time, and ODOO_POSTED_LATE — the whole
+ * mechanism built for vendor receipts — can only ever fire days later on a
+ * re-check. The morning email is produced by the primary pass, so the warehouse
+ * reads the version of the day with the false chase items still in it.
+ *
+ * That is what this closes — PARTLY, and the size of "partly" is the number to
+ * know before trusting it.
+ *
+ * The primary run for business date D fires at 20:00 IST on D+2, so at that
+ * instant D+3 has not started and D+2 is five hours old. D+1 is fully elapsed
+ * but is already inside the ±1 pull, where it arrives as present_o and is
+ * handled by the next-day rung — so the only days this ADDS are D+2 and D+3,
+ * and much of that has not happened yet.
+ *
+ * MEASURE THAT AGAINST THE ACCUSED UNITS, NOT AGAINST ODOO'S TOTAL TRAFFIC.
+ * Only 12% of all D+2/D+3 postings exist when the cron fires, and that number
+ * is meaningless here: the demotion consumes only postings that match a unit
+ * some floor book recorded and Odoo did not, and those are not spread evenly
+ * across the window. The vendor catch-up batch posts in the 15:00-20:00 IST
+ * slice, which is exactly the slice that exists at run time. Reachable
+ * demotions landing on the primary pass, measured:
+ *
+ *     2026-08-06   118 of 220   (54%)  — 116 of them the Bangalore PO batch
+ *     2026-08-07    40 of  56   (71%)
+ *     2026-08-02     3 of   8   ·  2026-08-04   2 of 25  ·  2026-08-05  0 of 8
+ *
+ * So on the day this was built for it catches half, and on quiet days it can
+ * catch none. Against a stored history that contributes exactly zero on every
+ * primary pass, that is the whole of the gain.
+ *
+ * The lever that reaches the remainder is REPORTING_LAG_DAYS, not a wider
+ * window: at a lag of 2 the run fires at 20:00 on D+3 and the same window is
+ * 57-70% complete by volume. That is a freshness trade for the owner to make —
+ * the digest would report the day before yesterday's yesterday — and it is
+ * deliberately not smuggled in here.
+ *
+ * WHAT IT DELIBERATELY DOES NOT DO. It never becomes presence. The pull window
+ * above stays ±1 and filterOdooWindow stays ±1, so present_o keeps meaning what
+ * it already means — "Odoo posted this within a day of the business date" —
+ * rather than widening to four days, which would have the four-way check report
+ * agreement that never happened. (±1 is itself a stretch of the word "present",
+ * inherited deliberately: of the 55 rows the absence gate retires today, 54 have
+ * a same-direction posting on the business date itself and 1 rests on a D+1
+ * posting. That is the existing window, not something added here.) These keys feed
+ * exactly one decision — refusing to tell a warehouse to post an entry that
+ * demonstrably already exists — and they arrive as a demotion to INFO with the
+ * "posted a few days on" name, never as a silent drop.
+ *
+ * Best-effort by contract: the caller swallows failures, because a lookahead
+ * that does not answer costs a demotion, and a reconcile that dies costs a day.
+ */
+export async function fetchOdooPostingsAfter(
+  runDate: string,
+  days: number
+): Promise<Partial<Record<City, Set<string>>>> {
+  const out: Partial<Record<City, Set<string>>> = {};
+  if (days < 1) return out;
+  if (!metabaseConfigured()) return out;
+  const dbId = Number(process.env.METABASE_ODOO_DB_ID);
+  if (!dbId) return out;
+
+  // [D+1 .. D+days] of whole business days. Written as two window calls rather
+  // than a negative daysBefore so the range is readable at the call site.
+  const startUtc = businessDayToUtcWindow(addDays(runDate, 1)).startUtc;
+  const endUtcExclusive = businessDayToUtcWindow(addDays(runDate, days)).endUtcExclusive;
+
+  // Timed out where the main pull is not. This query is optional — losing it
+  // costs a demotion, and the caller treats a failure as "no evidence" — so it
+  // must never be the thing that eats the 60s function ceiling. Measured median
+  // 155-305ms against live Odoo, so five seconds is ~20x the observed cost.
+  const table = await runNativeSql(
+    dbId,
+    buildLookaheadQuery(startUtc, endUtcExclusive),
+    LOOKAHEAD_TIMEOUT_MS
+  );
+  let skipped = 0;
+  for (const r of table.rows) {
+    const city = normalizeOdooWarehouse(r.warehouse_code);
+    const barcode = str(r.barcode);
+    const direction = toDirection(r.direction);
+    if (!city || !barcode || !direction) {
+      skipped++;
+      continue;
+    }
+    // Same exclusion as the pull: an order transfer is paperwork, so it can
+    // never be the "the entry was made after all" evidence this set stands for.
+    if (isOrderTransfer(r.reference_no)) {
+      skipped++;
+      continue;
+    }
+    (out[city] ??= new Set()).add(`${direction}::${canonicalize(barcode)}`);
+  }
+  // Counted for the same reason the pull counts its own drops: a set that
+  // silently shrinks looks exactly like a quiet day. Measured 44 of 1,790 rows
+  // (2.5%) dropped as order transfers on 2026-08-06 — normal; a jump is not.
+  if (skipped > 0) {
+    console.info(
+      `[odoo] lookahead for ${runDate}: ${table.rows.length} posting(s) in +1…+${days}, ${skipped} skipped (order transfer, unknown warehouse, or no barcode/direction).`
+    );
+  }
+  return out;
+}

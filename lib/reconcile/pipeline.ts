@@ -14,6 +14,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { runAllCities, type MultiCityRun } from "../engine/run";
 import { guardTruncatedSheet } from "./sheet-guard";
 import { pullAll } from "../connectors";
+import { fetchOdooPostingsAfter } from "../connectors/odoo";
 import { processPendingGuardUploads } from "../connectors/ocr/process";
 import { readWarehouseCalendar } from "../connectors/warehouse-calendar";
 import { buildRunCitySnapshots } from "./run-snapshot";
@@ -23,6 +24,7 @@ import {
   saveSourceRows,
   loadRecentFloorBarcodes,
   loadRecentOdooPostings,
+  ODOO_HISTORY_DAYS,
   upsertVariances,
   upsertMovementEvents,
   resolveStaleOpenVariances,
@@ -164,7 +166,28 @@ export async function runReconcilePipeline(
     //    two days after the goods land, so under the ±1 pull window every one of
     //    them raised a false chase item. Both reads are independent, so they run
     //    together rather than one after the other.
-    const [recentFloorByCity, recentOdooByCity] = await Promise.all([
+    //
+    //    THE STORED HISTORY IS EMPTY ON THE RUN THAT MATTERS, which is why the
+    //    live lookahead below exists. loadRecentOdooPostings reads D+1 … D+3
+    //    out of source_rows / movement_events, and those rows only exist once
+    //    D+1 has itself been reconciled — which happens a day or more AFTER D's
+    //    own run. Measured over the 21 business dates 2026-07-20 … 2026-08-09:
+    //    the first run of a date fired before any forward day had been
+    //    reconciled, 21 times out of 21. So on the primary pass the set is
+    //    always empty and the demotion cannot fire; it only ever fired on a
+    //    re-check days later, long after the digest went out.
+    //
+    //    fetchOdooPostingsAfter asks Odoo the same question directly, at run
+    //    time. The two are unioned rather than swapped: the DB read still
+    //    covers a re-check whose Metabase call fails, and the live read covers
+    //    the primary pass the DB read structurally cannot. Neither becomes
+    //    presence — see the note in fetchOdooPostingsAfter, which also carries
+    //    the measured reach (~12% of the D+2/D+3 postings exist at 20:00 on
+    //    D+2; the rest are posted after the cron fires).
+    //
+    //    Skipped when the Odoo pull itself failed — the lookahead would fail
+    //    the same way, only after burning its own timeout.
+    const [recentFloorByCity, storedOdooByCity, freshOdooByCity] = await Promise.all([
       loadRecentFloorBarcodes(db, runDate).catch((e) => {
         console.warn("loadRecentFloorBarcodes failed:", e instanceof Error ? e.message : e);
         return {};
@@ -173,7 +196,34 @@ export async function runReconcilePipeline(
         console.warn("loadRecentOdooPostings failed:", e instanceof Error ? e.message : e);
         return {};
       }),
+      results.find((r) => r.source === "ODOO")?.ok === false
+        ? Promise.resolve({} as Partial<Record<City, ReadonlySet<string>>>)
+        : fetchOdooPostingsAfter(runDate, ODOO_HISTORY_DAYS).catch((e) => {
+            const msg = e instanceof Error ? e.message : String(e);
+            // Into the run's warnings, not just the console. A lookahead that
+            // silently returns nothing is indistinguishable from one that
+            // correctly found nothing — freshCount = 0 is the normal healthy
+            // value on a primary pass — so the only way to tell them apart
+            // afterwards is if the failure was written down. The C1 truncation
+            // throw arrives here too, and a guard added to be loud must not be
+            // swallowed into silence by the caller that catches it.
+            pipelineWarnings.push(`Odoo late-posting lookahead failed: ${msg}`);
+            console.warn("fetchOdooPostingsAfter failed:", msg);
+            return {} as Partial<Record<City, ReadonlySet<string>>>;
+          }),
     ]);
+    const recentOdooByCity: Partial<Record<City, ReadonlySet<string>>> = {};
+    for (const part of [storedOdooByCity, freshOdooByCity]) {
+      for (const [city, keys] of Object.entries(part) as [City, ReadonlySet<string>][]) {
+        const merged = (recentOdooByCity[city] ??= new Set<string>()) as Set<string>;
+        for (const k of keys) merged.add(k);
+      }
+    }
+    const freshCount = Object.values(freshOdooByCity).reduce((n, s) => n + s.size, 0);
+    const storedCount = Object.values(storedOdooByCity).reduce((n, s) => n + s.size, 0);
+    console.log(
+      `[reconcile] late-Odoo evidence for ${runDate}: ${freshCount} unit(s) from the live +1…+${ODOO_HISTORY_DAYS} lookahead, ${storedCount} from stored history`
+    );
     // runDate doubles as the engine's fallback date: a city with no register
     // upload AND a quiet DT (no derivable dates) still reconciles its other
     // sources against the requested day instead of failing.
