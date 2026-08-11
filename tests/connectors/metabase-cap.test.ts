@@ -78,10 +78,13 @@ describe("the row cap", () => {
   });
 
   it("throws when Metabase says it cut the result short", async () => {
-    // Never a warning. A short Odoo pull does not look like a failure anywhere
-    // downstream: rows still come back, the city reads as REPORTED, and the
-    // engine confidently accuses the warehouse of not posting entries it cannot
-    // see. A failed run gets re-run; a quiet one gets emailed.
+    // Never a warning — and note what the throw does and does not buy. It does
+    // NOT stop the run: the connector error is caught upstream, the run goes
+    // 'partial' and the digest still sends. What it buys is reported.O = false,
+    // which disables every Odoo-blaming rung. A truncated pull returns rows, so
+    // the city reads as REPORTED and the engine confidently accuses the
+    // warehouse of not posting entries it cannot see. Silence about Odoo beats
+    // a confident accusation built on half of it.
     stub(table(2000, true));
     await expect(runNativeSql(5, "SELECT 1")).rejects.toThrow(/truncated/i);
   });

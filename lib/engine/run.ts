@@ -344,11 +344,13 @@ export function runReconciliation(
   // Out posting on the 7th. This row evidences the same-day leak only.)
   //
   // Scale, measured over 2026-08-01…09: 222 of 5,501 ledger rows carry
-  // odoo_same_day with no same-direction done posting that day, and 111 of them
-  // carry "Odoo Posting Only — No Gate / Ops / DT Record" — High, REAL, gated on
-  // odooSameDay at ladder.ts rung 9 — plus 8 ODOO_ONLY_TODAY. Roughly 119 false
-  // chase items in nine days. A further 368 carry a leaked odoo_next_day, but
-  // none of those are ODOO_POSTED_NEXT_DAY, so no demotion is lost.
+  // odoo_same_day with no same-direction done posting that day. Most of what
+  // that produces is noise rather than work — 111 are "Odoo Posting Only", which
+  // buckets.ts maps to INFO and applyBucket forces to Info priority (all 603
+  // such rows in the window are INFO/Info, checked). The chase-list cost is the
+  // smaller number: 13 leaked rows are REAL/High, chiefly ODOO_ONLY_TODAY, of
+  // which 7 disappear on 2026-08-09 alone. A further 368 carry a leaked
+  // odoo_next_day, but none are ODOO_POSTED_NEXT_DAY, so no demotion is lost.
   //
   // This matters most to whatever READS the flags as evidence: the absence gate
   // in resolveStaleOpenVariances retires a row when the book it accused now

@@ -295,8 +295,12 @@ ORDER BY sml.date ASC;
  * rather than widening to four days, which would have the four-way check report
  * agreement that never happened. (±1 is itself a stretch of the word "present",
  * inherited deliberately: of the 55 rows the absence gate retires today, 54 have
- * a same-direction posting on the business date itself and 1 rests on a D+1
- * posting. That is the existing window, not something added here.) These keys feed
+ * a same-direction posting on the business date itself. The one exception rests
+ * on a D+1 INTERNAL RETURN — PUNE 2026-08-06 OUT AP815719051098, matched by
+ * PUN/INT-RET/01433 on the 7th, the unit's only real OUT being 2026-08-01. An
+ * internal return is paperwork, and run.ts's customer-flow guard only excludes
+ * `/INT/` references, which INT-RET does not match. That is the existing
+ * window's semantics, not something added here.) These keys feed
  * exactly one decision — refusing to tell a warehouse to post an entry that
  * demonstrably already exists — and they arrive as a demotion to INFO with the
  * "posted a few days on" name, never as a silent drop.

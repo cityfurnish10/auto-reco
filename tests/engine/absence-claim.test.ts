@@ -2,10 +2,11 @@
 // its own, so the tests that matter are the ones that stop it retiring too much.
 //
 // The headline number to keep in mind: gating retirement on varianceSource()
-// instead — the obvious-looking fix — fires on 4,272 of 5,849 live open rows
-// (73%), because for the *_ONLY family varianceSource names the book that DID
-// record the unit. The correct gate fires on 55. That gap is what these tests
-// defend.
+// instead — the obvious-looking fix — fires on roughly SEVEN IN TEN live open
+// rows (two independent replays of the live queue on 2026-08-11 put it at 3,576
+// and 3,630 of 5,025, the gap being how each treats CROSS-labelled names),
+// because for the *_ONLY family varianceSource names the book that DID record
+// the unit. The correct gate fires on 55. That gap is what these tests defend.
 
 import { describe, expect, it } from "vitest";
 import { ABSENCE_CLAIM, absenceClaim, absenceContradicted } from "../../lib/engine/absence-claim";
@@ -162,7 +163,7 @@ describe("what actually retires a row", () => {
   });
 
   it("never retires a name that makes no absence claim", () => {
-    // Nine names, 40.5% of the live open queue. All of them would retire on a
+    // Nine names, 2,285 of 5,025 open rows — 45.5%. All of them would retire on a
     // vacuous .every(), and none of them should.
     const NON_GATEABLE = [
       VARIANCE.WRONG_SCAN,
