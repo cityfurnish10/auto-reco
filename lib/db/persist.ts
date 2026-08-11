@@ -3,7 +3,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { City } from "../sample-data";
-import type { CityRunResult, ReportedSources, SourceRow } from "../engine/types";
+import type { CityRunResult, ReportedSources, SourceFlags, SourceRow } from "../engine/types";
+import { absenceContradicted } from "../engine/absence-claim";
 import type { MultiCityRun } from "../engine/run";
 import { varianceSource } from "../engine/variance-source";
 import { RESOLVED_LATE_NOTE } from "../engine/resolution";
@@ -489,6 +490,70 @@ function warnNo0013(): void {
   );
 }
 
+/**
+ * The columns the stale pass reads, and the two shapes it will accept.
+ *
+ * reported_* arrived with migration 0013. Migrations here are applied BY HAND,
+ * so a deploy can legitimately run against a database that has not seen it —
+ * and a select naming a column that does not exist fails the whole pass, taking
+ * the supersede and full-coverage branches down with the new one. So the wide
+ * select is tried once and the narrow one is the fallback.
+ */
+const STALE_COLUMNS_BASE = "id, direction, barcode, variance_name";
+const STALE_COLUMNS_WIDE = `${STALE_COLUMNS_BASE}, reported_p, reported_s, reported_d, reported_o`;
+
+interface StaleRow {
+  id: string;
+  direction: string;
+  barcode: string;
+  variance_name: string;
+  reported_p?: boolean | null;
+  reported_s?: boolean | null;
+  reported_d?: boolean | null;
+  reported_o?: boolean | null;
+}
+
+const NOTHING_PRESENT: SourceFlags = { P: false, S: false, D: false, O: false };
+/**
+ * The reading used when reported_* is not on the row at all — i.e. only on a
+ * database that has never had migration 0013, where the SELECT above already
+ * fell back to the narrow column list.
+ *
+ * NOT for a legacy ROW on a migrated database: 0013 declares all eight flags
+ * `BOOLEAN NOT NULL DEFAULT FALSE`, so an old row reads all-FALSE rather than
+ * null, `testable` comes out empty and the gate declines. That is also safe,
+ * but by the opposite mechanism, and it is worth being exact about which one
+ * applies — measured, `reported_p IS NULL` matches 0 rows in production.
+ *
+ * "Every source reported" is the STRICTEST assumption available: it puts the
+ * variance name's whole absence set into the testable set, so every accused
+ * book must be present before the row retires. Guessing the other way — fewer
+ * sources reported, so fewer need checking — would retire rows on less
+ * evidence, which is the one direction this must never fail in.
+ */
+const ASSUME_ALL_REPORTED: SourceFlags = { P: true, S: true, D: true, O: true };
+
+function reportedOf(row: StaleRow): SourceFlags {
+  if (row.reported_p == null && row.reported_s == null && row.reported_d == null && row.reported_o == null) {
+    return ASSUME_ALL_REPORTED;
+  }
+  return {
+    P: !!row.reported_p,
+    S: !!row.reported_s,
+    D: !!row.reported_d,
+    O: !!row.reported_o,
+  };
+}
+
+let warnedNoReportedCols = false;
+function warnNoReportedColumns(): void {
+  if (warnedNoReportedCols) return;
+  warnedNoReportedCols = true;
+  console.warn(
+    "[resolveStaleOpenVariances] migration 0013 not applied — reported_* columns are missing, so the absence gate falls back to requiring EVERY source a variance name accuses to be present. Strictly conservative: it retires fewer rows, never more."
+  );
+}
+
 export interface StaleResolution {
   superseded: number;
   resolvedLate: number;
@@ -547,6 +612,9 @@ export async function resolveStaleOpenVariances(
   // the count is the only surviving trace that they existed at all.
   const byCity: Partial<Record<City, { superseded: number; resolvedLate: number }>> = {};
   const now = new Date().toISOString();
+  // Narrowed once per call if the database predates migration 0013, so the
+  // fallback is paid at most once rather than on every page of every city.
+  let staleColumns: string = STALE_COLUMNS_WIDE;
 
   for (const cr of perCity) {
     const rep = reportedByCity[cr.city];
@@ -579,22 +647,56 @@ export async function resolveStaleOpenVariances(
       if (e.outcome === "SUPPRESSED") suppressedUnits.add(`${e.direction}::${e.barcode}`);
     }
 
+    // What the ledger says about each unit THIS run — the positive evidence the
+    // absence gate below stands on. Built from cr.movement_events rather than
+    // re-read from the database for the same reason the suppression set above
+    // is: it is the object this very run is about to persist, so the two can
+    // never disagree about what was seen.
+    //
+    // CROSS ROWS NEVER MATCH, and today that is harmless by coincidence rather
+    // than by design. A variance may carry direction 'CROSS'; a ledger row may
+    // not (migration 0015 CHECKs direction IN ('IN','OUT')), so a CROSS row
+    // always falls to NOTHING_PRESENT. Measured: 56 of 5,025 open rows have no
+    // ledger match and all 56 are exactly the CROSS ones — every one of them
+    // REPLACEMENT_CONFIRM, whose absence claim is empty, so the gate is a no-op
+    // on them either way. If a CROSS-producing name ever gains a claim, this
+    // must first OR the two legs together (see orFlags in direction-conflict.ts)
+    // — otherwise "no ledger row" would read as "the accused books are still
+    // absent" for a row whose evidence lives under two other keys.
+    const presentNow = new Map<string, SourceFlags>();
+    for (const e of cr.movement_events) {
+      presentNow.set(`${e.direction}::${e.barcode}`, e.present);
+    }
+
     // Paginate — PostgREST caps un-ranged selects at 1000 rows and a big city's
     // day can exceed that; a truncated read here would silently skip stale rows.
-    let data: { id: string; direction: string; barcode: string; variance_name: string }[] = [];
+    let data: StaleRow[] = [];
     for (let from = 0; ; from += 1000) {
-      const { data: page, error } = await db
-        .from("variances")
-        .select("id, direction, barcode, variance_name")
-        .eq("business_date", runDate)
-        .eq("city", cr.city)
-        .eq("status", "open")
-        // Deterministic order — a row missed across an unordered page boundary
-        // here is a stale open variance that never gets resolved.
-        .order("id", { ascending: true })
-        .range(from, from + 999);
+      const readPage = (columns: string) =>
+        db
+          .from("variances")
+          .select(columns)
+          .eq("business_date", runDate)
+          .eq("city", cr.city)
+          .eq("status", "open")
+          // Deterministic order — a row missed across an unordered page boundary
+          // here is a stale open variance that never gets resolved.
+          .order("id", { ascending: true })
+          .range(from, from + 999);
+
+      let { data: page, error } = await readPage(staleColumns);
+      // isMissingCol, not a hand-rolled code test: PostgREST reports this in two
+      // spellings and the message form is the one a hand-rolled check misses.
+      // This branch is all that stands between an unapplied 0013 and the whole
+      // stale pass throwing — taking the supersede and full-coverage branches
+      // down with it, which is the outcome the fallback exists to prevent.
+      if (isMissingCol(error)) {
+        warnNoReportedColumns();
+        staleColumns = STALE_COLUMNS_BASE; // stop asking for the whole run
+        ({ data: page, error } = await readPage(staleColumns));
+      }
       if (error) throw new Error(`resolveStaleOpenVariances select failed: ${error.message}`);
-      data = data.concat(page ?? []);
+      data = data.concat((page ?? []) as unknown as StaleRow[]);
       if (!page || page.length < 1000) break;
     }
 
@@ -611,6 +713,24 @@ export async function resolveStaleOpenVariances(
         // this needs no full-coverage guard: it rests on positive evidence from
         // this run, exactly like the superseded branch it shares.
         supersededIds.push(row.id as string);
+      } else if (
+        absenceContradicted(
+          row.variance_name,
+          reportedOf(row),
+          presentNow.get(unit) ?? NOTHING_PRESENT
+        )
+      ) {
+        // THE BOOK IT ACCUSED NOW HAS THE UNIT. Positive evidence, so no
+        // coverage guard — same footing as the two branches above.
+        //
+        // It sits BEFORE the fullCoverage branch and consults neither it nor
+        // guardTruncatedSheet, which is safe only because a degraded pull can
+        // remove presence but never invent it: a truncated sheet and a capped
+        // Odoo query both shrink presentNow, so the gate declines rather than
+        // over-fires. guardTruncatedSheet is the one path that can leave
+        // present_s true while reported_s is false, so re-check this the moment
+        // a claim is added for a source whose presence a bad pull could inflate.
+        resolvedIds.push(row.id as string);
       } else if (fullCoverage) {
         resolvedIds.push(row.id as string);
       }
