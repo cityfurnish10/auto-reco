@@ -754,6 +754,84 @@ describe("Section 6 — variance ladder", () => {
     expect(v?.variance_name).not.toBe(VARIANCE.ODOO_POSTED_LATE);
   });
 
+  it("an inward Odoo posting does not mark the OUTWARD leg posted today", () => {
+    // Direction leak, traced live before it was fixed: PUNE 2026-08-06,
+    // AP815719051098, a REAL "Moved on Floor + DT — Not Posted in Odoo" on the
+    // OUT leg. A full paged PUN pull shows PUN/IN/08454 posted In that day and
+    // the only Out posting the day AFTER — zero done outward postings on the
+    // accused day — yet odooSameDay and odooNextDay both read true, because the
+    // sets were keyed on the barcode alone.
+    //
+    // It matters beyond cosmetics: the absence gate in resolveStaleOpenVariances
+    // retires a row once the book it accused holds the unit, so a leaked flag
+    // would retire a true accusation. odooCustomerDirCanon was already keyed
+    // this way for the same reason; these two simply had not been.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "PHYSICAL", direction: "OUT", barcode: "AP815719051098", status: "done", date: RUN }),
+        r({ source: "DT", direction: "OUT", barcode: "AP815719051098", status: "done", date: RUN }),
+        // Odoo holds this serial — inward, same day. A different movement.
+        r({ source: "ODOO", direction: "IN", barcode: "AP815719051098", status: "done", createdOn: RUN }),
+      ],
+      "PUNE"
+    );
+    const out = res.movement_events.find(
+      (e) => e.barcode === canonicalize("AP815719051098") && e.direction === "OUT"
+    );
+    expect(out?.odooSameDay).toBe(false);
+    expect(out?.odooNextDay).toBe(false);
+    const inward = res.movement_events.find(
+      (e) => e.barcode === canonicalize("AP815719051098") && e.direction === "IN"
+    );
+    expect(inward?.odooSameDay).toBe(true);
+  });
+
+  it("a record born today counts only for the direction it was born in", () => {
+    // The third flag, and the one that was left canonical-only when the other
+    // two were keyed. It gates ODOO_ONLY_TODAY — the only REAL an Odoo-only
+    // view can raise — so a leak here manufactures a chase item.
+    //
+    // FUM3XJ19056052, BANGALORE, run date 2026-08-02 is the shape: the OUT
+    // record was created that day, the IN record four business days earlier, so
+    // the IN direction's entry came from the OUT row. On that row the composite
+    // flag still came out false on an unrelated term, so this pins the leak at
+    // the level it actually exists — the set, not the emitted variance.
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        // IN: an old record, posted today. Not a same-day gap.
+        r({ source: "ODOO", direction: "IN", barcode: "FUM3XJ19056052", status: "done", createdOn: RUN, recordCreatedOn: PRIOR, soNumber: "ON-RET-BAN-52534" }),
+        // OUT: a record born today, for the other leg entirely.
+        r({ source: "ODOO", direction: "OUT", barcode: "FUM3XJ19056052", status: "done", createdOn: RUN, recordCreatedOn: RUN, soNumber: "ON-RET-BAN-46642" }),
+      ],
+      "BANGALORE"
+    );
+    const inward = res.movement_events.find(
+      (e) => e.barcode === canonicalize("FUM3XJ19056052") && e.direction === "IN"
+    );
+    expect(inward?.odooCreatedToday).toBe(false);
+    const outward = res.movement_events.find(
+      (e) => e.barcode === canonicalize("FUM3XJ19056052") && e.direction === "OUT"
+    );
+    expect(outward?.odooCreatedToday).toBe(true);
+  });
+
+  it("a next-day posting is credited only to its own direction", () => {
+    const res = runReconciliation(
+      [
+        ...anchor(),
+        r({ source: "PHYSICAL", direction: "IN", barcode: "FUDIRKEY2608001", status: "done", date: RUN }),
+        r({ source: "ODOO", direction: "OUT", barcode: "FUDIRKEY2608001", status: "done", createdOn: NEXT }),
+      ],
+      "PUNE"
+    );
+    const inward = res.movement_events.find(
+      (e) => e.barcode === canonicalize("FUDIRKEY2608001") && e.direction === "IN"
+    );
+    expect(inward?.odooNextDay).toBe(false);
+  });
+
   it("a unit a floor book DID see today is untouched by the nearby-day rule", () => {
     // The rule reads the presence pattern, not the barcode: a unit the ops sheet
     // logged today is not an Odoo-only echo however many nearby days also hold

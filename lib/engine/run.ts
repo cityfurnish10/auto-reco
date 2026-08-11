@@ -327,6 +327,43 @@ export function runReconciliation(
   // Mark views whose Odoo posting is dated the run day itself — the only ones
   // eligible for "Odoo-Only" (adjacent-day postings are match-targets only;
   // each posting is judged in its own day's run).
+  //
+  // DIRECTION-KEYED, on the same argument odooCustomerDirCanon spells out below
+  // and for want of which these two were quietly wrong. A serial received from
+  // the vendor (IN) and delivered to a customer (OUT) within a day of each other
+  // is two movements, and a canonical-only key lets either leg answer for the
+  // other — so an inward posting could mark the OUTWARD view "posted in Odoo
+  // today" when Odoo holds no outward posting at all.
+  //
+  // Traced on a live row: PUNE 2026-08-06, AP815719051098, direction OUT, REAL
+  // "Moved on Floor + DT — Not Posted in Odoo". A full paged PUN pull (all
+  // states, all movement types, untruncated) shows PUN/IN/08454 posted In on
+  // 2026-08-06 and the only Out posting on 2026-08-07 — zero done OUT postings
+  // on the accused day — yet the stored ledger row reads odoo_same_day = true.
+  // (Its odoo_next_day = true is CORRECT and unaffected: there really is a done
+  // Out posting on the 7th. This row evidences the same-day leak only.)
+  //
+  // Scale, measured over 2026-08-01…09: 222 of 5,501 ledger rows carry
+  // odoo_same_day with no same-direction done posting that day, and 111 of them
+  // carry "Odoo Posting Only — No Gate / Ops / DT Record" — High, REAL, gated on
+  // odooSameDay at ladder.ts rung 9 — plus 8 ODOO_ONLY_TODAY. Roughly 119 false
+  // chase items in nine days. A further 368 carry a leaked odoo_next_day, but
+  // none of those are ODOO_POSTED_NEXT_DAY, so no demotion is lost.
+  //
+  // This matters most to whatever READS the flags as evidence: the absence gate
+  // in resolveStaleOpenVariances retires a row when the book it accused now
+  // holds the unit, and a leaked flag would have it retire a true accusation.
+  //
+  // IT MOVES A PUBLISHED NUMBER, so expect the discontinuity rather than
+  // discover it. isMovement is `P || S || D || odooSameDay` (below), the
+  // accuracy denominator, and tightening the flag can only shrink it: measured
+  // 0.20%-1.42% fewer movements per day over 2026-08-05…09, plus 9 rung-9
+  // Odoo-only rows that stop being emitted on 2026-08-09. real_count barely
+  // moves, so a re-run of an already-published day nudges its accuracy DOWN.
+  // That is a correction — an OUT view was being credited with an IN posting's
+  // flag, so both the movement and the accusation belonged to another day's run
+  // — but nobody reading the leaderboard would connect it to an Odoo direction
+  // key. is_movement is stored per row, so history is not rewritten in place.
   const odooSameDayCanon = new Set<string>();
   // 1-day late-entry buffer: postings dated runDate+1 (already in odooWindowed,
   // which spans ±1 day). A floor-confirmed movement whose only Odoo evidence is
@@ -350,10 +387,10 @@ export function runReconciliation(
   const odooCustomerDirCanon = new Set<string>();
   for (const r of odooWindowed) {
     const posted = parseDate(r.createdOn) ?? parseDate(r.date);
-    if (posted === runDate) odooSameDayCanon.add(canonicalize(r.barcode));
-    else if (posted === nextDay) odooNextDayCanon.add(canonicalize(r.barcode));
-    if (parseDate(r.recordCreatedOn) === runDate)
-      odooCreatedTodayCanon.add(canonicalize(r.barcode));
+    const dirKey = `${r.direction}::${canonicalize(r.barcode)}`;
+    if (posted === runDate) odooSameDayCanon.add(dirKey);
+    else if (posted === nextDay) odooNextDayCanon.add(dirKey);
+    if (parseDate(r.recordCreatedOn) === runDate) odooCreatedTodayCanon.add(dirKey);
     if (r.soNumber && !/\/INT\//i.test(String(r.ticketId ?? "")))
       odooCustomerDirCanon.add(`${r.direction}::${canonicalize(r.barcode)}`);
   }
@@ -373,19 +410,37 @@ export function runReconciliation(
       `${city} weekly off (${runDate}) — floor sources are expected absent; Odoo-only rows cannot be same-day REAL.`
     );
   }
+  // Direction-keyed on every term. The record-born-today set was the last one
+  // still keyed on the barcode alone, which left the leak alive inside the very
+  // gate that decides ODOO_ONLY_TODAY — the only REAL an Odoo-only view can
+  // raise. FUM3XJ19056052, BANGALORE, run date 2026-08-02, is the shape: the OUT
+  // record was created that day and the IN record four business days earlier,
+  // so the IN direction's entry in odooCreatedTodayCanon came from the OUT row.
+  //
+  // IT HAS FIRED. Over 2026-07-25…08-09, 134 of 1,972 rows carrying
+  // odoo_created_today rest on a cross-direction record, and one reached rung 9
+  // and was published: 2026-07-29 MUMBAI IN APC7VY26030132, a REAL/High "Odoo
+  // Entry Created Today" telling the floor to confirm a movement or void the
+  // entry. Its created-today came from the OUT leg while the customer-flow key
+  // came from the IN leg, whose own record was born eight days earlier — the
+  // benign late batch-post this flag exists to EXCLUDE. Both legs posted the
+  // same day, so direction-keying odooSameDay alone does not rescue it; keying
+  // this set does, and the row becomes INFO "Odoo Posting Only", which is right.
+  //
+  // About one false High a fortnight — the highest-severity output in the system.
   const createdTodayFlag = (canonical: string, dir: Direction) =>
     !offDay &&
-    odooCreatedTodayCanon.has(canonical) &&
+    odooCreatedTodayCanon.has(`${dir}::${canonical}`) &&
     odooCustomerDirCanon.has(`${dir}::${canonical}`) &&
     !recentFloor.has(canonical);
   for (const v of Array.from(inViews.values())) {
-    v.odooSameDay = odooSameDayCanon.has(v.canonical);
-    v.odooNextDay = odooNextDayCanon.has(v.canonical);
+    v.odooSameDay = odooSameDayCanon.has(`IN::${v.canonical}`);
+    v.odooNextDay = odooNextDayCanon.has(`IN::${v.canonical}`);
     v.odooCreatedToday = createdTodayFlag(v.canonical, "IN");
   }
   for (const v of Array.from(outViews.values())) {
-    v.odooSameDay = odooSameDayCanon.has(v.canonical);
-    v.odooNextDay = odooNextDayCanon.has(v.canonical);
+    v.odooSameDay = odooSameDayCanon.has(`OUT::${v.canonical}`);
+    v.odooNextDay = odooNextDayCanon.has(`OUT::${v.canonical}`);
     v.odooCreatedToday = createdTodayFlag(v.canonical, "OUT");
   }
 
