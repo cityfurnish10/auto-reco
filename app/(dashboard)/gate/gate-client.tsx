@@ -303,43 +303,34 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
             value={pin} inputMode="numeric" onChange={(e) => setPin(e.target.value)} /></label>
       </div>
 
-      <div className="flex gap-4 items-start flex-wrap">
-        <div className="relative w-48 h-48 rounded-full overflow-hidden bg-surface-elevated
-                        grid place-items-center flex-none">
+      <div className="flex gap-4 items-center flex-wrap">
+        <div className="relative w-40 h-40 rounded-full overflow-hidden bg-surface-elevated
+                        grid place-items-center flex-none border border-border">
           <video ref={videoRef} playsInline muted autoPlay
             className={`absolute inset-0 w-full h-full object-cover ${cam === "live" ? "" : "opacity-0"}`} />
-          {/* Never a blank circle: it has to say which state it is in. */}
-          {cam === "starting" && <span className="text-text-muted text-sm">Starting camera…</span>}
-          {cam === "blocked" && (
-            <span className="text-text-muted text-xs text-center px-4">
-              No camera available
+          {cam !== "live" && !shot && (
+            <Icon name={cam === "blocked" ? "camera" : "progress_activity"} size={30}
+                  className={`text-text-muted ${cam === "starting" ? "animate-spin" : ""}`} />
+          )}
+          {shot && (
+            <span className="absolute inset-0 grid place-items-center bg-success/85 text-white">
+              <Icon name="check" size={40} />
             </span>
           )}
-          {shot && <span className="absolute inset-0 grid place-items-center bg-success/85 text-white">
-            <Icon name="check" size={44} />
-          </span>}
         </div>
 
-        <div className="text-sm space-y-3 max-w-sm">
-          {cam === "blocked" && (
-            <p className="text-text-muted">
-              The browser is not giving access to a camera. Check the padlock in the address
-              bar, or upload a photo instead.
-            </p>
-          )}
-          <div className="flex gap-2 flex-wrap">
-            <button className="btn btn-secondary" onClick={capture} disabled={busy || cam !== "live"}>
-              {shot ? "Retake" : "Capture face"}
-            </button>
-            {/* A machine with no working camera must not be a dead end. */}
-            <label className="btn btn-secondary cursor-pointer">
-              Upload a photo
-              <input type="file" accept="image/*" className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) void readPhotoFile(f); }} />
-            </label>
-          </div>
-          {busy && <p className="text-text-muted">Reading the face…</p>}
-          {shot && <p className="text-success font-medium">Face captured.</p>}
+        {/* Two ways in, nothing else. Upload is not a fallback for a broken
+            camera so much as the equal option — a manager enrolling five guards
+            from existing photos should not have to line each one up. */}
+        <div className="flex flex-col gap-2">
+          <button className="btn btn-secondary" onClick={capture} disabled={busy || cam !== "live"}>
+            <Icon name="camera" size={17} />{shot ? "Retake photo" : "Take photo"}
+          </button>
+          <label className={`btn btn-secondary ${busy ? "opacity-60" : "cursor-pointer"}`}>
+            <Icon name="cloud_upload" size={17} />Upload photo
+            <input type="file" accept="image/*" className="hidden" disabled={busy}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void readPhotoFile(f); }} />
+          </label>
         </div>
       </div>
 
