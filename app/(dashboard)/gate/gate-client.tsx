@@ -204,16 +204,43 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
+  // Say which of the three states we are in. A blank circle tells the operator
+  // nothing — they cannot know whether to wait, grant permission, or give up.
+  const [cam, setCam] = useState<"starting" | "live" | "blocked">("starting");
+
   useEffect(() => {
+    let live = true;
     (async () => {
       try {
-        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-        streamRef.current = s;
-        if (videoRef.current) { videoRef.current.srcObject = s; await videoRef.current.play(); }
-      } catch { setErr("Camera permission is needed to enrol a face."); }
+        if (!navigator.mediaDevices?.getUserMedia) { setCam("blocked"); return; }
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        if (!live) { stream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+        setCam("live");
+      } catch {
+        setCam("blocked");
+      }
     })();
-    return () => streamRef.current?.getTracks().forEach((t) => t.stop());
+    return () => { live = false; streamRef.current?.getTracks().forEach((t) => t.stop()); };
   }, []);
+
+  async function readPhotoFile(file: File) {
+    setBusy(true); setErr(null);
+    try {
+      const { describe, toArray } = await import("@/lib/gate/client/face");
+      const img = document.createElement("img");
+      img.src = URL.createObjectURL(file);
+      await new Promise((r) => { img.onload = r; img.onerror = r; });
+      const d = await describe(img);
+      URL.revokeObjectURL(img.src);
+      if (!d) { setErr("No face found in that photo. Try one taken straight on, in good light."); return; }
+      setShot({ blob: file, descriptor: toArray(d) });
+    } finally { setBusy(false); }
+  }
 
   async function capture() {
     if (!videoRef.current) return;
@@ -223,7 +250,7 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
       const { describe, toArray } = await import("@/lib/gate/client/face");
       const blob = await compress(videoRef.current, 640, 0.8);
       const d = await describe(videoRef.current);
-      if (!d) { setErr("No face found — try again in better light."); return; }
+      if (!d) { setErr("No face found — try again in better light, looking straight at the camera."); return; }
       setShot({ blob, descriptor: toArray(d) });
     } finally { setBusy(false); }
   }
@@ -237,8 +264,8 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
         body: JSON.stringify({ name, city, pin, employeeCode: code || undefined,
                                descriptor: shot?.descriptor }),
       });
-      const j = await res.json();
-      if (!res.ok) { setErr(j.error ?? "Could not add the guard."); return; }
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { setErr(j.error ?? `Could not add the guard (HTTP ${res.status})`); return; }
       // The photo itself goes straight to storage, for human review only.
       if (shot && j.referencePhotoUpload) {
         const { getSupabaseClient } = await import("@/lib/supabase/client");
@@ -277,13 +304,41 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
       </div>
 
       <div className="flex gap-4 items-start flex-wrap">
-        <video ref={videoRef} playsInline muted
-          className="w-48 h-48 object-cover rounded-full bg-surface-elevated" />
-        <div className="text-sm text-text-muted max-w-sm space-y-2">
-          <p>The photo stays here for review. Only a numeric signature of the face is sent to phones — never the picture.</p>
-          <button className="btn btn-secondary" onClick={capture} disabled={busy}>
-            {shot ? "Retake" : "Capture face"}
-          </button>
+        <div className="relative w-48 h-48 rounded-full overflow-hidden bg-surface-elevated
+                        grid place-items-center flex-none">
+          <video ref={videoRef} playsInline muted autoPlay
+            className={`absolute inset-0 w-full h-full object-cover ${cam === "live" ? "" : "opacity-0"}`} />
+          {/* Never a blank circle: it has to say which state it is in. */}
+          {cam === "starting" && <span className="text-text-muted text-sm">Starting camera…</span>}
+          {cam === "blocked" && (
+            <span className="text-text-muted text-xs text-center px-4">
+              No camera available
+            </span>
+          )}
+          {shot && <span className="absolute inset-0 grid place-items-center bg-success/85 text-white">
+            <Icon name="check" size={44} />
+          </span>}
+        </div>
+
+        <div className="text-sm space-y-3 max-w-sm">
+          {cam === "blocked" && (
+            <p className="text-text-muted">
+              The browser is not giving access to a camera. Check the padlock in the address
+              bar, or upload a photo instead.
+            </p>
+          )}
+          <div className="flex gap-2 flex-wrap">
+            <button className="btn btn-secondary" onClick={capture} disabled={busy || cam !== "live"}>
+              {shot ? "Retake" : "Capture face"}
+            </button>
+            {/* A machine with no working camera must not be a dead end. */}
+            <label className="btn btn-secondary cursor-pointer">
+              Upload a photo
+              <input type="file" accept="image/*" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) void readPhotoFile(f); }} />
+            </label>
+          </div>
+          {busy && <p className="text-text-muted">Reading the face…</p>}
           {shot && <p className="text-success font-medium">Face captured.</p>}
         </div>
       </div>
