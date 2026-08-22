@@ -4,7 +4,9 @@
 import type { City } from "../sample-data";
 
 // ─── app_users ──────────────────────────────────────────────────────────────
-export type UserRole = "admin" | "manager" | "viewer";
+// "guard" (0023) scans at the gate and has no dashboard access — gated in
+// middleware.ts, not here.
+export type UserRole = "admin" | "manager" | "viewer" | "guard";
 
 export interface AppUser {
   id: string;
@@ -232,5 +234,238 @@ export interface GuardUpload {
   reviewed_at: string | null;
   status: UploadStatus;
   error: string | null;
+  created_at: string;
+}
+
+// ─── Gate control (0023 / 0024) ─────────────────────────────────────────────
+// The digital gate register. These mirror the tables that replace the
+// handwritten book — see supabase/migrations/0023_gate_movement_log.sql.
+//
+// NOTE ON `barcode`: unlike everywhere else in this file, a gate barcode is the
+// RAW QR payload and is never the canonical fold. It is a label and an Odoo
+// lookup key, not a matching key; canonicalization happens downstream.
+
+export type TripStatus = "open" | "closed" | "abandoned";
+/** How the identifier reached us. Only `qr` carries a checksum guarantee. */
+export type BarcodeSource = "qr" | "manual" | "pending";
+export type GateEntryMethod = "scan" | "manual";
+/**
+ * What kind of thing crossed the gate. Two families:
+ *
+ * IDENTIFIED — a specific unit, always quantity 1 (except an untagged vendor
+ *   batch): `unit` (tagged, scanned), `vendor_goods` (inward only, tagged after
+ *   receipt), `customer_return` (inward only; an untagged one is an alert).
+ * COUNTED — no serial exists or is expected, the quantity is the whole record:
+ *   `spare_part`, `consumable`, `pp_box`, `sample`.
+ */
+export type GateItemKind =
+  | "unit"
+  | "vendor_goods"
+  | "customer_return"
+  | "spare_part"
+  | "consumable"
+  | "pp_box"
+  | "sample"
+  | "other";
+
+/** Kinds with no serial — a quantity is the entire record. */
+export const COUNTED_KINDS: readonly GateItemKind[] = [
+  "spare_part",
+  "consumable",
+  "pp_box",
+  "sample",
+];
+
+/** Offered in the app's manual-entry dropdown, per direction. */
+export const MANUAL_KINDS: Record<Direction, readonly GateItemKind[]> = {
+  IN: ["vendor_goods", "customer_return", "spare_part", "consumable", "pp_box", "sample"],
+  OUT: ["spare_part", "consumable", "pp_box", "sample"],
+};
+export type GateScanStatus = "recorded" | "void";
+/** Result of checking a scan against the day's expected pickings. */
+export type ExpectedMatch = "expected" | "not_listed" | "unchecked";
+
+/** A phone enrolled at a gate. Belongs to the SITE, not to a person. */
+export interface GateDevice {
+  id: string;
+  city: City;
+  site_code: string;
+  device_id: string;
+  device_label: string | null;
+  /** Never sent to the client. What the sync endpoint authenticates. */
+  token_hash?: string;
+  status: "active" | "revoked";
+  revoked_at: string | null;
+  last_seen_at: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+/** A guard's own sign-in. They may use any active device in their city. */
+export interface GuardProfile {
+  id: string;
+  guard_id: string;
+  city: City;
+  /** Never sent to the client — the PIN is a local unlock. */
+  pin_hash?: string;
+  /** Kept for human review only — never sent to a phone. */
+  reference_photo: string | null;
+  /** 128-float face signature. THIS is what devices receive, not the photo. */
+  reference_descriptor: number[] | null;
+  consent_at: string | null;
+  employee_code: string | null;
+  phone: string | null;
+  status: "active" | "inactive";
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GateTrip {
+  id: string;
+  client_trip_id: string;
+  city: City;
+  site_code: string;
+  direction: Direction;
+  /** NOT NULL — every movement travels on a vehicle. */
+  vehicle_no: string;
+  driver_name: string | null;
+  carrier_ref: string | null;
+  opened_at: string;
+  closed_at: string | null;
+  /** Server-derived from opened_at on the 15:00→15:00 business day. */
+  business_date: string;
+  guard_id: string | null;
+  device_id: string | null;
+  status: TripStatus;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface GateScan {
+  id: string;
+  /** Device-generated idempotency key. Re-sending it is a no-op. */
+  client_scan_id: string;
+  trip_id: string | null;
+  city: City;
+  site_code: string;
+  direction: Direction;
+  business_date: string;
+
+  /** RAW QR payload. Null only for untagged inward awaiting its sticker. */
+  barcode: string | null;
+  barcode_source: BarcodeSource;
+  serial_no: string | null;
+
+  item_kind: GateItemKind;
+  quantity: number;
+  entry_method: GateEntryMethod;
+
+  product: string | null;
+  so_number: string | null;
+  ticket_id: string | null;
+  customer: string | null;
+
+  photo_path: string | null;
+  photo_sampled: boolean;
+
+  lat: number | null;
+  lng: number | null;
+  accuracy_m: number | null;
+  /** Null means no fix was available — not a failure. */
+  geo_ok: boolean | null;
+
+  scanned_at: string;
+  received_at: string;
+  guard_id: string | null;
+  device_id: string | null;
+
+  expected_match: ExpectedMatch | null;
+  override_reason: string | null;
+
+  barcode_pending: boolean;
+  linked_barcode: string | null;
+  linked_at: string | null;
+  linked_by: string | null;
+
+  exception_reason: string | null;
+  status: GateScanStatus;
+  void_reason: string | null;
+  voided_by: string | null;
+  voided_at: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface GateExpectedItem {
+  id: string;
+  city: City;
+  business_date: string;
+  direction: Direction;
+  /** As Odoo spells it. */
+  barcode: string;
+  /** The fold, so a scan still matches a differently-spelled Odoo row. */
+  barcode_canon: string;
+  product: string | null;
+  so_number: string | null;
+  ticket_id: string | null;
+  customer: string | null;
+  picking_ref: string | null;
+  job_type: string | null;
+  refreshed_at: string;
+}
+
+// ─── Attendance (0024) ──────────────────────────────────────────────────────
+
+export type ShiftStatus = "open" | "closed" | "auto_closed";
+export type FaceTrigger = "check_in" | "check_out" | "random";
+/** `skipped` is an unanswered prompt — visible as unanswered, not a mismatch. */
+export type FaceVerdict = "pass" | "review" | "fail" | "no_face" | "skipped";
+export type FaceReviewState = "none" | "pending" | "accepted" | "rejected";
+
+export interface GuardShift {
+  id: string;
+  client_shift_id: string;
+  guard_id: string;
+  city: City;
+  site_code: string;
+  device_id: string | null;
+  checked_in_at: string;
+  checked_out_at: string | null;
+  business_date: string;
+  in_lat: number | null;
+  in_lng: number | null;
+  in_geo_ok: boolean | null;
+  out_lat: number | null;
+  out_lng: number | null;
+  out_geo_ok: boolean | null;
+  status: ShiftStatus;
+  auto_closed_reason: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface GuardFaceCheck {
+  id: string;
+  client_check_id: string;
+  shift_id: string | null;
+  guard_id: string;
+  city: City;
+  device_id: string | null;
+  trigger: FaceTrigger;
+  captured_at: string;
+  received_at: string;
+  /** Kept for human dispute review — NOT what the match ran against. */
+  selfie_path: string | null;
+  /** Raw on-device similarity, stored so a bad threshold can be re-judged. */
+  match_score: number | null;
+  verdict: FaceVerdict;
+  lat: number | null;
+  lng: number | null;
+  geo_ok: boolean | null;
+  review_state: FaceReviewState;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
   created_at: string;
 }
