@@ -122,9 +122,23 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Protect everything except static assets and cron/api routes that carry
-  // their own auth (cron uses CRON_SECRET, added in Phase 5).
+  // Protect everything except static assets and the api routes that carry their
+  // own auth: cron uses CRON_SECRET, and api/gate uses a device token issued at
+  // enrolment.
+  //
+  // `scan` is the guard app itself, for the same reason: a guard has no
+  // dashboard session, so without the exclusion the phone gets the login page
+  // instead of the app. The page is only a shell — every byte of data it shows
+  // comes from api/gate, which enforces the device token.
+  //
+  // WHY api/gate HAS TO BE HERE. Without the exclusion this middleware sees no
+  // session on a device-token request and REDIRECTS it to /login — so the phone
+  // receives a 307 and an HTML page instead of its sync response, and every
+  // scan silently fails to land. The one route in there that does need a human
+  // session, /api/gate/enrol, calls getCurrentAppUser() itself; that reads the
+  // cookie-bound client directly and works whether or not middleware ran, so
+  // excluding the prefix costs nothing.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|robots.txt|sitemap.xml|api/cron).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|robots.txt|sitemap.xml|api/cron|api/gate|scan).*)",
   ],
 };
