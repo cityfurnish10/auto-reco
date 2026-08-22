@@ -199,7 +199,20 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
   // Same reasoning as Devices: an admin has no city of their own to fall back on.
   const [city, setCity] = useState<string>(user.city ?? "");
   const [busy, setBusy] = useState(false);
-  const [shot, setShot] = useState<{ blob: Blob; descriptor: number[] } | null>(null);
+  const [shot, setShot] = useState<{ blob: Blob; descriptor: number[]; url: string } | null>(null);
+  // The 6.7MB face model. Loaded when the form opens rather than on the first
+  // capture, so the wait lands while the manager is typing a name instead of
+  // after they press a button and nothing happens.
+  const [model, setModel] = useState<"loading" | "ready">("loading");
+
+  // Keep the viewable still with its blob and revoke the previous one here, so
+  // a manager retaking a photo five times does not leak five object URLs.
+  const keepShot = (blob: Blob, descriptor: number[]) => {
+    setShot((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return { blob, descriptor, url: URL.createObjectURL(blob) };
+    });
+  };
   const [err, setErr] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -207,6 +220,14 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
   // Say which of the three states we are in. A blank circle tells the operator
   // nothing — they cannot know whether to wait, grant permission, or give up.
   const [cam, setCam] = useState<"starting" | "live" | "blocked">("starting");
+
+  useEffect(() => {
+    void (async () => {
+      const { initFace } = await import("@/lib/gate/client/face");
+      await initFace().catch(() => {});
+      setModel("ready");
+    })();
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -238,7 +259,7 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
       const d = await describe(img);
       URL.revokeObjectURL(img.src);
       if (!d) { setErr("No face found in that photo. Try one taken straight on, in good light."); return; }
-      setShot({ blob: file, descriptor: toArray(d) });
+      keepShot(file, toArray(d));
     } finally { setBusy(false); }
   }
 
@@ -251,7 +272,7 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
       const blob = await compress(videoRef.current, 640, 0.8);
       const d = await describe(videoRef.current);
       if (!d) { setErr("No face found — try again in better light, looking straight at the camera."); return; }
-      setShot({ blob, descriptor: toArray(d) });
+      keepShot(blob, toArray(d));
     } finally { setBusy(false); }
   }
 
@@ -275,6 +296,8 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
           .catch(() => {});
       }
       onDone(`${name} added.`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not reach the server.");
     } finally { setBusy(false); }
   }
 
@@ -312,9 +335,14 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
             <Icon name={cam === "blocked" ? "camera" : "progress_activity"} size={30}
                   className={`text-text-muted ${cam === "starting" ? "animate-spin" : ""}`} />
           )}
+          {/* eslint-disable-next-line @next/next/no-img-element -- a local blob
+              preview; next/image cannot handle an object URL. */}
+          {shot && <img src={shot.url} alt="Captured face"
+                           className="absolute inset-0 w-full h-full object-cover" />}
           {shot && (
-            <span className="absolute inset-0 grid place-items-center bg-success/85 text-white">
-              <Icon name="check" size={40} />
+            <span className="absolute bottom-1 right-1 w-7 h-7 rounded-full bg-success
+                             text-white grid place-items-center shadow">
+              <Icon name="check" size={16} />
             </span>
           )}
         </div>
@@ -323,22 +351,36 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
             camera so much as the equal option — a manager enrolling five guards
             from existing photos should not have to line each one up. */}
         <div className="flex flex-col gap-2">
-          <button className="btn btn-secondary" onClick={capture} disabled={busy || cam !== "live"}>
-            <Icon name="camera" size={17} />{shot ? "Retake photo" : "Take photo"}
+          <button className="btn btn-secondary" onClick={capture}
+            disabled={busy || cam !== "live" || model === "loading"}>
+            <Icon name="camera" size={17} />
+            {model === "loading" ? "Preparing…" : busy ? "Reading face…"
+              : shot ? "Retake photo" : "Take photo"}
           </button>
           <label className={`btn btn-secondary ${busy ? "opacity-60" : "cursor-pointer"}`}>
             <Icon name="cloud_upload" size={17} />Upload photo
-            <input type="file" accept="image/*" className="hidden" disabled={busy}
+            <input type="file" accept="image/*" className="hidden"
+              disabled={busy || model === "loading"}
               onChange={(e) => { const f = e.target.files?.[0]; if (f) void readPhotoFile(f); }} />
           </label>
         </div>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 items-center flex-wrap">
         <button className="btn btn-primary"
           disabled={busy || !name || !city || !/^\d{4,6}$/.test(pin) || !shot}
-          onClick={save}>Save guard</button>
+          onClick={save}>{busy ? "Saving…" : "Save guard"}</button>
         <button className="btn btn-secondary" onClick={() => onDone("")}>Cancel</button>
+        {err && <span className="text-danger text-sm">{err}</span>}
+        {/* Say what is still missing, rather than leaving a greyed-out button
+            with no explanation of what would un-grey it. */}
+        {!busy && !err && (!name || !city || !shot || !/^\d{4,6}$/.test(pin)) && (
+          <span className="text-text-muted text-sm">
+            Needs {[!city && "a city", !name && "a name",
+                    !/^\d{4,6}$/.test(pin) && "a 4–6 digit PIN",
+                    !shot && "a photo"].filter(Boolean).join(", ")}
+          </span>
+        )}
       </div>
     </div>
   );
