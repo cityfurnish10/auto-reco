@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
   const city = (req.nextUrl.searchParams.get("city") ?? me.city ?? "").toUpperCase();
   let q = admin
     .from("guard_profiles")
-    .select("id,guard_id,city,employee_code,phone,status,reference_photo,consent_at,created_at,app_users!inner(name)")
+    .select("id,guard_id,city,employee_code,phone,status,reference_photo,consent_at,created_at,app_users!guard_id!inner(name)")
     .order("created_at", { ascending: true });
   // An admin may look at any city; a manager only ever their own.
   if (me.role === "manager") q = q.eq("city", me.city ?? "");

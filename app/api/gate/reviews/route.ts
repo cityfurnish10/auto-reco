@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
 
   let q = admin
     .from("guard_face_checks")
-    .select("id,guard_id,city,trigger,captured_at,selfie_path,match_score,verdict,review_state,geo_ok,app_users!inner(name)")
+    .select("id,guard_id,city,trigger,captured_at,selfie_path,match_score,verdict,review_state,geo_ok,app_users!guard_id!inner(name)")
     .order("captured_at", { ascending: false })
     .limit(100);
   if (state !== "all") q = q.eq("review_state", state);

@@ -68,12 +68,23 @@ interface ActivityData {
 function Activity() {
   const [d, setD] = useState<ActivityData | null>(null);
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+
+  const load = useCallback(() => {
     fetch("/api/gate/activity", { credentials: "same-origin" })
-      .then((r) => r.json()).then(setD).finally(() => setLoading(false));
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+        return j;
+      })
+      .then((j) => { setLoadErr(null); setD(j); })
+      .catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
   }, []);
+  useEffect(() => { load(); }, [load]);
 
   if (loading) return <p className="text-text-muted text-sm">Loading…</p>;
+  if (loadErr) return <LoadError what="gate activity" detail={loadErr} onRetry={load} />;
   if (!d?.totals) return <Empty text="Nothing recorded at the gate yet." />;
 
   return (
@@ -148,9 +159,16 @@ function Guards({ user }: { user: SessionUser }) {
   const [adding, setAdding] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const load = useCallback(() => {
     fetch("/api/gate/guards", { credentials: "same-origin" })
-      .then((r) => r.json()).then((j) => setRows(j.guards ?? []));
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+        return j;
+      })
+      .then((j) => { setLoadErr(null); setRows(j.guards ?? []); })
+      .catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)));
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -163,7 +181,8 @@ function Guards({ user }: { user: SessionUser }) {
         <button className="btn btn-primary" onClick={() => setAdding(true)}>Add guard</button>
       </div>
       {msg && <div className="card p-3 text-sm">{msg}</div>}
-      {rows.length === 0 ? <Empty text="No guards yet." /> : (
+      {loadErr && <LoadError what="guards" detail={loadErr} onRetry={load} />}
+      {!loadErr && rows.length === 0 ? <Empty text="No guards yet." /> : loadErr ? null : (
         <Table head={["Name", "Code", "City", "Face enrolled", "Status"]}>
           {rows.map((g) => (
             <tr key={g.guardId}>
@@ -469,9 +488,17 @@ function Reviews() {
   // No synchronous setState here: `loading` already starts true, and on a
   // reload after a decision a briefly stale card is better than a flash of
   // spinner over the queue someone is working through.
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const load = useCallback(() => {
     fetch("/api/gate/reviews", { credentials: "same-origin" })
-      .then((r) => r.json()).then((j) => setRows(j.checks ?? [])).finally(() => setLoading(false));
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+        return j;
+      })
+      .then((j) => { setLoadErr(null); setRows(j.checks ?? []); })
+      .catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -484,6 +511,7 @@ function Reviews() {
   }
 
   if (loading) return <p className="text-text-muted text-sm">Loading…</p>;
+  if (loadErr) return <LoadError what="the review queue" detail={loadErr} onRetry={load} />;
   if (rows.length === 0) return <Empty text="Nothing waiting. Every check-in matched." />;
 
   return (
@@ -557,6 +585,30 @@ function Table({ head, children }: { head: string[]; children: React.ReactNode }
     </div>
   );
 }
+/**
+ * A read that FAILED, shown as a failure.
+ *
+ * This component exists because of a real incident: a guard was saved
+ * correctly, the list query was rejected by PostgREST, and the screen said
+ * "No guards yet." The record was there the whole time. An empty state is a
+ * statement about the data; an error is a statement about the request, and
+ * conflating them sends someone hunting for a bug that is not there.
+ */
+function LoadError({ what, detail, onRetry }: { what: string; detail: string; onRetry: () => void }) {
+  return (
+    <div className="card p-5 border border-danger/30 space-y-2">
+      <div className="flex items-center gap-2 text-danger font-medium">
+        <Icon name="warning" size={17} />Could not load {what}
+      </div>
+      <p className="text-sm text-text-muted">
+        This is a failure to read, not an empty list — anything saved is still there.
+      </p>
+      <code className="block text-xs bg-surface-elevated p-2 rounded-control break-all">{detail}</code>
+      <button className="btn btn-compact btn-secondary" onClick={onRetry}>Try again</button>
+    </div>
+  );
+}
+
 function Empty({ text }: { text: string }) {
   return <div className="card p-8 text-center text-text-muted text-sm">{text}</div>;
 }

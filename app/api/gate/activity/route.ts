@@ -22,11 +22,11 @@ export async function GET(req: NextRequest) {
   const city = me.role === "manager" ? me.city : req.nextUrl.searchParams.get("city");
 
   let scans = admin.from("gate_scans")
-    .select("id,city,direction,barcode,item_kind,quantity,entry_method,override_reason,barcode_pending,scanned_at,guard_id,trip_id,app_users(name)")
+    .select("id,city,direction,barcode,item_kind,quantity,entry_method,override_reason,barcode_pending,scanned_at,guard_id,trip_id,app_users!guard_id(name)")
     .eq("business_date", date).eq("status", "recorded")
     .order("scanned_at", { ascending: false }).limit(500);
   let trips = admin.from("gate_trips")
-    .select("id,client_trip_id,city,direction,vehicle_no,opened_at,closed_at,status,guard_id,app_users(name)")
+    .select("id,client_trip_id,city,direction,vehicle_no,opened_at,closed_at,status,guard_id,app_users!guard_id(name)")
     .eq("business_date", date).order("opened_at", { ascending: false });
   if (city) { scans = scans.eq("city", city); trips = trips.eq("city", city); }
 

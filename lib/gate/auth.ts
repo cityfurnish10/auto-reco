@@ -100,7 +100,7 @@ export async function withGuard(
   if (!guardId) return null;
   const { data } = await admin
     .from("guard_profiles")
-    .select("guard_id, city, status, app_users!inner(name,status)")
+    .select("guard_id, city, status, app_users!guard_id!inner(name,status)")
     .eq("guard_id", guardId)
     .eq("city", device.city)
     .eq("status", "active")
@@ -116,7 +116,7 @@ export async function withGuard(
 export async function guardsForDevice(admin: SupabaseClient, device: DeviceIdentity) {
   const { data } = await admin
     .from("guard_profiles")
-    .select("guard_id, reference_descriptor, employee_code, app_users!inner(name,status)")
+    .select("guard_id, reference_descriptor, employee_code, app_users!guard_id!inner(name,status)")
     .eq("city", device.city)
     .eq("status", "active");
   return ((data ?? []) as Record<string, unknown>[])
