@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
   if (!me) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   let body: { name?: string; city?: string; pin?: string; employeeCode?: string;
-              phone?: string; descriptor?: number[] };
+              phone?: string; descriptor?: number[]; confirmDuplicateName?: boolean };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: "invalid JSON body" }, { status: 400 }); }
 
@@ -128,6 +128,31 @@ export async function POST(req: NextRequest) {
   }
 
   const admin = createAdminClient();
+
+  // SAME NAME, SAME CITY. Not blocked outright -- two people really can share a
+  // name, and a hard rule would eventually stop a genuine hire with no way
+  // round it. Refused once, with the existing guard named, and allowed if the
+  // operator confirms they mean it. Codes and phone numbers ARE hard-blocked,
+  // by unique indexes in 0025, because those identify a person.
+  if (!body.confirmDuplicateName) {
+    const { data: sameName } = await admin
+      .from("guard_profiles")
+      .select("guard_id, employee_code, app_users!guard_id!inner(name)")
+      .eq("city", city)
+      .eq("status", "active");
+    const clash = ((sameName ?? []) as Record<string, unknown>[]).find(
+      (r) => ((r.app_users as { name?: string })?.name ?? "").trim().toLowerCase()
+             === name.toLowerCase()
+    );
+    if (clash) {
+      return NextResponse.json({
+        error: `${name} is already a guard at ${city}` +
+               (clash.employee_code ? ` (code ${clash.employee_code})` : "") + ".",
+        duplicateName: true,
+      }, { status: 409 });
+    }
+  }
+
   // Synthetic address: guards sign in by name and PIN on an enrolled phone and
   // never touch email. It exists only because app_users requires a unique one.
   const email = `guard.${randomUUID().slice(0, 8)}@gate.cityfurnish.local`;
@@ -158,7 +183,17 @@ export async function POST(req: NextRequest) {
   if (pErr) {
     // Do not leave a guard account with no way to sign in.
     await admin.from("app_users").delete().eq("id", user.id);
-    return NextResponse.json({ error: pErr.message }, { status: 400 });
+    // 23505 is a unique index from 0025. The raw message names an index, which
+    // means nothing to the person at the screen.
+    const friendly =
+      pErr.code === "23505"
+        ? /employee_code/.test(pErr.message)
+          ? `Employee code ${body.employeeCode} is already used by another guard at ${city}.`
+          : /phone/.test(pErr.message)
+            ? `That phone number is already registered to another guard.`
+            : "A guard with those details already exists."
+        : pErr.message;
+    return NextResponse.json({ error: friendly }, { status: 400 });
   }
 
   await ensureBuckets(admin);

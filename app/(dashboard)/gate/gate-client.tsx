@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
+import { Modal } from "@/components/modal";
 import { CITIES } from "@/lib/sample-data";
 import type { SessionUser } from "@/lib/demo-auth";
 
@@ -151,6 +152,7 @@ function Activity() {
 interface GuardRow {
   guardId: string; name: string; city: string; employeeCode: string | null;
   phone: string | null; status: string; hasReferencePhoto: boolean;
+  consentAt: string | null;
   referencePhotoUrl: string | null;
 }
 
@@ -158,6 +160,7 @@ function Guards({ user }: { user: SessionUser }) {
   const [rows, setRows] = useState<GuardRow[]>([]);
   const [adding, setAdding] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<GuardRow | null>(null);
 
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const load = useCallback(() => {
@@ -182,25 +185,56 @@ function Guards({ user }: { user: SessionUser }) {
       </div>
       {msg && <div className="card p-3 text-sm">{msg}</div>}
       {loadErr && <LoadError what="guards" detail={loadErr} onRetry={load} />}
-      {!loadErr && rows.length === 0 ? <Empty text="No guards yet." /> : loadErr ? null : (
-        <Table head={["Name", "Code", "City", "Face enrolled", "Status"]}>
-          {rows.map((g) => (
-            <tr key={g.guardId}>
-              <td className="font-medium">{g.name}</td>
-              <td className="font-mono">{g.employeeCode ?? "—"}</td>
-              <td>{g.city}</td>
-              <td>
-                {/* A guard with no face signature cannot be verified at all, so
-                    it is stated rather than left blank. */}
-                <span className={`badge ${g.hasReferencePhoto ? "badge-done" : "badge-medium"}`}>
-                  {g.hasReferencePhoto ? "yes" : "not yet"}
-                </span>
-              </td>
-              <td><span className={`badge ${g.status === "active" ? "badge-done" : "badge-suppressed"}`}>{g.status}</span></td>
-            </tr>
-          ))}
-        </Table>
+      {!loadErr && rows.length === 0 && <Empty text="No guards yet." />}
+      {!loadErr && rows.length > 0 && (
+        <div className="card overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr>
+                {/* Left-aligned throughout, with the face beside the name. A
+                    centred column of four-digit codes reads as decoration; the
+                    eye scans a left edge. */}
+                <th className="text-left px-4 py-2.5 text-xs uppercase tracking-wide text-text-muted">Guard</th>
+                <th className="text-left px-4 py-2.5 text-xs uppercase tracking-wide text-text-muted">Code</th>
+                <th className="text-left px-4 py-2.5 text-xs uppercase tracking-wide text-text-muted">City</th>
+                <th className="text-left px-4 py-2.5 text-xs uppercase tracking-wide text-text-muted">Face</th>
+                <th className="text-left px-4 py-2.5 text-xs uppercase tracking-wide text-text-muted">Status</th>
+                <th className="w-10" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((g) => (
+                <tr key={g.guardId} className="border-t border-border hover:bg-surface-elevated
+                                               cursor-pointer transition-colors duration-150"
+                    onClick={() => setViewing(g)}>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-3">
+                      <Avatar url={g.referencePhotoUrl} name={g.name} />
+                      <span className="font-medium text-text-primary">{g.name}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5 font-mono tabular-nums text-text-secondary">
+                    {g.employeeCode ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-text-secondary">{g.city}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={`badge ${g.hasReferencePhoto ? "badge-done" : "badge-medium"}`}>
+                      {g.hasReferencePhoto ? "enrolled" : "not yet"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span className={`badge ${g.status === "active" ? "badge-done" : "badge-suppressed"}`}>
+                      {g.status}</span>
+                  </td>
+                  <td className="px-2 text-text-muted"><Icon name="chevron_right" size={17} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
+
+      <GuardDetail guard={viewing} onClose={() => setViewing(null)} onChanged={load} />
+
       {adding && <AddGuard user={user} onDone={(m) => { setAdding(false); setMsg(m); load(); }} />}
     </div>
   );
@@ -295,16 +329,24 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
     } finally { setBusy(false); }
   }
 
-  async function save() {
+  const save = () => doSave(false);
+  const saveConfirmed = () => doSave(true);
+
+  async function doSave(confirmDuplicateName: boolean): Promise<void> {
     setBusy(true); setErr(null);
     try {
       const res = await fetch("/api/gate/guards", {
         method: "POST", headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
         body: JSON.stringify({ name, city, pin, employeeCode: code || undefined,
-                               descriptor: shot?.descriptor }),
+                               descriptor: shot?.descriptor, confirmDuplicateName }),
       });
       const j = await res.json().catch(() => ({}));
+      if (res.status === 409 && j.duplicateName) {
+        // A shared name is possible, so this asks rather than refuses.
+        if (!window.confirm(`${j.error}\n\nAdd them anyway?`)) return;
+        return saveConfirmed();
+      }
       if (!res.ok) { setErr(j.error ?? `Could not add the guard (HTTP ${res.status})`); return; }
       // The photo itself goes straight to storage, for human review only.
       if (shot && j.referencePhotoUpload) {
@@ -406,6 +448,93 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
 }
 
 /* ── Devices ────────────────────────────────────────────────────────── */
+/** Round face thumbnail, falling back to initials so a row is never blank. */
+function Avatar({ url, name }: { url: string | null; name: string }) {
+  const initials = name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+  return url ? (
+    /* A signed storage URL that expires; next/image would cache and optimise a
+       private face photo, which is not what we want. */
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={url} alt="" className="w-8 h-8 rounded-full object-cover flex-none" />
+  ) : (
+    <span className="w-8 h-8 rounded-full flex-none bg-surface-elevated text-text-muted
+                     grid place-items-center text-xs font-semibold">{initials}</span>
+  );
+}
+
+/**
+ * Everything about one guard, and the two things a supervisor actually does
+ * from here: retire someone who has left, and re-enrol a face that will not
+ * match. Both are supervisory acts and neither is available on a phone.
+ */
+function GuardDetail({ guard, onClose, onChanged }: {
+  guard: GuardRow | null; onClose: () => void; onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  if (!guard) return null;
+
+  async function patch(body: Record<string, unknown>) {
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch("/api/gate/guards", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ guardId: guard!.guardId, ...body }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setErr(j.error ?? `HTTP ${r.status}`); return; }
+      onChanged(); onClose();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not reach the server.");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={guard.name} subtitle={`${guard.city} gate`} size="md"
+      footer={
+        <div className="flex gap-2 items-center flex-wrap">
+          <button className="btn btn-secondary" disabled={busy}
+            onClick={() => patch({ status: guard.status === "active" ? "inactive" : "active" })}>
+            {guard.status === "active" ? "Deactivate" : "Reactivate"}
+          </button>
+          <button className="btn btn-secondary" onClick={onClose}>Close</button>
+          {err && <span className="text-danger text-sm">{err}</span>}
+        </div>
+      }>
+      <div className="flex gap-5 flex-wrap">
+        {guard.referencePhotoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={guard.referencePhotoUrl} alt={guard.name}
+               className="w-32 h-32 rounded-full object-cover border border-border flex-none" />
+        ) : (
+          <div className="w-32 h-32 rounded-full border border-border bg-surface-elevated
+                          grid place-items-center text-text-muted flex-none">
+            <Icon name="person" size={34} />
+          </div>
+        )}
+        <dl className="flex-1 min-w-[220px] text-sm">
+          <Row k="Employee code" v={guard.employeeCode ?? "—"} mono />
+          <Row k="Phone" v={guard.phone ?? "—"} mono />
+          <Row k="City" v={guard.city} />
+          <Row k="Status" v={guard.status} />
+          <Row k="Face enrolled" v={guard.hasReferencePhoto ? "Yes" : "No — cannot be verified at check-in"} />
+          <Row k="Consent recorded" v={guard.consentAt ? new Date(guard.consentAt).toLocaleDateString() : "—"} />
+        </dl>
+      </div>
+    </Modal>
+  );
+}
+
+function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+  return (
+    <div className="flex justify-between gap-6 py-2 border-b border-border last:border-0">
+      <dt className="text-text-muted">{k}</dt>
+      <dd className={`text-text-primary text-right ${mono ? "font-mono" : ""}`}>{v}</dd>
+    </div>
+  );
+}
+
 function Devices({ user }: { user: SessionUser }) {
   const [pairing, setPairing] = useState<{ url: string; label: string } | null>(null);
   const [busy, setBusy] = useState(false);
