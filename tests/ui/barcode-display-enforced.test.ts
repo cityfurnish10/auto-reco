@@ -28,6 +28,55 @@ const EXT = /\.tsx?$/;
  * matched line's own text so a reformat does not silently re-arm them.
  */
 const ALLOWED: { file: string; snippet: string; why: string }[] = [
+  // The Gate screens read gate_scans, where `barcode` is the RAW QR payload the
+  // scanner returned — stored deliberately unfolded. shownBarcode() exists to
+  // recover a true spelling from a folded one; here there is no fold to undo,
+  // and passing it through one would be the bug rather than the fix.
+  {
+    file: "app/(dashboard)/gate/gate-client.tsx",
+    snippet: "{s.barcode ?? \"—\"}",
+    why: "LABEL, and correct: a gate scan's barcode is the raw QR payload, never the canonical fold.",
+  },
+  {
+    file: "app/api/gate/activity/route.ts",
+    snippet: "barcode: r.barcode",
+    why: "Passing the raw scanned payload straight through to the Gate screen.",
+  },
+  // ── The gate app (0023). THE ONE PLACE WHERE .barcode IS ALREADY THE TRUE
+  // SPELLING. A gate row's barcode is the raw QR payload, stored exactly as the
+  // sticker gave it and deliberately never folded — that is the whole point of
+  // the scanning project. shownBarcode() would be wrong here: it exists to
+  // recover a true spelling from a folded one, and there is no fold to undo.
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "e.barcode === barcode",
+    why: "KEY — matching a scan against the day's expected pickings.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "payload.barcode ?? payload.serialNo",
+    why: "KEY — the local feed's identity for a queued row.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "if (payload.barcode) seenRef",
+    why: "KEY — the already-scanned-on-this-trip set.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "{l.barcode}",
+    why: "LABEL, and correct: this is the raw QR payload the scanner just read, never a fold.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "{pendingScan.barcode}",
+    why: "LABEL, and correct: the raw QR payload of the item being questioned.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "barcode: pendingScan.barcode",
+    why: "KEY — the raw payload written back to the outbox unchanged.",
+  },
   {
     file: "app/(dashboard)/dashboard/variance-detail-modal.tsx",
     snippet: "barcode: v?.barcode ?? null",
