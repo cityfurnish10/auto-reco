@@ -11,6 +11,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
+import { CITIES } from "@/lib/sample-data";
+import type { SessionUser } from "@/lib/demo-auth";
 
 type Tab = "activity" | "guards" | "devices" | "reviews";
 
@@ -21,7 +23,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "reviews", label: "Reviews", icon: "pending_actions" },
 ];
 
-export default function GateClient() {
+export default function GateClient({ user }: { user: SessionUser }) {
   const [tab, setTab] = useState<Tab>("activity");
   return (
     <section className="p-container-margin space-y-6">
@@ -44,8 +46,8 @@ export default function GateClient() {
       </div>
 
       {tab === "activity" && <Activity />}
-      {tab === "guards" && <Guards />}
-      {tab === "devices" && <Devices />}
+      {tab === "guards" && <Guards user={user} />}
+      {tab === "devices" && <Devices user={user} />}
       {tab === "reviews" && <Reviews />}
     </section>
   );
@@ -141,7 +143,7 @@ interface GuardRow {
   referencePhotoUrl: string | null;
 }
 
-function Guards() {
+function Guards({ user }: { user: SessionUser }) {
   const [rows, setRows] = useState<GuardRow[]>([]);
   const [adding, setAdding] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -180,7 +182,7 @@ function Guards() {
           ))}
         </Table>
       )}
-      {adding && <AddGuard onDone={(m) => { setAdding(false); setMsg(m); load(); }} />}
+      {adding && <AddGuard user={user} onDone={(m) => { setAdding(false); setMsg(m); load(); }} />}
     </div>
   );
 }
@@ -190,10 +192,12 @@ function Guards() {
  * descriptor is computed HERE, in this browser, from the photo just taken. The
  * phone never receives a photograph of anybody — only 128 numbers.
  */
-function AddGuard({ onDone }: { onDone: (msg: string) => void }) {
+function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) => void }) {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [pin, setPin] = useState("");
+  // Same reasoning as Devices: an admin has no city of their own to fall back on.
+  const [city, setCity] = useState<string>(user.city ?? "");
   const [busy, setBusy] = useState(false);
   const [shot, setShot] = useState<{ blob: Blob; descriptor: number[] } | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -230,7 +234,8 @@ function AddGuard({ onDone }: { onDone: (msg: string) => void }) {
       const res = await fetch("/api/gate/guards", {
         method: "POST", headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ name, pin, employeeCode: code || undefined, descriptor: shot?.descriptor }),
+        body: JSON.stringify({ name, city, pin, employeeCode: code || undefined,
+                               descriptor: shot?.descriptor }),
       });
       const j = await res.json();
       if (!res.ok) { setErr(j.error ?? "Could not add the guard."); return; }
@@ -250,7 +255,16 @@ function AddGuard({ onDone }: { onDone: (msg: string) => void }) {
     <div className="card p-5 space-y-4">
       <h3 className="font-headline text-lg">Add guard</h3>
       {err && <p className="text-danger text-sm">{err}</p>}
-      <div className="grid md:grid-cols-3 gap-3">
+      <div className="grid md:grid-cols-4 gap-3">
+        {!user.city && (
+          <label className="text-sm">City
+            <select className="w-full mt-1 h-10 px-3 rounded-control border border-border bg-surface-card"
+              value={city} onChange={(e) => setCity(e.target.value)}>
+              <option value="">Choose…</option>
+              {CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+        )}
         <label className="text-sm">Name
           <input className="w-full mt-1 h-10 px-3 rounded-control border border-border bg-surface-card"
             value={name} onChange={(e) => setName(e.target.value)} /></label>
@@ -275,7 +289,8 @@ function AddGuard({ onDone }: { onDone: (msg: string) => void }) {
       </div>
 
       <div className="flex gap-2">
-        <button className="btn btn-primary" disabled={busy || !name || !/^\d{4,6}$/.test(pin) || !shot}
+        <button className="btn btn-primary"
+          disabled={busy || !name || !city || !/^\d{4,6}$/.test(pin) || !shot}
           onClick={save}>Save guard</button>
         <button className="btn btn-secondary" onClick={() => onDone("")}>Cancel</button>
       </div>
@@ -284,25 +299,56 @@ function AddGuard({ onDone }: { onDone: (msg: string) => void }) {
 }
 
 /* ── Devices ────────────────────────────────────────────────────────── */
-function Devices() {
+function Devices({ user }: { user: SessionUser }) {
   const [pairing, setPairing] = useState<{ url: string; label: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [label, setLabel] = useState("Gate phone");
+  // An ADMIN has no city — that is how the platform scopes them — so they must
+  // say which gate the phone belongs to. A manager has exactly one and is not
+  // asked. Getting this wrong is what made the button appear dead.
+  const [city, setCity] = useState<string>(user.city ?? "");
+
   return (
     <div className="space-y-4">
       <p className="text-text-muted text-sm">
         A phone is enrolled once per gate. Any guard at that gate can then sign in on it.
       </p>
-      <button className="btn btn-primary" disabled={busy} onClick={async () => {
-        setBusy(true);
-        try {
-          const r = await fetch("/api/gate/enrol", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            credentials: "same-origin", body: JSON.stringify({ deviceLabel: "Gate phone" }),
-          });
-          const j = await r.json();
-          if (r.ok) setPairing({ url: j.pairingUrl, label: j.deviceId });
-        } finally { setBusy(false); }
-      }}>Enrol a phone</button>
+
+      <div className="card p-4 flex flex-wrap gap-3 items-end">
+        {!user.city && (
+          <label className="text-sm">Gate
+            <select className="block mt-1 h-10 px-3 rounded-control border border-border bg-surface-card min-w-[160px]"
+              value={city} onChange={(e) => setCity(e.target.value)}>
+              <option value="">Choose a city…</option>
+              {CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+        )}
+        <label className="text-sm">Label
+          <input className="block mt-1 h-10 px-3 rounded-control border border-border bg-surface-card"
+            value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Gate phone" />
+        </label>
+        <button className="btn btn-primary" disabled={busy || !city} onClick={async () => {
+          setBusy(true); setErr(null);
+          try {
+            const r = await fetch("/api/gate/enrol", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              credentials: "same-origin",
+              body: JSON.stringify({ city, deviceLabel: label }),
+            });
+            const j = await r.json().catch(() => ({}));
+            // Say what went wrong. A button that silently does nothing is worse
+            // than one that fails loudly — there is nothing to act on.
+            if (!r.ok) { setErr(j.error ?? `Could not enrol the phone (HTTP ${r.status})`); return; }
+            setPairing({ url: j.pairingUrl, label: j.deviceId });
+          } catch (e) {
+            setErr(e instanceof Error ? e.message : "Could not reach the server.");
+          } finally { setBusy(false); }
+        }}>{busy ? "Enrolling…" : "Enrol a phone"}</button>
+      </div>
+
+      {err && <div className="card p-3 text-sm text-danger border border-danger/30">{err}</div>}
 
       {pairing && (
         <div className="card p-5 space-y-3">
