@@ -1,0 +1,247 @@
+/* The guard app's own styling.
+ *
+ * Imported only by the gate layout, so none of it reaches the dashboard bundle.
+ * It borrows the platform's colour thinking but not its layout language: a
+ * dashboard is read sitting down with two hands, a gate is worked standing up
+ * with one thumb in bright sun or near dark.
+ *
+ * Three rules drive every number below:
+ *   - Nothing important above the bottom third. That is where a thumb reaches.
+ *   - 58px minimum on anything tappable. A gloved hand is not precise.
+ *   - Text no smaller than 13px, and never grey-on-grey. Sunlight kills contrast.
+ */
+
+.gate {
+  --bg:#ffffff; --card:#ffffff; --card2:#f4f2f3;
+  --fg:#1c1b1d; --fg2:#5d5f5f; --fg3:#8b8a8f;
+  --rule:#e2dee0; --primary:#00000b; --on-primary:#fff;
+  --ok:#15703F; --okbg:#DFF1E7; --okfg:#0E5730;
+  --warn:#A44B0B; --warnbg:#FCEBDD; --warnfg:#7A3707;
+  --brandbg:#00000b; --brandfg:#ffffff; --brandrule:#00000b;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+
+  position:fixed; inset:0; display:flex; flex-direction:column;
+  background:var(--bg); color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans",sans-serif;
+  font-size:16px; line-height:1.5; overscroll-behavior:none;
+  -webkit-tap-highlight-color:transparent;
+}
+/* Night is a real working condition here, not a preference. */
+.gate.night {
+  --bg:#14171a; --card:#1e2227; --card2:#262b31;
+  --fg:#ecebe9; --fg2:#a7adb2; --fg3:#7d848a;
+  --rule:#2d333a; --primary:#f2f0ee; --on-primary:#14171a;
+  --ok:#4CB57B; --okbg:#16301F; --okfg:#8FD9AE;
+  --warn:#E08A46; --warnbg:#332314; --warnfg:#F0B784;
+  --brandbg:#000006; --brandfg:#ecebe9; --brandrule:#2d333a;
+}
+.gate * { box-sizing:border-box; }
+.gate .mono { font-family:var(--mono); letter-spacing:.04em; }
+
+/* THE BRAND HEADER — always present, never scrolls, never changes.
+ *
+ * A guard's own phone runs a dozen apps; the fixed mark and name is what makes
+ * this one recognisably the company's rather than a web page someone sent them.
+ * It sits ABOVE the screen bar so the two never compete: this says which app,
+ * the bar below says which screen.
+ */
+.gbrand { flex:none; display:flex; align-items:center; gap:10px;
+  padding:10px 16px; padding-top:calc(10px + env(safe-area-inset-top));
+  background:var(--brandbg); color:var(--brandfg);
+  border-bottom:1px solid var(--brandrule); }
+.gbrand .mark { width:26px; height:26px; border-radius:7px; flex:none; display:block; }
+.gbrand .name { font-size:15px; font-weight:650; letter-spacing:-.01em; }
+.gbrand .spacer { flex:1; }
+.gbrand .who { font-size:12px; opacity:.7; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; max-width:44%; }
+
+.gbar { display:flex; align-items:center; gap:10px; padding:14px 16px;
+  padding-top:calc(14px + env(safe-area-inset-top));
+  border-bottom:1px solid var(--rule); background:var(--card); flex:none; min-height:58px; }
+.gbar h2 { font-size:17px; margin:0; font-weight:650; flex:1; }
+.gsub { font-size:12px; color:var(--fg3); }
+.gicon { width:42px; height:42px; border:0; background:transparent; color:var(--fg2);
+  font-size:22px; border-radius:11px; flex:none; line-height:1; }
+.gicon:active { background:var(--card2); }
+
+.gbody { flex:1; overflow-y:auto; padding:18px 16px 10px; -webkit-overflow-scrolling:touch; }
+.gfoot { flex:none; display:flex; gap:10px; padding:12px 16px;
+  padding-bottom:calc(14px + env(safe-area-inset-bottom));
+  border-top:1px solid var(--rule); background:var(--card); }
+.gcenter { flex:1; display:flex; align-items:center; justify-content:center; padding:24px; }
+.gcenter-txt { text-align:center; margin-bottom:18px; }
+.gcenter-txt h3 { font-size:18px; margin:0 0 6px; }
+.gcenter-txt p { font-size:14px; color:var(--fg2); margin:0; }
+
+.gbtn { flex:1; min-height:58px; border-radius:14px; border:0; font-size:18px; font-weight:650;
+  font-family:inherit; display:flex; align-items:center; justify-content:center; gap:8px; padding:0 16px; }
+.gbtn:active:not(:disabled) { transform:translateY(1px); }
+.gbtn:disabled { opacity:.4; }
+.gbtn:focus-visible { outline:3px solid var(--ok); outline-offset:2px; }
+.gbtn.primary { background:var(--primary); color:var(--on-primary); }
+.gbtn.ghost { background:var(--card2); color:var(--fg); }
+.gbtn.ok { background:var(--ok); color:#fff; }
+.gbtn.warn { background:var(--warn); color:#fff; }
+.gbtn.sm { min-height:48px; font-size:15px; border-radius:12px; }
+.gbtn.narrow { flex:0 0 38%; }
+
+.ghero { text-align:center; padding:18px 8px; }
+.gglyph { font-size:52px; line-height:1; margin-bottom:12px; }
+.ghero h1 { font-size:21px; margin:0 0 7px; font-weight:650; }
+.ghero p { font-size:14.5px; color:var(--fg2); margin:0; }
+.glead { font-size:14.5px; color:var(--fg2); margin:0 0 14px; }
+.gnote { font-size:12.5px; color:var(--fg3); margin:14px 2px 0; line-height:1.5; }
+.ghead { font-size:13px; color:var(--fg2); margin:22px 0 10px; font-weight:650;
+  text-transform:uppercase; letter-spacing:.06em; }
+
+.gcard { background:var(--card); border:1px solid var(--rule); border-radius:15px;
+  padding:15px; margin-bottom:12px; display:flex; gap:12px; align-items:center;
+  width:100%; text-align:left; color:var(--fg); font-family:inherit; }
+.gcard.col { display:block; }
+.gcard.ok { border-color:var(--ok); }
+.gcard.warn { border-color:var(--warn); background:var(--warnbg); color:var(--warnfg); }
+.gcard.tap { background:var(--card2); }
+.gcard h3 { margin:0 0 5px; font-size:16px; font-weight:650; }
+.gcard p { margin:0 0 10px; font-size:14px; color:inherit; opacity:.9; line-height:1.45; }
+.gcard > div { flex:1; min-width:0; }
+.gcard b { display:block; font-size:15.5px; font-weight:650; }
+.gcard span:not(.gbig):not(.gsub) { display:block; font-size:13px; color:var(--fg2); }
+.gcard.warn span { color:inherit; }
+.gbig { font-size:24px; flex:none; }
+.big { font-size:18px; }
+.grow2 { display:flex; gap:9px; }
+
+.gkv { display:flex; justify-content:space-between; gap:14px; padding:9px 0;
+  border-bottom:1px solid var(--rule); font-size:15px; align-items:center; }
+.gkv:last-child { border-bottom:none; }
+.gtag { font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px; }
+.gtag.ok { background:var(--okbg); color:var(--okfg); }
+.gtag.warn { background:var(--warnbg); color:var(--warnfg); }
+
+.gfld { display:block; margin-bottom:15px; }
+.gfld > span { display:block; font-size:13px; color:var(--fg2); margin-bottom:7px; font-weight:600; }
+.gf { width:100%; min-height:56px; border-radius:13px; border:1.5px solid var(--rule);
+  background:var(--card); color:var(--fg); font-size:19px; padding:0 15px; font-family:inherit; }
+.gf:focus { outline:none; border-color:var(--fg2); }
+.gf.mono { font-family:var(--mono); }
+.gqty { display:flex; gap:10px; align-items:center; }
+.gqty .gf { text-align:center; }
+.gqty .gkey { width:62px; min-height:56px; }
+
+.gbig2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:18px; }
+.gdir { min-height:112px; border-radius:16px; border:2px solid var(--rule); background:var(--card);
+  color:var(--fg); display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:6px; font-family:inherit; font-size:17px; font-weight:650; }
+.gdir .g { font-size:34px; line-height:1; }
+.gdir[aria-pressed="true"] { border-color:var(--primary); background:var(--card2); }
+
+.gdots { display:flex; gap:14px; justify-content:center; margin:20px 0 24px; }
+.gdots i { width:15px; height:15px; border-radius:50%; border:2px solid var(--fg3); }
+.gdots i.on { background:var(--primary); border-color:var(--primary); }
+.gpad { display:grid; grid-template-columns:repeat(3,1fr); gap:11px; max-width:300px; margin:0 auto; }
+.gkey { min-height:64px; border-radius:15px; background:var(--card); color:var(--fg);
+  font-size:26px; font-weight:600; font-family:var(--mono); border:1px solid var(--rule); }
+.gkey:active { background:var(--card2); }
+.gkey.blank { background:transparent; border:0; }
+
+
+.gphoto { width:100%; height:128px; border-radius:14px; border:2px dashed var(--rule);
+  display:flex; align-items:center; justify-content:center; flex-direction:column; gap:6px;
+  color:var(--fg3); font-size:14px; margin-bottom:15px; background:var(--card); font-family:inherit; }
+.gphoto.done { border-style:solid; border-color:var(--ok); background:var(--okbg); color:var(--okfg); }
+.gphoto .g { font-size:31px; }
+
+.gopts { display:flex; flex-direction:column; gap:9px; margin-bottom:15px; }
+.gopts button { padding:16px; border-radius:13px; border:1.5px solid var(--rule);
+  background:var(--card); color:var(--fg); font-size:15.5px; font-family:inherit;
+  text-align:left; font-weight:550; display:flex; align-items:center; gap:11px; }
+.gopts button[aria-pressed="true"] { border-color:var(--warn); background:var(--warnbg); color:var(--warnfg); }
+.gopts .ic { font-size:19px; }
+
+/* ── scanner ─────────────────────────────────────────────────────────── */
+.gscan { flex:1; background:#101215; color:#f2f0ee; display:flex; flex-direction:column; overflow:hidden; }
+.gview { flex:none; height:44vh; max-height:340px; position:relative; overflow:hidden; background:#000; }
+.gview video { width:100%; height:100%; object-fit:cover; }
+.gretic { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:176px; height:176px; pointer-events:none; }
+.gretic i { position:absolute; width:36px; height:36px; border:3.5px solid rgba(255,255,255,.9); }
+.gretic i:nth-child(1){top:0;left:0;border-right:0;border-bottom:0;border-radius:14px 0 0 0}
+.gretic i:nth-child(2){top:0;right:0;border-left:0;border-bottom:0;border-radius:0 14px 0 0}
+.gretic i:nth-child(3){bottom:0;left:0;border-right:0;border-top:0;border-radius:0 0 0 14px}
+.gretic i:nth-child(4){bottom:0;right:0;border-left:0;border-top:0;border-radius:0 0 14px 0}
+.gflash { position:absolute; inset:0; opacity:0; pointer-events:none; }
+.gflash.ok { background:var(--ok); animation:gfl .42s ease-out; }
+.gflash.warn { background:var(--warn); animation:gfl .42s ease-out; }
+@keyframes gfl { 0%{opacity:.82} 100%{opacity:0} }
+@media (prefers-reduced-motion:reduce){ .gflash.ok,.gflash.warn{animation:none;opacity:0} }
+.ghint { position:absolute; bottom:10px; left:0; right:0; text-align:center;
+  font-size:13px; color:rgba(255,255,255,.75); text-shadow:0 1px 3px rgba(0,0,0,.8); padding:0 16px; }
+
+.gtally { display:flex; align-items:baseline; gap:12px; padding:13px 18px; flex:none;
+  border-top:1px solid rgba(255,255,255,.1); border-bottom:1px solid rgba(255,255,255,.1); }
+.gtally .n { font-family:var(--mono); font-size:36px; font-weight:600; line-height:1;
+  font-variant-numeric:tabular-nums; }
+.gtally .lbl { font-size:13px; color:rgba(255,255,255,.6); flex:1; }
+.gtally .rate { font-size:13px; color:rgba(255,255,255,.55); }
+.gfeed { flex:1; overflow-y:auto; padding:10px 12px; }
+.grow { background:rgba(255,255,255,.06); border-radius:12px; padding:11px 13px; margin-bottom:8px;
+  display:flex; gap:11px; align-items:center; animation:gsl .24s ease-out; }
+@keyframes gsl { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:none} }
+@media (prefers-reduced-motion:reduce){ .grow{animation:none} }
+.grow .tick { width:26px; height:26px; border-radius:50%; background:var(--ok); color:#fff;
+  flex:none; display:flex; align-items:center; justify-content:center; font-size:15px; }
+.grow.flag .tick { background:var(--warn); }
+.grow .txt { flex:1; min-width:0; }
+.grow .bc { font-size:14px; display:block; }
+.grow .nm { font-size:12.5px; color:rgba(255,255,255,.58); display:block; margin-top:2px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gscanfoot { flex:none; display:flex; gap:9px; padding:11px 13px;
+  padding-bottom:calc(13px + env(safe-area-inset-bottom));
+  border-top:1px solid rgba(255,255,255,.1); }
+
+/* ── settings ────────────────────────────────────────────────────────── */
+.gswitch { display:flex; align-items:center; justify-content:space-between; padding:15px;
+  border-radius:14px; border:1.5px solid var(--rule); background:var(--card); margin-bottom:9px; }
+.gswitch span { font-size:16px; font-weight:600; }
+.gtog { width:56px; height:32px; border-radius:20px; background:var(--card2);
+  border:1px solid var(--rule); position:relative; flex:none; }
+.gtog::after { content:""; position:absolute; top:3px; left:3px; width:24px; height:24px;
+  border-radius:50%; background:var(--fg3); transition:transform .18s; }
+.gtog[aria-pressed="true"] { background:var(--ok); border-color:var(--ok); }
+.gtog[aria-pressed="true"]::after { transform:translateX(24px); background:#fff; }
+.glangs { display:flex; flex-direction:column; gap:9px; }
+.glang { display:flex; align-items:center; gap:13px; padding:15px; border-radius:14px;
+  border:1.5px solid var(--rule); background:var(--card); text-align:left;
+  font-family:inherit; color:var(--fg); width:100%; }
+.glang[aria-pressed="true"] { border-color:var(--primary); background:var(--card2); }
+.glang .native { font-size:18px; font-weight:650; flex:1; }
+.glang .en { font-size:12.5px; color:var(--fg3); }
+.glang .chk { font-size:19px; color:var(--ok); opacity:0; }
+.glang[aria-pressed="true"] .chk { opacity:1; }
+
+.gspin { width:34px; height:34px; border-radius:50%; border:3px solid var(--rule);
+  border-top-color:var(--fg2); animation:gspin 1s linear infinite; }
+@keyframes gspin { to { transform:rotate(360deg) } }
+/* A card that is also a button — used for the sync status, which doubles as
+   the way into the queue. No extra chrome; the card is the affordance. */
+.gate .gplain{background:none;border:0;padding:0;width:100%;text-align:left;font:inherit;color:inherit;display:block}
+.gate .gspinicon{animation:gspin 1s linear infinite}
+.gate .gglyph{display:flex;justify-content:center;color:var(--fg2)}
+.gate .gcard h3{display:flex;align-items:center;gap:7px}
+.gate .gtag{display:inline-flex;align-items:center;gap:4px}
+.gate .grow .tick{display:flex}
+
+/* The check-in selfie. A live preview the guard can see before they tap —
+   replacing an off-DOM video read after a fixed delay, which returned black on
+   a real phone. Mirrored, because an un-mirrored selfie preview feels wrong to
+   everyone who has ever used a phone. */
+.gate .gselfiewrap{position:relative;width:200px;height:200px;border-radius:50%;
+  overflow:hidden;margin:0 auto 14px;background:var(--card2);border:2px solid var(--rule);
+  display:grid;place-items:center;color:var(--fg3)}
+.gate .gselfiewrap video,.gate .gselfiewrap img{position:absolute;inset:0;width:100%;
+  height:100%;object-fit:cover;transform:scaleX(-1)}
+.gate .gselfiewrap .hidden{display:none}
+.gate .gselfiebusy{position:absolute;inset:0;display:grid;place-items:center;
+  background:rgba(0,0,0,.35);color:#fff}
+.gate .gselfiebtns{display:flex;justify-content:center;margin-bottom:16px}
+.gate .gselfiebtns .gbtn{flex:0 0 auto;padding:0 22px}

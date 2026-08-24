@@ -1,0 +1,119 @@
+// The guard app's vocabulary, in the five languages the warehouses speak.
+//
+// Chosen in Settings and applied to the whole app. Hindi for NCR, Marathi for
+// Mumbai and Pune, Kannada for Bangalore, Telugu for Hyderabad, English
+// throughout.
+//
+// ⚠ EVERY NON-ENGLISH STRING NEEDS A NATIVE SPEAKER'S REVIEW before a guard
+//   sees it. Warehouse vocabulary is trade language, not dictionary language —
+//   "inward" and "outward" especially — and a translation that is literally
+//   correct but idiomatically wrong makes the app feel foreign in exactly the
+//   way that kills adoption.
+
+export const LANGS = [
+  { id: "en", native: "English", en: "English" },
+  { id: "hi", native: "हिन्दी", en: "Hindi" },
+  { id: "mr", native: "मराठी", en: "Marathi" },
+  { id: "kn", native: "ಕನ್ನಡ", en: "Kannada" },
+  { id: "te", native: "తెలుగు", en: "Telugu" },
+] as const;
+
+export type LangId = (typeof LANGS)[number]["id"];
+
+type Row = Record<LangId, string>;
+
+export const STRINGS: Record<string, Row> = {
+  somethingWrong:{en:"Something went wrong",hi:"कुछ गड़बड़ हो गई",mr:"काहीतरी चूक झाली",kn:"ಏನೋ ತಪ್ಪಾಗಿದೆ",te:"ఏదో తప్పు జరిగింది"},
+  workIsSafe:{en:"Your work is saved on this phone",hi:"आपका काम इस फोन में सेव है",mr:"तुमचे काम या फोनमध्ये सेव्ह आहे",kn:"ನಿಮ್ಮ ಕೆಲಸ ಈ ಫೋನ್‌ನಲ್ಲಿ ಉಳಿದಿದೆ",te:"మీ పని ఈ ఫోన్‌లో సేవ్ అయింది"},
+  deviceRevoked:{en:"This phone is no longer allowed",hi:"इस फोन की अनुमति हटा दी गई है",mr:"या फोनची परवानगी काढली आहे",kn:"ಈ ಫೋನ್‌ಗೆ ಅನುಮತಿ ಇಲ್ಲ",te:"ఈ ఫోన్‌కు అనుమతి లేదు"},
+  deviceRevokedWhy:{en:"Ask your manager to pair it again. Anything already saved will still be sent.",hi:"मैनेजर से दोबारा जोड़ने को कहें। जो सेव है वह फिर भी भेजा जाएगा।",mr:"मॅनेजरला पुन्हा जोडायला सांगा. सेव्ह केलेले तरीही पाठवले जाईल.",kn:"ಮ್ಯಾನೇಜರ್‌ಗೆ ಮತ್ತೆ ಜೋಡಿಸಲು ಹೇಳಿ. ಉಳಿಸಿದ್ದು ಹಾಗೂ ಕಳುಹಿಸಲಾಗುತ್ತದೆ.",te:"మేనేజర్‌ను మళ్లీ జత చేయమని అడగండి. సేవ్ అయినవి పంపబడతాయి."},
+  queueTitle:{en:"Waiting to send",hi:"भेजना बाकी",mr:"पाठवायचे बाकी",kn:"ಕಳುಹಿಸಲು ಬಾಕಿ",te:"పంపడానికి పెండింగ్"},
+  someRefused:{en:"Some entries were refused",hi:"कुछ एंट्री नहीं ली गईं",mr:"काही नोंदी घेतल्या नाहीत",kn:"ಕೆಲವು ನಮೂದುಗಳು ತಿರಸ್ಕೃತವಾಗಿವೆ",te:"కొన్ని నమోదులు తిరస్కరించబడ్డాయి"},
+  someRefusedWhy:{en:"They are kept here so nothing is lost. Show this to your manager.",hi:"ये यहीं रखी हैं ताकि कुछ खोए नहीं। मैनेजर को दिखाएं।",mr:"या इथेच ठेवल्या आहेत जेणेकरून काही हरवणार नाही. मॅनेजरला दाखवा.",kn:"ಏನೂ ಕಳೆದುಹೋಗದಂತೆ ಇಲ್ಲಿ ಇಡಲಾಗಿದೆ. ಮ್ಯಾನೇಜರ್‌ಗೆ ತೋರಿಸಿ.",te:"ఏమీ పోకుండా ఇక్కడ ఉంచబడ్డాయి. మేనేజర్‌కు చూపండి."},
+  retake:{en:"Retake",hi:"दोबारा लें",mr:"पुन्हा घ्या",kn:"ಮತ್ತೆ ತೆಗೆಯಿರಿ",te:"మళ్లీ తీయండి"},
+  faceOk:{en:"Photo matched",hi:"फोटो मिल गई",mr:"फोटो जुळला",kn:"ಫೋಟೋ ಹೊಂದಿಕೆಯಾಯಿತು",te:"ఫోటో సరిపోలింది"},
+  faceReview:{en:"Saved — your manager will check this",hi:"सेव हो गया — मैनेजर जाँच लेंगे",mr:"सेव्ह झाले — मॅनेजर तपासतील",kn:"ಉಳಿಸಲಾಗಿದೆ — ಮ್ಯಾನೇಜರ್ ಪರಿಶೀಲಿಸುತ್ತಾರೆ",te:"సేవ్ అయింది — మేనేజర్ తనిఖీ చేస్తారు"},
+  faceNone:{en:"No face found — try again in better light",hi:"चेहरा नहीं दिखा — बेहतर रोशनी में दोबारा लें",mr:"चेहरा दिसला नाही — चांगल्या उजेडात पुन्हा घ्या",kn:"ಮುಖ ಕಾಣಲಿಲ್ಲ — ಒಳ್ಳೆಯ ಬೆಳಕಿನಲ್ಲಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ",te:"ముఖం కనిపించలేదు — మంచి వెలుతురులో మళ్లీ ప్రయత్నించండి"},
+  whoAreYou:{en:"Who is on duty?",hi:"ड्यूटी पर कौन है?",mr:"ड्युटीवर कोण आहे?",kn:"ಕರ್ತವ್ಯದಲ್ಲಿ ಯಾರಿದ್ದಾರೆ?",te:"డ్యూటీలో ఎవరు ఉన్నారు?"},
+  tapYourName:{en:"Tap your name",hi:"अपना नाम चुनें",mr:"तुमचे नाव निवडा",kn:"ನಿಮ್ಮ ಹೆಸರು ಆಯ್ಕೆಮಾಡಿ",te:"మీ పేరు ఎంచుకోండి"},
+  noGuards:{en:"No guards have been added for this gate yet.",hi:"इस गेट के लिए अभी कोई गार्ड नहीं जोड़ा गया है।",mr:"या गेटसाठी अजून कोणताही गार्ड जोडलेला नाही.",kn:"ಈ ಗೇಟ್‌ಗೆ ಇನ್ನೂ ಯಾವುದೇ ಗಾರ್ಡ್ ಸೇರಿಸಿಲ್ಲ.",te:"ఈ గేట్‌కు ఇంకా ఏ గార్డ్‌ను చేర్చలేదు."},
+  switchGuard:{en:"Switch guard",hi:"गार्ड बदलें",mr:"गार्ड बदला",kn:"ಗಾರ್ಡ್ ಬದಲಿಸಿ",te:"గార్డ్ మార్చండి"},
+  appName:{en:"Gate Check",hi:"गेट रजिस्टर",mr:"गेट रजिस्टर",kn:"ಗೇಟ್ ರಿಜಿಸ್ಟರ್",te:"గేట్ రిజిస్టర్"},
+  enterPin:{en:"Enter PIN",hi:"पिन डालें",mr:"पिन टाका",kn:"ಪಿನ್ ನಮೂದಿಸಿ",te:"పిన్ నమోదు చేయండి"},
+  wrongPin:{en:"Wrong PIN",hi:"गलत पिन",mr:"चुकीचा पिन",kn:"ತಪ್ಪು ಪಿನ್",te:"తప్పు పిన్"},
+  pinHint:{en:"Ask your manager if you have forgotten it",hi:"भूल गए हों तो मैनेजर से पूछें",mr:"विसरला असाल तर मॅनेजरला विचारा",kn:"ಮರೆತಿದ್ದರೆ ಮ್ಯಾನೇಜರ್ ಅವರನ್ನು ಕೇಳಿ",te:"మరచిపోతే మేనేజర్‌ను అడగండి"},
+  checkIn:{en:"Check in",hi:"हाज़िरी लगाएं",mr:"हजेरी लावा",kn:"ಹಾಜರಾತಿ ಹಾಕಿ",te:"హాజరు వేయండి"},
+  checkOut:{en:"Check out",hi:"छुट्टी करें",mr:"सुट्टी करा",kn:"ಚೆಕ್ ಔಟ್",te:"చెక్ అవుట్"},
+  takeSelfie:{en:"Take your photo",hi:"अपनी फोटो लें",mr:"तुमचा फोटो काढा",kn:"ನಿಮ್ಮ ಫೋಟೋ ತೆಗೆಯಿರಿ",te:"మీ ఫోటో తీసుకోండి"},
+  selfieWhy:{en:"Confirms you are on duty",hi:"पक्का करता है कि आप ड्यूटी पर हैं",mr:"तुम्ही ड्युटीवर आहात याची खात्री करते",kn:"ನೀವು ಕರ್ತವ್ಯದಲ್ಲಿದ್ದೀರಿ ಎಂದು ಖಚಿತಪಡಿಸುತ್ತದೆ",te:"మీరు డ్యూటీలో ఉన్నారని నిర్ధారిస్తుంది"},
+  atGate:{en:"At the gate",hi:"गेट पर",mr:"गेटवर",kn:"ಗೇಟ್‌ನಲ್ಲಿ",te:"గేట్ వద్ద"},
+  notAtGate:{en:"Not at the gate",hi:"गेट पर नहीं",mr:"गेटवर नाही",kn:"ಗೇಟ್‌ನಲ್ಲಿ ಇಲ್ಲ",te:"గేట్ వద్ద లేరు"},
+  locUnknown:{en:"Location unavailable",hi:"लोकेशन नहीं मिली",mr:"लोकेशन मिळाले नाही",kn:"ಸ್ಥಳ ಸಿಗಲಿಲ್ಲ",te:"లొకేషన్ దొరకలేదు"},
+  today:{en:"Today",hi:"आज",mr:"आज",kn:"ಇಂದು",te:"ఈరోజు"},
+  onDuty:{en:"On duty",hi:"ड्यूटी पर",mr:"ड्युटीवर",kn:"ಕರ್ತವ್ಯದಲ್ಲಿ",te:"డ్యూటీలో"},
+  since:{en:"Since",hi:"से",mr:"पासून",kn:"ಇಂದ",te:"నుండి"},
+  tripsToday:{en:"Trips today",hi:"आज की ट्रिप",mr:"आजच्या ट्रिप",kn:"ಇಂದಿನ ಟ್ರಿಪ್‌ಗಳು",te:"ఈరోజు ట్రిప్‌లు"},
+  itemsToday:{en:"Items today",hi:"आज के आइटम",mr:"आजच्या वस्तू",kn:"ಇಂದಿನ ವಸ್ತುಗಳು",te:"ఈరోజు వస్తువులు"},
+  startTrip:{en:"Start trip",hi:"ट्रिप शुरू करें",mr:"ट्रिप सुरू करा",kn:"ಟ್ರಿಪ್ ಪ್ರಾರಂಭಿಸಿ",te:"ట్రిప్ ప్రారంభించండి"},
+  resumeTrip:{en:"Resume trip",hi:"ट्रिप जारी रखें",mr:"ट्रिप सुरू ठेवा",kn:"ಟ್ರಿಪ್ ಮುಂದುವರಿಸಿ",te:"ట్రిప్ కొనసాగించండి"},
+  inward:{en:"Inward",hi:"अंदर",mr:"आत",kn:"ಒಳಗೆ",te:"లోపలికి"},
+  outward:{en:"Outward",hi:"बाहर",mr:"बाहेर",kn:"ಹೊರಗೆ",te:"బయటికి"},
+  vehicleNo:{en:"Vehicle number",hi:"गाड़ी नंबर",mr:"गाडी नंबर",kn:"ವಾಹನ ಸಂಖ್ಯೆ",te:"వాహన నంబర్"},
+  driverName:{en:"Driver name",hi:"ड्राइवर का नाम",mr:"ड्रायव्हरचे नाव",kn:"ಚಾಲಕನ ಹೆಸರು",te:"డ్రైవర్ పేరు"},
+  vehNote:{en:"Every movement travels on a vehicle. The number is required.",hi:"हर सामान गाड़ी से ही जाता है। नंबर डालना जरूरी है।",mr:"प्रत्येक माल गाडीनेच जातो. नंबर टाकणे आवश्यक आहे.",kn:"ಪ್ರತಿ ಸರಕು ವಾಹನದಲ್ಲೇ ಹೋಗುತ್ತದೆ. ಸಂಖ್ಯೆ ಕಡ್ಡಾಯ.",te:"ప్రతి సరుకు వాహనంలోనే వెళ్తుంది. నంబర్ తప్పనిసరి."},
+  startScanning:{en:"Start scanning",hi:"स्कैन शुरू करें",mr:"स्कॅन सुरू करा",kn:"ಸ್ಕ್ಯಾನ್ ಪ್ರಾರಂಭಿಸಿ",te:"స్కాన్ ప్రారంభించండి"},
+  pointAtCode:{en:"Point at the barcode",hi:"बारकोड पर कैमरा रखें",mr:"बारकोडवर कॅमेरा धरा",kn:"ಬಾರ್‌ಕೋಡ್ ಮೇಲೆ ಕ್ಯಾಮೆರಾ ಹಿಡಿಯಿರಿ",te:"బార్‌కోడ్‌పై కెమెరా పెట్టండి"},
+  itemsScanned:{en:"items scanned",hi:"आइटम स्कैन हुए",mr:"वस्तू स्कॅन झाल्या",kn:"ವಸ್ತುಗಳು ಸ್ಕ್ಯಾನ್ ಆಗಿವೆ",te:"వస్తువులు స్కాన్ అయ్యాయి"},
+  alreadyScanned:{en:"Already scanned",hi:"पहले ही स्कैन हो चुका",mr:"आधीच स्कॅन झाले आहे",kn:"ಈಗಾಗಲೇ ಸ್ಕ್ಯಾನ್ ಆಗಿದೆ",te:"ఇప్పటికే స్కాన్ అయింది"},
+  doneScanning:{en:"Done",hi:"हो गया",mr:"झाले",kn:"ಮುಗಿಯಿತು",te:"అయిపోయింది"},
+  notOnList:{en:"Not on today's list",hi:"आज की सूची में नहीं",mr:"आजच्या यादीत नाही",kn:"ಇಂದಿನ ಪಟ್ಟಿಯಲ್ಲಿ ಇಲ್ಲ",te:"నేటి జాబితాలో లేదు"},
+  whyLeaving:{en:"Why is this item moving?",hi:"यह सामान क्यों जा रहा है?",mr:"ही वस्तू का जात आहे?",kn:"ಈ ವಸ್ತು ಏಕೆ ಚಲಿಸುತ್ತಿದೆ?",te:"ఈ వస్తువు ఎందుకు కదులుతోంది?"},
+  photoRequired:{en:"Photo required",hi:"फोटो जरूरी है",mr:"फोटो आवश्यक",kn:"ಫೋಟೋ ಕಡ್ಡಾಯ",te:"ఫోటో తప్పనిసరి"},
+  photoTaken:{en:"Photo taken",hi:"फोटो ले ली",mr:"फोटो घेतला",kn:"ಫೋಟೋ ತೆಗೆಯಲಾಗಿದೆ",te:"ఫోటో తీయబడింది"},
+  allowIt:{en:"Allow",hi:"जाने दें",mr:"जाऊ द्या",kn:"ಅನುಮತಿಸಿ",te:"అనుమతించండి"},
+  cancel:{en:"Cancel",hi:"रद्द करें",mr:"रद्द करा",kn:"ರದ್ದುಮಾಡಿ",te:"రద్దు చేయండి"},
+  addManually:{en:"Add manually",hi:"हाथ से जोड़ें",mr:"हाताने जोडा",kn:"ಕೈಯಿಂದ ಸೇರಿಸಿ",te:"చేతితో జోడించండి"},
+  whatIsIt:{en:"What is it?",hi:"यह क्या है?",mr:"हे काय आहे?",kn:"ಇದು ಏನು?",te:"ఇది ఏమిటి?"},
+  change:{en:"Change",hi:"बदलें",mr:"बदला",kn:"ಬದಲಿಸಿ",te:"మార్చండి"},
+  quantity:{en:"Quantity",hi:"कितने",mr:"किती",kn:"ಎಷ್ಟು",te:"ఎన్ని"},
+  comments:{en:"Comments",hi:"टिप्पणी",mr:"टिप्पणी",kn:"ಟಿಪ್ಪಣಿ",te:"వ్యాఖ్య"},
+  serialOrOrder:{en:"Serial or order number",hi:"सीरियल या ऑर्डर नंबर",mr:"सीरियल किंवा ऑर्डर नंबर",kn:"ಸೀರಿಯಲ್ ಅಥವಾ ಆರ್ಡರ್ ಸಂಖ್ಯೆ",te:"సీరియల్ లేదా ఆర్డర్ నంబర్"},
+  hasSticker:{en:"Does it have a barcode sticker?",hi:"क्या इस पर बारकोड स्टिकर है?",mr:"यावर बारकोड स्टिकर आहे का?",kn:"ಇದರ ಮೇಲೆ ಬಾರ್‌ಕೋಡ್ ಸ್ಟಿಕರ್ ಇದೆಯೇ?",te:"దీనిపై బార్‌కోడ్ స్టిక్కర్ ఉందా?"},
+  stickerWhy:{en:"A returning item should already have one.",hi:"वापस आने वाले सामान पर पहले से होना चाहिए।",mr:"परत येणाऱ्या वस्तूवर आधीच असायला हवे.",kn:"ಹಿಂತಿರುಗುವ ವಸ್ತುವಿನ ಮೇಲೆ ಈಗಾಗಲೇ ಇರಬೇಕು.",te:"తిరిగి వచ్చే వస్తువుపై ఇప్పటికే ఉండాలి."},
+  yesScanIt:{en:"Yes — scan it",hi:"हाँ — स्कैन करें",mr:"होय — स्कॅन करा",kn:"ಹೌದು — ಸ್ಕ್ಯಾನ್ ಮಾಡಿ",te:"అవును — స్కాన్ చేయండి"},
+  noSticker:{en:"No sticker",hi:"स्टिकर नहीं है",mr:"स्टिकर नाही",kn:"ಸ್ಟಿಕರ್ ಇಲ್ಲ",te:"స్టిక్కర్ లేదు"},
+  stickerMissing:{en:"Sticker missing",hi:"स्टिकर गायब है",mr:"स्टिकर गहाळ आहे",kn:"ಸ್ಟಿಕರ್ ಇಲ್ಲ",te:"స్టిక్కర్ లేదు"},
+  stickerMissingWhy:{en:"This unit was tagged when it left. Your manager will be told so it can be re-tagged.",hi:"जाते समय इस पर स्टिकर था। मैनेजर को बताया जाएगा ताकि दोबारा लगाया जा सके।",mr:"जाताना यावर स्टिकर होते. मॅनेजरला कळवले जाईल जेणेकरून पुन्हा लावता येईल.",kn:"ಹೋಗುವಾಗ ಇದರ ಮೇಲೆ ಸ್ಟಿಕರ್ ಇತ್ತು. ಮತ್ತೆ ಹಾಕಲು ಮ್ಯಾನೇಜರ್‌ಗೆ ತಿಳಿಸಲಾಗುವುದು.",te:"వెళ్లేటప్పుడు దీనిపై స్టిక్కర్ ఉంది. మళ్లీ వేయడానికి మేనేజర్‌కు తెలియజేయబడుతుంది."},
+  catVendor:{en:"Vendor goods",hi:"वेंडर का सामान",mr:"व्हेंडरचा माल",kn:"ವೆಂಡರ್ ಸರಕು",te:"వెండర్ సరుకు"},
+  catReturn:{en:"Return from pickup",hi:"पिकअप से वापसी",mr:"पिकअपमधून परत",kn:"ಪಿಕಪ್‌ನಿಂದ ಹಿಂತಿರುಗಿದ್ದು",te:"పికప్ నుండి తిరిగి"},
+  catSpare:{en:"Spare part",hi:"स्पेयर पार्ट",mr:"स्पेअर पार्ट",kn:"ಬಿಡಿ ಭಾಗ",te:"స్పేర్ పార్ట్"},
+  catConsum:{en:"Consumable",hi:"खर्च होने वाला सामान",mr:"वापरून संपणारे सामान",kn:"ಬಳಕೆಯ ಸಾಮಗ್ರಿ",te:"వినియోగ సామగ్రి"},
+  catPP:{en:"Packing box",hi:"पैकिंग बॉक्स",mr:"पॅकिंग बॉक्स",kn:"ಪ್ಯಾಕಿಂಗ್ ಬಾಕ್ಸ್",te:"ప్యాకింగ్ బాక్స్"},
+  catSample:{en:"Sample item",hi:"सैंपल सामान",mr:"नमुना वस्तू",kn:"ಮಾದರಿ ವಸ್ತು",te:"నమూనా వస్తువు"},
+  rsnDamaged:{en:"Sticker damaged or missing",hi:"स्टिकर खराब या गायब",mr:"स्टिकर खराब किंवा गहाळ",kn:"ಸ್ಟಿಕರ್ ಹಾಳಾಗಿದೆ ಅಥವಾ ಇಲ್ಲ",te:"స్టిక్కర్ పాడైంది లేదా లేదు"},
+  rsnLate:{en:"Added to the load late",hi:"बाद में गाड़ी में जोड़ा गया",mr:"नंतर गाडीत टाकले",kn:"ನಂತರ ಲೋಡ್‌ಗೆ ಸೇರಿಸಲಾಗಿದೆ",te:"తర్వాత లోడ్‌కు చేర్చారు"},
+  rsnRepair:{en:"Going for repair",hi:"मरम्मत के लिए जा रहा है",mr:"दुरुस्तीसाठी जात आहे",kn:"ದುರಸ್ತಿಗೆ ಹೋಗುತ್ತಿದೆ",te:"మరమ్మతు కోసం వెళ్తోంది"},
+  rsnOther:{en:"Something else",hi:"कुछ और",mr:"दुसरे काही",kn:"ಬೇರೆ ಏನೋ",te:"ఇంకేదో"},
+  closeTrip:{en:"Close trip",hi:"ट्रिप बंद करें",mr:"ट्रिप बंद करा",kn:"ಟ್ರಿಪ್ ಮುಚ್ಚಿ",te:"ట్రిప్ మూసివేయండి"},
+  direction:{en:"Direction",hi:"दिशा",mr:"दिशा",kn:"ದಿಕ್ಕು",te:"దిశ"},
+  flagged:{en:"Flagged",hi:"निशान लगे",mr:"चिन्हांकित",kn:"ಗುರುತಾದವು",te:"గుర్తు పెట్టినవి"},
+  timeTaken:{en:"Time taken",hi:"लगा समय",mr:"लागलेला वेळ",kn:"ತೆಗೆದುಕೊಂಡ ಸಮಯ",te:"పట్టిన సమయం"},
+  back:{en:"Back",hi:"वापस",mr:"मागे",kn:"ಹಿಂದೆ",te:"వెనుకకు"},
+  add:{en:"Add",hi:"जोड़ें",mr:"जोडा",kn:"ಸೇರಿಸಿ",te:"జోడించండి"},
+  settings:{en:"Settings",hi:"सेटिंग",mr:"सेटिंग",kn:"ಸೆಟ್ಟಿಂಗ್ಸ್",te:"సెట్టింగ్‌లు"},
+  nightMode:{en:"Night mode",hi:"रात मोड",mr:"रात्र मोड",kn:"ರಾತ್ರಿ ಮೋಡ್",te:"రాత్రి మోడ్"},
+  language:{en:"Language",hi:"भाषा",mr:"भाषा",kn:"ಭಾಷೆ",te:"భాష"},
+  waiting:{en:"waiting to send",hi:"भेजना बाकी",mr:"पाठवायचे बाकी",kn:"ಕಳುಹಿಸಲು ಬಾಕಿ",te:"పంపడానికి పెండింగ్"},
+  allSent:{en:"All sent",hi:"सब भेज दिया",mr:"सर्व पाठवले",kn:"ಎಲ್ಲಾ ಕಳುಹಿಸಲಾಗಿದೆ",te:"అన్నీ పంపబడ్డాయి"},
+  offline:{en:"No connection — saved on this phone",hi:"कनेक्शन नहीं — फोन में सेव है",mr:"कनेक्शन नाही — फोनमध्ये सेव्ह आहे",kn:"ಸಂಪರ್ಕ ಇಲ್ಲ — ಫೋನ್‌ನಲ್ಲಿ ಉಳಿಸಲಾಗಿದೆ",te:"కనెక్షన్ లేదు — ఫోన్‌లో సేవ్ అయింది"},
+  syncNow:{en:"Send now",hi:"अभी भेजें",mr:"आता पाठवा",kn:"ಈಗ ಕಳುಹಿಸಿ",te:"ఇప్పుడే పంపండి"},
+  needsAttention:{en:"Needs attention",hi:"ध्यान चाहिए",mr:"लक्ष द्या",kn:"ಗಮನ ಬೇಕು",te:"శ్రద్ధ కావాలి"},
+  notPaired:{en:"This phone is not paired",hi:"यह फोन जोड़ा नहीं गया है",mr:"हा फोन जोडलेला नाही",kn:"ಈ ಫೋನ್ ಜೋಡಿಸಿಲ್ಲ",te:"ఈ ఫోన్ జత చేయబడలేదు"},
+  askManager:{en:"Ask your manager for a pairing link.",hi:"मैनेजर से जोड़ने का लिंक मांगें।",mr:"मॅनेजरकडून जोडणीची लिंक मागा.",kn:"ಮ್ಯಾನೇಜರ್‌ರಿಂದ ಜೋಡಣೆ ಲಿಂಕ್ ಕೇಳಿ.",te:"మేనేజర్‌ను పెయిరింగ్ లింక్ అడగండి."},
+  retry:{en:"Try again",hi:"फिर कोशिश करें",mr:"पुन्हा प्रयत्न करा",kn:"ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ",te:"మళ్లీ ప్రయత్నించండి"},
+  cameraBlocked:{en:"Camera permission is needed to scan",hi:"स्कैन के लिए कैमरा की अनुमति चाहिए",mr:"स्कॅनसाठी कॅमेरा परवानगी हवी",kn:"ಸ್ಕ್ಯಾನ್‌ಗೆ ಕ್ಯಾಮೆರಾ ಅನುಮತಿ ಬೇಕು",te:"స్కాన్ కోసం కెమెరా అనుమతి కావాలి"},
+};
+
+export function makeT(lang: LangId) {
+  return (key: string): string => STRINGS[key]?.[lang] ?? STRINGS[key]?.en ?? key;
+}

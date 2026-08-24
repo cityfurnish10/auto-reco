@@ -27,7 +27,12 @@ const NAV_ITEMS: {
   // Managers too — RLS scopes them to their own city, so no route gate needed
   // (and it must NOT go in middleware's ADMIN_ONLY_PATHS).
   { href: "/pending-list", label: "Pending List", icon: "pending_actions", roles: ["ADMIN", "MANAGER"] },
-  { href: "/uploads", label: "Guard Upload", icon: "upload_file", roles: ["ADMIN", "MANAGER"] },
+  // ONE entry, not five. The gate work wanted Activity, Guards, Devices and
+  // Reviews as separate destinations; the sidebar was already at ten, and
+  // fifteen is past the point anyone scans a list instead of hunting it. The
+  // paper upload lives inside it too, so the pilot reads as one transition
+  // rather than two competing screens.
+  { href: "/gate", label: "Gate", icon: "shield", roles: ["ADMIN", "MANAGER"] },
   { href: "/leaderboard", label: "Leaderboard", icon: "leaderboard", roles: ["ADMIN", "MANAGER"] },
   { href: "/users", label: "User Management", icon: "group", roles: ["ADMIN"] },
   { href: "/system-health", label: "System Health", icon: "health_and_safety", roles: ["ADMIN"] },

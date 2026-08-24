@@ -69,9 +69,15 @@ export async function PATCH(
 
   // Don't let the last active admin be demoted / deactivated, and don't let an
   // admin lock themselves out of admin.
+  // ANY role change away from admin counts, not just a demotion to manager.
+  // Spelling the check as `=== "manager"` was correct while those were the only
+  // two roles; 0023 adds "guard", which would have slipped straight past this
+  // and allowed the last active admin to be turned into a gate scanner —
+  // locking every human out of admin with no way back through the UI.
   const losingAdmin =
     (t.role === "admin" && t.status === "active") &&
-    (update.role === "manager" || update.status === "inactive");
+    ((update.role !== undefined && update.role !== "admin") ||
+      update.status === "inactive");
   if (losingAdmin) {
     if (t.id === me.id)
       return NextResponse.json({ error: "you can't remove your own admin access" }, { status: 400 });
