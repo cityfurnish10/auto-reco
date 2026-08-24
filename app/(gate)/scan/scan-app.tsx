@@ -15,9 +15,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "@/components/icon";
 import { LANGS, makeT, type LangId } from "@/lib/gate/client/i18n";
 import * as outbox from "@/lib/gate/client/outbox";
-import { bootstrap, clearGuardId, drain, getGuardId, getToken, rosterFor, signIn,
-         type Bootstrap, type GuardOption } from "@/lib/gate/client/api";
-import { compress, feedback, position } from "@/lib/gate/client/media";
+import { bootstrap, clearGuardId, drain, getGuardId, getToken, history, rosterFor, signIn,
+         type Bootstrap, type GuardOption, type HistoryTrip } from "@/lib/gate/client/api";
+import { click, compress, feedback, position } from "@/lib/gate/client/media";
 import { decodeFrame, initScanner, openCamera, stopCamera } from "@/lib/gate/client/scanner";
 import { canonicalize } from "@/lib/engine/barcode";
 import { compare, describe as describeFace, fromArray, initFace } from "@/lib/gate/client/face";
@@ -27,7 +27,7 @@ type Screen =
   | "newtrip" | "scan" | "resolve" | "manual" | "closetrip" | "settings"
   // The two that decide whether a guard trusts the app when it is not
   // behaving: what went wrong, and what is still waiting to be sent.
-  | "problem" | "queue" | "profile";
+  | "problem" | "queue" | "profile" | "history";
 
 interface ScanLine {
   clientId: string; barcode: string; label: string; flagged: boolean;
@@ -105,6 +105,10 @@ export default function GateApp() {
   const [pin, setPin] = useState("");
   const [pinBad, setPinBad] = useState(false);
   const [problem, setProblem] = useState<{ titleKey: string; bodyKey: string } | null>(null);
+  const [histDate, setHistDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [hist, setHist] = useState<{ trips: HistoryTrip[]; totals: { trips: number; items: number } } | null>(null);
+  const [histErr, setHistErr] = useState<string | null>(null);
+  const [openTripId, setOpenTripId] = useState<string | null>(null);
   const [rejected, setRejected] = useState<outbox.OutboxItem[]>([]);
   const [pendingItems, setPendingItems] = useState<outbox.OutboxItem[]>([]);
   // The gate's roster and the guard who has signed in on this phone. A device
@@ -114,11 +118,20 @@ export default function GateApp() {
   // The live face signature and what it scored against this guard's stored one.
   const selfieRef = useRef<HTMLVideoElement>(null);
   const selfieStream = useRef<MediaStream | null>(null);
-  const [selfieCam, setSelfieCam] = useState<"starting" | "live" | "blocked">("starting");
+  const [selfieCam, setSelfieCam] = useState<"starting" | "live" | "blocked" | "frozen">("starting");
   const [shotUrl, setShotUrl] = useState<string | null>(null);
+  // Bumped to restart the selfie camera after a retake.
+  const [selfieNonce, setSelfieNonce] = useState(0);
   const [faceScore, setFaceScore] = useState<number | null>(null);
   const [faceVerdict, setFaceVerdict] = useState<"pass" | "review" | "fail" | "no_face" | null>(null);
   const [matching, setMatching] = useState(false);
+
+  // Remembered across a reload. A guard who drops the phone mid-trip should
+  // come back to the trip, not to the sign-in list.
+  useEffect(() => {
+    if (["loading", "unpaired", "who", "pin"].includes(screen)) return;
+    try { localStorage.setItem("gate.screen", screen); } catch { /* storage blocked */ }
+  }, [screen]);
 
   const refreshQueue = useCallback(async () => {
     const c = await outbox.counts();
@@ -170,6 +183,22 @@ export default function GateApp() {
           setDir(b.openTrip.direction);
           setVeh(b.openTrip.vehicle_no);
         }
+        // Rebuild the open trip's item list from the outbox, so a reload shows
+        // the scans already made rather than an empty trip that looks lost.
+        if (b.openTrip) {
+          const queued = (await outbox.all()).filter(
+            (i) => i.kind === "scan" && i.payload.clientTripId === b.openTrip!.client_trip_id
+          );
+          setLines(queued.reverse().map((i) => ({
+            clientId: i.clientId,
+            barcode: String(i.payload.barcode ?? i.payload.serialNo ?? ""),
+            label: String(i.payload.product ?? ""),
+            flagged: !!i.payload.overrideReason || i.payload.entryMethod === "manual",
+          })));
+          for (const i of queued) {
+            if (i.payload.barcode) seenRef.current.add(String(i.payload.barcode));
+          }
+        }
         setScreen(getGuardId() ? "pin" : "who");
         return;
       } catch (e) {
@@ -197,6 +226,21 @@ export default function GateApp() {
       setScreen("problem");
     });
   }, [refreshQueue]);
+
+  // One listener rather than sixty handlers. Capture phase, so it fires even
+  // when a handler stops propagation, and it deliberately skips the scanner
+  // viewport — that already has its own distinct tone and buzz, and two sounds
+  // for one scan is worse than none.
+  useEffect(() => {
+    const onTap = (e: Event) => {
+      const el = (e.target as HTMLElement)?.closest?.("button, .gkey, label.gbtn");
+      if (!el || el.closest(".gview")) return;
+      if ((el as HTMLButtonElement).disabled) return;
+      click();
+    };
+    document.addEventListener("click", onTap, true);
+    return () => document.removeEventListener("click", onTap, true);
+  }, []);
 
   /* ── background sync ───────────────────────────────────────────────── */
   const sync = useCallback(async () => {
@@ -261,7 +305,7 @@ export default function GateApp() {
       selfieStream.current?.getTracks().forEach((t) => t.stop());
       selfieStream.current = null;
     };
-  }, [screen]);
+  }, [screen, selfieNonce]);
 
   /* ── scanner camera ────────────────────────────────────────────────────── */
   useEffect(() => {
@@ -342,8 +386,11 @@ export default function GateApp() {
 
   const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-  const stampElapsed = () =>
-    setElapsed(t0 ? `${Math.max(1, Math.round((Date.now() - t0) / 60000))}m` : "—");
+  const stampElapsed = () => {
+    if (!t0) { setElapsed("—"); return; }
+    const secs = Math.max(1, Math.round((Date.now() - t0) / 1000));
+    setElapsed(secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`);
+  };
 
   async function addScan(
     payload: Record<string, unknown>,
@@ -393,13 +440,18 @@ export default function GateApp() {
     if (!v?.videoWidth) return;
     setMatching(true);
     try {
-      // Loaded here, on demand, rather than warmed in advance -- see the note
-      // above the removed preload.
-      if (!faceReady) { await initFace(); setFaceReady(true); }
+      // FREEZE FIRST. The frame is grabbed and the camera stopped before any
+      // matching begins — leaving a live face moving under the still it is
+      // being compared against reads as "still working" and invites a retap.
       const blob = await compress(v, 640, 0.75);
       setPhoto(blob);
       setShotUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob); });
-      // The comparison runs here, on the phone. Nothing is uploaded to decide it.
+      selfieStream.current?.getTracks().forEach((t) => t.stop());
+      selfieStream.current = null;
+      setSelfieCam("frozen");
+      // Only now the comparison, which may have to fetch the model first.
+      if (!faceReady) { await initFace(); setFaceReady(true); }
+      // Runs on the phone. Nothing is uploaded to decide it.
       const live = await describeFace(v);
       const r = compare(live, fromArray(me?.descriptor));
       setFaceScore(r.score); setFaceVerdict(r.verdict);
@@ -414,13 +466,58 @@ export default function GateApp() {
   function retakeSelfie() {
     setPhoto(null); setFaceScore(null); setFaceVerdict(null);
     setShotUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    // The stream was stopped at capture, so retaking has to start a new one.
+    setSelfieCam("starting");
+    setSelfieNonce((n) => n + 1);
   }
 
-  /* ── capture a photo from the live camera ──────────────────────────── */
+  /* ── photographing an ITEM (manual entry, overrides) ───────────────────
+     Its own rear camera, opened only while the sheet is up. This used to read
+     the scanner's video element, which is unmounted on these screens, so the
+     button did nothing at all — and since both screens require a photo before
+     they can be saved, neither could be completed. */
+  const itemVidRef = useRef<HTMLVideoElement>(null);
+  const itemStream = useRef<MediaStream | null>(null);
+  const [itemCam, setItemCam] = useState<"off" | "starting" | "live" | "blocked">("off");
+
+  const openItemCamera = useCallback(async () => {
+    setItemCam("starting");
+    try {
+      const st = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+      });
+      itemStream.current = st;
+      if (itemVidRef.current) {
+        itemVidRef.current.srcObject = st;
+        await itemVidRef.current.play().catch(() => {});
+      }
+      setItemCam("live");
+    } catch { setItemCam("blocked"); }
+  }, []);
+
+  const closeItemCamera = useCallback(() => {
+    itemStream.current?.getTracks().forEach((t) => t.stop());
+    itemStream.current = null;
+    setItemCam("off");
+  }, []);
+
   async function grabPhoto() {
-    if (!videoRef.current?.videoWidth) return;
-    setPhoto(await compress(videoRef.current));
+    // First tap opens the viewfinder; second tap takes the shot. One control,
+    // and the guard can see what they are photographing before committing.
+    if (itemCam === "off" || itemCam === "blocked") { await openItemCamera(); return; }
+    const v = itemVidRef.current;
+    if (!v?.videoWidth) return;          // no frame has arrived yet
+    setPhoto(await compress(v, 900, 0.7));
+    closeItemCamera();
   }
+
+  // Never leave a camera running behind a screen the guard has left. The
+  // cleanup runs on the way OUT rather than synchronously on the way in, which
+  // is both correct and avoids a cascading render.
+  useEffect(() => {
+    if (screen === "manual" || screen === "resolve") return;
+    return () => closeItemCamera();
+  }, [screen, closeItemCamera]);
 
   /* ── trip ──────────────────────────────────────────────────────────── */
   async function startTrip() {
@@ -457,7 +554,42 @@ export default function GateApp() {
     await refreshQueue(); void sync(); setScreen("today");
   }
 
+  const loadHistory = useCallback(async (d: string) => {
+    setHist(null); setHistErr(null);
+    try { setHist(await history(d)); }
+    catch (e) { setHistErr(e instanceof Error ? e.message : String(e)); }
+  }, []);
+
   /* ── attendance ────────────────────────────────────────────────────── */
+  async function checkOut() {
+    if (!shiftId) return;
+    const pos = await position();
+    // Same client id as the check-in, so the server updates that shift rather
+    // than creating a second one — the sync layer treats a repeat id as an
+    // update when a checkedOutAt arrives.
+    await outbox.enqueue({
+      clientId: `${shiftId}-out`, kind: "shift",
+      payload: {
+        clientShiftId: shiftId,
+        checkedInAt: shiftAt ?? new Date().toISOString(),
+        checkedOutAt: new Date().toISOString(),
+        status: "closed",
+        outLat: pos?.coords.latitude ?? null,
+        outLng: pos?.coords.longitude ?? null,
+      },
+    });
+    await refreshQueue(); void sync();
+  }
+
+  async function handOver() {
+    // End the shift properly before the next guard signs in. Without this the
+    // attendance record never closes and the previous guard shows as on duty.
+    await checkOut();
+    clearGuardId(); setMe(null); setShiftId(null); setShiftAt(null);
+    setTrips(0); setItemsToday(0);
+    setScreen("who");
+  }
+
   async function doCheckIn() {
     const clientId = uid();
     const pos = await position();
@@ -566,7 +698,7 @@ export default function GateApp() {
           <Bar t={t} title={t("queueTitle")}
                left={<BackBtn onClick={() => setScreen("today")} />} />
           <div className="gbody">
-            <SyncCard t={t} online={online} queue={queue} onSync={() => void sync()} />
+            <SyncCard t={t} online={online} queue={queue} />
 
             {/* What is actually waiting. The screen used to list only refused
                 rows, so "2 waiting to send" opened onto nothing at all -- which
@@ -633,12 +765,7 @@ export default function GateApp() {
             </div>
           </div>
           <div className="gfoot">
-            <button className="gbtn ghost" onClick={() => {
-              // Handover. The queue is NOT cleared: those rows belong to the
-              // guard who made them and still have to be sent under their name.
-              clearGuardId(); setMe(null); setShiftId(null); setShiftAt(null);
-              setScreen("who");
-            }}>{t("switchGuard")}</button>
+            <button className="gbtn ghost" onClick={handOver}>{t("switchGuard")}</button>
           </div>
         </>
       )}
@@ -688,7 +815,15 @@ export default function GateApp() {
                         try { const b = await bootstrap(); setBoot(b);
                           if (b.openShift) { setShiftId(b.openShift.client_shift_id);
                                              setShiftAt(b.openShift.checked_in_at); } } catch { /* offline */ }
-                        setScreen(shiftId ? "today" : "checkin");
+                        // Back to whatever they were doing, if it still makes
+                        // sense; otherwise the normal start of a shift.
+                        let resume: Screen | null = null;
+                        try { resume = localStorage.getItem("gate.screen") as Screen | null; } catch {}
+                        setScreen(
+                          !shiftId ? "checkin"
+                          : resume && ["today","scan","newtrip","closetrip","queue","profile"].includes(resume)
+                            ? resume : "today"
+                        );
                       } else setPinBad(true);
                     }
                   }}>{k}</button>
@@ -747,7 +882,7 @@ export default function GateApp() {
           <Bar t={t} title={t("today")} right={<GearBtn onClick={() => setScreen("settings")} />} />
           <div className="gbody">
             <button className="gplain" onClick={() => setScreen("queue")}>
-              <SyncCard t={t} online={online} queue={queue} onSync={() => void sync()} />
+              <SyncCard t={t} online={online} queue={queue} />
             </button>
             {shiftAt && (
               <div className="gcard ok">
@@ -755,10 +890,17 @@ export default function GateApp() {
                 <div><b>{t("onDuty")}</b><span>{t("since")} {fmt(shiftAt)}</span></div>
               </div>
             )}
-            <div className="gcard col">
+            <button className="gcard col tap" onClick={() => {
+              const d = new Date().toISOString().slice(0, 10);
+              setHistDate(d); void loadHistory(d); setScreen("history");
+            }}>
               <div className="gkv"><span>{t("tripsToday")}</span><b>{trips}</b></div>
               <div className="gkv"><span>{t("itemsToday")}</span><b>{itemsToday + lines.length}</b></div>
-            </div>
+              <div className="gkv" style={{ borderBottom: "none" }}>
+                <span className="gsub">{t("viewHistory")}</span>
+                <Icon name="chevron_right" size={17} />
+              </div>
+            </button>
             {err && <p className="gnote">{err}</p>}
           </div>
           <div className="gfoot">
@@ -781,7 +923,8 @@ export default function GateApp() {
             </div>
             <Field label={t("vehicleNo")}>
               <input className="gf mono" value={veh} placeholder="HR26 DK 8337"
-                onChange={(e) => setVeh(e.target.value)} autoComplete="off" />
+                onChange={(e) => setVeh(e.target.value.toUpperCase())}
+                autoCapitalize="characters" autoComplete="off" />
             </Field>
             <Field label={t("driverName")}>
               <input className="gf" value={drv} onChange={(e) => setDrv(e.target.value)} autoComplete="off" />
@@ -845,7 +988,7 @@ export default function GateApp() {
                 <button key={r} aria-pressed={reason === r} onClick={() => setReason(r)}>{t(r)}</button>
               ))}
             </div>
-            <PhotoBox t={t} photo={photo} onClick={grabPhoto} />
+            <PhotoBox t={t} photo={photo} cam={itemCam} videoRef={itemVidRef} onClick={grabPhoto} />
           </div>
           <div className="gfoot">
             <button className="gbtn ghost narrow" onClick={() => { setPendingScan(null); setScreen("scan"); }}>
@@ -915,7 +1058,7 @@ export default function GateApp() {
                         </div>
                       </Field>
                     )}
-                    <PhotoBox t={t} photo={photo} onClick={grabPhoto} />
+                    <PhotoBox t={t} photo={photo} cam={itemCam} videoRef={itemVidRef} onClick={grabPhoto} />
                     <Field label={t("comments")}>
                       <input className="gf" value={mNote} onChange={(e) => setMNote(e.target.value)} autoComplete="off" />
                     </Field>
@@ -973,6 +1116,62 @@ export default function GateApp() {
         </>
       )}
 
+      {/* ── History ────────────────────────────────────────────────────
+          This guard's own work, by date. A supervisor's wider view lives in
+          the dashboard; here the question is "what did I do?". */}
+      {screen === "history" && (
+        <>
+          <Bar t={t} title={t("history")}
+               left={<BackBtn onClick={() => setScreen("today")} />} />
+          <div className="gbody">
+            <div className="ghistnav">
+              <button className="gbtn sm ghost" onClick={() => {
+                const d = new Date(histDate); d.setDate(d.getDate() - 1);
+                const iso = d.toISOString().slice(0, 10);
+                setHistDate(iso); void loadHistory(iso);
+              }}><Icon name="chevron_left" size={18} /></button>
+              <input type="date" className="gf" value={histDate} max={new Date().toISOString().slice(0,10)}
+                onChange={(e) => { setHistDate(e.target.value); void loadHistory(e.target.value); }} />
+              <button className="gbtn sm ghost" disabled={histDate >= new Date().toISOString().slice(0,10)}
+                onClick={() => {
+                  const d = new Date(histDate); d.setDate(d.getDate() + 1);
+                  const iso = d.toISOString().slice(0, 10);
+                  setHistDate(iso); void loadHistory(iso);
+                }}><Icon name="chevron_right" size={18} /></button>
+            </div>
+
+            {histErr && <div className="gcard warn col"><p>{histErr}</p></div>}
+            {!hist && !histErr && <p className="gnote">{t("starting")}</p>}
+
+            {hist && hist.trips.length === 0 && (
+              <div className="gcard"><div><b>{t("nothingThatDay")}</b></div></div>
+            )}
+
+            {hist?.trips.map((tr) => (
+              <div key={tr.id} className="gcard col">
+                <button className="ghistrip" onClick={() => {
+                  setOpenTripId(openTripId === tr.id ? null : tr.id);
+                }}>
+                  <Icon name={tr.direction === "IN" ? "arrow_down" : "arrow_up"} size={18} />
+                  <span className="mono">{tr.vehicleNo}</span>
+                  <span className="gsub">{tr.itemCount} · {fmt(tr.openedAt)}</span>
+                  <Icon name={openTripId === tr.id ? "expand_less" : "expand_more"} size={18} />
+                </button>
+                {openTripId === tr.id && tr.items.map((it, i) => (
+                  <div key={i} className="gkv">
+                    <span className="mono">{it.barcode ?? t("kindScan")}</span>
+                    <span className="gsub">
+                      {it.quantity > 1 ? `× ${it.quantity} · ` : ""}
+                      {it.override ? t("rsnOther") : it.entryMethod === "manual" ? t("addManually") : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       {screen === "settings" && (
         <>
           <Bar t={t} title={t("settings")} left={<BackBtn onClick={() => setScreen(shiftId ? "today" : "pin")} />} />
@@ -994,7 +1193,7 @@ export default function GateApp() {
                 </button>
               ))}
             </div>
-            <SyncCard t={t} online={online} queue={queue} onSync={() => void sync()} />
+            <SyncCard t={t} online={online} queue={queue} />
             <div style={{ height: 10 }} />
             <button className="gbtn sm ghost" onClick={() => {
               // Handover. The queue is deliberately NOT cleared: those rows
@@ -1019,7 +1218,7 @@ const when = (ms: number) => {
 };
 
 const fmt = (iso: string) =>
-  new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 function Center({ children }: { children: React.ReactNode }) {
   return <div className="gcenter">{children}</div>;
@@ -1036,11 +1235,27 @@ function GearBtn({ onClick }: { onClick: () => void }) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="gfld"><span>{label}</span>{children}</label>;
 }
-function PhotoBox({ t, photo, onClick }: { t: (k: string) => string; photo: Blob | null; onClick: () => void }) {
+function PhotoBox({ t, photo, cam, videoRef, onClick }: {
+  t: (k: string) => string; photo: Blob | null;
+  cam: "off" | "starting" | "live" | "blocked";
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  onClick: () => void;
+}) {
   return (
-    <button className={`gphoto${photo ? " done" : ""}`} onClick={onClick}>
-      <Icon name={photo ? "check_circle" : "camera"} size={30} />
-      <span>{photo ? t("photoTaken") : t("photoRequired")}</span>
+    <button className={`gphoto${photo ? " done" : ""}${cam === "live" ? " live" : ""}`}
+            onClick={onClick}>
+      <video ref={videoRef} playsInline muted autoPlay
+             className={cam === "live" ? "" : "hidden"} />
+      {cam !== "live" && (
+        <>
+          <Icon name={photo ? "check_circle" : cam === "starting" ? "progress_activity" : "camera"}
+                size={30} className={cam === "starting" ? "gspinicon" : ""} />
+          <span>{photo ? t("photoTaken")
+                : cam === "blocked" ? t("cameraBlocked")
+                : cam === "starting" ? t("starting") : t("takePhoto")}</span>
+        </>
+      )}
+      {cam === "live" && <span className="gshutter">{t("tapToCapture")}</span>}
     </button>
   );
 }
@@ -1052,9 +1267,9 @@ function GeoCard({ t, boot }: { t: (k: string) => string; boot: Bootstrap | null
     </div>
   );
 }
-function SyncCard({ t, online, queue, onSync }: {
+function SyncCard({ t, online, queue }: {
   t: (k: string) => string; online: boolean;
-  queue: { waiting: number; rejected: number }; onSync: () => void;
+  queue: { waiting: number; rejected: number };
 }) {
   // Offline is stated plainly and framed as SAFE, not as an error. A guard who
   // thinks their work is being lost starts keeping a paper backup, and then
@@ -1067,7 +1282,7 @@ function SyncCard({ t, online, queue, onSync }: {
         <b>{clean ? t("allSent") : !online ? t("offline") : `${queue.waiting} ${t("waiting")}`}</b>
         {queue.rejected > 0 && <span>{queue.rejected} {t("needsAttention")}</span>}
       </div>
-      {!clean && online && <button className="gbtn sm ghost" onClick={onSync}>{t("syncNow")}</button>}
+
     </div>
   );
 }

@@ -161,3 +161,24 @@ export async function drain(): Promise<SyncResult> {
 
   return res;
 }
+
+export interface HistoryTrip {
+  id: string; direction: "IN" | "OUT"; vehicleNo: string;
+  driverName: string | null; openedAt: string; closedAt: string | null;
+  status: string; itemCount: number;
+  items: { barcode: string | null; itemKind: string; quantity: number;
+           entryMethod: string; override: boolean; scannedAt: string }[];
+}
+
+/** What this guard recorded on one business day. Their own work only. */
+export async function history(date?: string): Promise<{
+  date: string; totals: { trips: number; items: number }; trips: HistoryTrip[];
+}> {
+  const g = getGuardId();
+  const q = new URLSearchParams();
+  if (g) q.set("guardId", g);
+  if (date) q.set("date", date);
+  const r = await fetch(`/api/gate/history?${q}`, { headers: headers(), cache: "no-store" });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
+  return r.json();
+}

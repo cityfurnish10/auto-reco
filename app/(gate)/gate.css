@@ -262,3 +262,22 @@
   box-shadow:0 6px 20px rgba(0,0,0,.3)}
 .gnotice span{flex:1;word-break:break-word}
 .gnotice button{background:none;border:0;color:inherit;font-size:17px;padding:0 4px}
+
+/* The item photo box doubles as a viewfinder: first tap opens the rear camera,
+   second tap takes the shot, so the guard sees what they are photographing. */
+.gate .gphoto{position:relative;overflow:hidden}
+.gate .gphoto video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.gate .gphoto video.hidden{display:none}
+.gate .gphoto.live{border-style:solid;border-color:var(--fg2)}
+.gate .gshutter{position:absolute;bottom:8px;left:0;right:0;text-align:center;
+  font-size:13px;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.9)}
+
+/* History: a date stepper and collapsible trips. Arrows as well as a picker,
+   because "yesterday" is the question far more often than a specific date. */
+.gate .ghistnav{display:flex;gap:8px;align-items:center;margin-bottom:14px}
+.gate .ghistnav .gbtn{flex:0 0 auto;padding:0 14px;min-height:48px}
+.gate .ghistnav .gf{flex:1;min-height:48px;font-size:16px;text-align:center}
+.gate .ghistrip{display:flex;align-items:center;gap:10px;width:100%;background:none;
+  border:0;padding:4px 0;font:inherit;color:var(--fg);text-align:left}
+.gate .ghistrip .mono{flex:1;font-family:var(--mono);font-size:14px}
+.gate .gcard.col.tap{cursor:pointer}

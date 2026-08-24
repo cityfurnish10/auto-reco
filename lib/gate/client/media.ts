@@ -35,6 +35,27 @@ export function position(timeoutMs = 4000): Promise<GeolocationPosition | null> 
   });
 }
 
+/**
+ * A short click for any deliberate action.
+ *
+ * Quieter and shorter than the scan tone deliberately -- a gate is noisy, the
+ * guard is looking at the item rather than the screen, and a button that makes
+ * the same noise as a successful scan would make the two indistinguishable.
+ */
+export function click() {
+  try {
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return;
+    const c = new Ctx(), o = c.createOscillator(), g = c.createGain();
+    o.frequency.value = 660;
+    o.connect(g); g.connect(c.destination);
+    g.gain.setValueAtTime(0.05, c.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 0.045);
+    o.start(); o.stop(c.currentTime + 0.05);
+  } catch { /* audio is a nicety; never let it break an action */ }
+  navigator.vibrate?.(8);
+}
+
 /** Confirmation the guard can FEEL. They are looking at the item, not the
  *  screen, so the beep and the buzz are the real interface. */
 export function feedback(ok: boolean) {
