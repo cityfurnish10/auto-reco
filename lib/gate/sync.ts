@@ -64,6 +64,21 @@ export interface InScan {
   notes?: string | null;
 }
 
+/**
+ * A scan the guard has taken back.
+ *
+ * Retraction, not deletion: the row stays, its status becomes 'void' and the
+ * reason is recorded. The gate register is meant to be a source of truth for a
+ * reconciliation nobody can argue with, and a source that can quietly erase its
+ * own history is not one. The reconciler reads status='recorded' only, so a
+ * voided row stops counting the moment this lands.
+ */
+export interface InVoid {
+  clientScanId: string;
+  reason: string;
+  voidedAt: string;
+}
+
 export interface InShift {
   clientShiftId: string;
   checkedInAt: string;
@@ -93,6 +108,7 @@ export type ItemOutcome =
 export interface SyncReport {
   trips: ItemOutcome[];
   scans: ItemOutcome[];
+  voids: ItemOutcome[];
   shifts: ItemOutcome[];
   faceChecks: ItemOutcome[];
   /** Rows whose device clock looked wrong. Surfaced, never a rejection. */
@@ -118,10 +134,11 @@ function drawPhotoSample(direction: Direction, entryMethod: string): boolean {
 export async function applyBatch(
   admin: SupabaseClient,
   who: GateIdentity,
-  batch: { trips?: InTrip[]; scans?: InScan[]; shifts?: InShift[]; faceChecks?: InFaceCheck[] },
+  batch: { trips?: InTrip[]; scans?: InScan[]; voids?: InVoid[];
+           shifts?: InShift[]; faceChecks?: InFaceCheck[] },
   now: Date = new Date()
 ): Promise<SyncReport> {
-  const report: SyncReport = { trips: [], scans: [], shifts: [], faceChecks: [], clockWarnings: [] };
+  const report: SyncReport = { trips: [], scans: [], voids: [], shifts: [], faceChecks: [], clockWarnings: [] };
   // One lookup for the whole batch. A forty-scan sync should not ask the
   // database forty times where the gate is.
   const site: GateSite | null = await loadSite(admin, who.city).catch(() => null);
@@ -305,6 +322,35 @@ export async function applyBatch(
       clientId: sc.clientScanId, status: "stored", id: ins.data!.id as string,
       ...(photoPath ? { photoUploadPath: photoPath } : {}),
     });
+  }
+
+  // ── 3. Retractions ───────────────────────────────────────────────────────
+  // AFTER the scans, never before. A guard can scan an item and remove it again
+  // inside the same offline batch, and applying the void first would leave the
+  // scan behind it as a live row -- the exact double-count this is meant to
+  // prevent.
+  for (const v of batch.voids ?? []) {
+    if (!v.clientScanId) { report.voids.push(bad("(missing id)", "clientScanId required")); continue; }
+    if (!v.reason?.trim()) { report.voids.push(bad(v.clientScanId, "a void needs a reason")); continue; }
+
+    // Scoped to this guard's own city. A phone cannot reach across gates and
+    // erase somebody else's movement, which is the mistake a client-supplied
+    // identifier invites by default.
+    const { data, error } = await admin.from("gate_scans")
+      .update({ status: "void", void_reason: v.reason.trim(), voided_at: v.voidedAt,
+                voided_by: who.guardId })
+      .eq("client_scan_id", v.clientScanId)
+      .eq("city", who.city)
+      .select("id");
+
+    if (error) { report.voids.push(bad(v.clientScanId, error.message)); continue; }
+    // Nothing updated means either an already-voided row or a scan this server
+    // never saw. Both are "the phone's wish is granted" from the queue's point
+    // of view, and a retraction it retries forever is a queue that never
+    // drains.
+    report.voids.push(data && data.length
+      ? { clientId: v.clientScanId, status: "stored", id: data[0].id as string }
+      : { clientId: v.clientScanId, status: "duplicate" });
   }
 
   // ── 3. Attendance ────────────────────────────────────────────────────────

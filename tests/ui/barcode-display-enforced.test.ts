@@ -34,13 +34,18 @@ const ALLOWED: { file: string; snippet: string; why: string }[] = [
   // and passing it through one would be the bug rather than the fix.
   {
     file: "app/(dashboard)/gate/gate-client.tsx",
-    snippet: "{s.barcode ?? \"—\"}",
+    snippet: "{it.barcode ?? it.serialNo",
     why: "LABEL, and correct: a gate scan's barcode is the raw QR payload, never the canonical fold.",
   },
   {
     file: "app/api/gate/activity/route.ts",
-    snippet: "barcode: r.barcode",
+    snippet: "barcode: (r.barcode as string)",
     why: "Passing the raw scanned payload straight through to the Gate screen.",
+  },
+  {
+    file: "app/api/gate/history/route.ts",
+    snippet: "barcode: (r.barcode as string)",
+    why: "Same, for the guard's own history: the raw payload, unfolded, straight through.",
   },
   // ── The gate app (0023). THE ONE PLACE WHERE .barcode IS ALREADY THE TRUE
   // SPELLING. A gate row's barcode is the raw QR payload, stored exactly as the
@@ -61,6 +66,46 @@ const ALLOWED: { file: string; snippet: string; why: string }[] = [
     file: "app/(gate)/scan/scan-app.tsx",
     snippet: "if (payload.barcode) seenRef",
     why: "KEY — the already-scanned-on-this-trip set.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "if (i.payload.barcode) seenRef",
+    why: "KEY — the same set, rebuilt from the outbox after a reload.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "i.payload.barcode ?? i.payload.serialNo",
+    why: "KEY — the feed's identity for a row restored from the outbox.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "rawBarcode: (payload.barcode as string | null)",
+    why: "KEY — remembered so removing a line can free that exact spelling for a re-scan.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "rawBarcode: (i.payload.barcode as string | null)",
+    why: "KEY — the same, for a line restored from the outbox.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "{i.payload.barcode ?",
+    why: "LABEL, and correct: the raw QR payload of a row still waiting in the queue.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "r.payload.barcode ?? r.payload.serialNo",
+    why: "LABEL, and correct: the raw payload of a rejected row, shown so a guard can find it.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "{it.barcode ?? t(\"kindScan\")}",
+    why: "LABEL, and correct: the raw payload in the guard's own history list.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "{confirmRemove.barcode}",
+    why: "LABEL, and correct: naming the raw payload of the item about to be removed.",
   },
   {
     file: "app/(gate)/scan/scan-app.tsx",

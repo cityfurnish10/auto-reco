@@ -284,3 +284,89 @@
 /* What a disabled action is still waiting for. A greyed-out button with no
    explanation is a dead end; naming the gap turns it into an instruction. */
 .gate .gmiss{margin:0 0 8px;font-size:13px;color:var(--warn);text-align:center}
+
+/* ══ Removing an item ═══════════════════════════════════════════════════
+ * The scanner feed is dark and the close screen is light, so this exists in
+ * both worlds. It is small and pushed to the far edge on purpose: it sits a
+ * few millimetres from rows a guard is watching fly past, and an accidental
+ * tap must be unlikely before the confirmation ever has to save anybody. */
+.gx { flex:none; width:34px; height:34px; border-radius:9px; border:0;
+  background:transparent; color:inherit; opacity:.5;
+  display:flex; align-items:center; justify-content:center; }
+.gx:active { opacity:1; background:rgba(150,150,150,.22); }
+.grow .gx { color:rgba(255,255,255,.8); }
+.growend { display:flex; align-items:center; gap:4px; }
+
+/* The confirmation. Covers everything, dims what is behind it, and cannot be
+ * dismissed by tapping the backdrop — a movement record is not something to
+ * delete with a stray tap at the edge of the screen. */
+.gsheet { position:fixed; inset:0; z-index:60; display:flex; align-items:flex-end;
+  background:rgba(8,9,11,.6); animation:gfade .16s ease-out; }
+@keyframes gfade { from{opacity:0} to{opacity:1} }
+@media (prefers-reduced-motion:reduce){ .gsheet{animation:none} }
+.gsheetbox { width:100%; background:var(--bg); color:var(--fg);
+  border-radius:20px 20px 0 0; padding:22px 18px;
+  padding-bottom:calc(22px + env(safe-area-inset-bottom));
+  animation:gup .2s ease-out; }
+@keyframes gup { from{transform:translateY(14px)} to{transform:none} }
+@media (prefers-reduced-motion:reduce){ .gsheetbox{animation:none} }
+.gsheetbox h3 { margin:0 0 13px; font-size:18px; }
+.gsheetbox p { margin:0 0 16px; font-size:14px; color:var(--fg2); }
+.gsheetbox .big { font-size:17px; }
+/* Equal halves, and the destructive one is on the right — the side a thumb
+ * has to travel to rather than the side it already rests on. */
+.gsheetbox .grow2 > * { flex:1; }
+
+/* ══ The face check refusing ════════════════════════════════════════════ */
+.gcenter-txt.bad p { color:var(--warn); font-weight:600; }
+
+/* ══ Last-minute additions on the close screen ══════════════════════════
+ * Sits directly above the footer, visually attached to it: the guard's eye is
+ * already on Close trip when the loader shouts, and this has to be in the same
+ * glance or it may as well not exist. */
+.glastmin { flex:none; padding:0 16px 12px; display:flex; align-items:center;
+  gap:12px; border-top:1px dashed var(--rule); padding-top:13px; }
+.glastmin .gnote { margin:0; flex:1; text-align:left; }
+.glastmin .gbtn { flex:none; }
+
+/* ══ The item photo ═════════════════════════════════════════════════════
+ * Square, because that is closer to what a phone camera actually hands back
+ * than the short wide strip this used to be — the old shape cropped hard and
+ * showed a slice of whatever was being photographed. */
+.gphotowrap { margin-bottom:15px; }
+.gphotoframe { position:relative; width:100%; aspect-ratio:1/1; max-height:52vh;
+  border-radius:16px; border:2px dashed var(--rule); background:var(--card2);
+  overflow:hidden; display:flex; align-items:center; justify-content:center; }
+.gphotoframe.live { border-style:solid; border-color:var(--fg2); background:#000; }
+.gphotoframe.done { border-style:solid; border-color:var(--ok); }
+.gphotoframe video, .gphotoframe img {
+  position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.gphotoframe .hidden { display:none; }
+.gphotoempty { display:flex; flex-direction:column; align-items:center; gap:8px;
+  color:var(--fg3); font-size:14px; text-align:center; padding:0 20px; z-index:1; }
+/* The same corner marks as the scanner, at a size that suits a still frame.
+ * It tells the guard this box is a camera without a word of explanation. */
+.gretic.sm { width:60%; height:60%; opacity:.5; }
+.gretic.sm i { width:26px; height:26px; border-width:3px; border-color:var(--fg3); }
+.gphotoframe.live .gretic.sm i { border-color:rgba(255,255,255,.85); }
+.gphotobtns { display:flex; justify-content:center; margin-top:11px; }
+.gphotobtns .gbtn { min-width:190px; }
+
+/* ══ Choosing a truck or an agent ═══════════════════════════════════════
+ * A capped, scrolling list rather than a native <select>. A select on Android
+ * opens a system sheet that ignores the app's night colours entirely, and on
+ * a long list it is a spinning wheel — both are worse in bright sun than rows
+ * a thumb can hit. */
+.gpickload { display:flex; align-items:center; gap:9px; padding:14px 2px;
+  color:var(--fg3); font-size:14px; }
+.gpickfilter { margin-bottom:9px; }
+.gpicklist { max-height:38vh; overflow-y:auto; display:flex; flex-direction:column;
+  gap:7px; margin-bottom:11px; -webkit-overflow-scrolling:touch; }
+.gpickopt { min-height:52px; padding:13px 15px; border-radius:12px;
+  border:1.5px solid var(--rule); background:var(--card); color:var(--fg);
+  font-size:15.5px; font-family:inherit; font-weight:550; text-align:left;
+  display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.gpickopt.mono { font-family:var(--mono); letter-spacing:.04em; }
+.gpickopt.on { border-color:var(--ok); background:var(--okbg); color:var(--okfg); }
+.gpickopt:active { background:var(--card2); }
+.gpicklist + .gbtn, .gpickload + .gbtn { width:100%; }

@@ -40,6 +40,32 @@ export async function rosterFor(): Promise<{ site: { city: string; code: string 
   return r.json();
 }
 
+/** Today's scheduled trucks and agents, read live from DT at the moment it is
+ *  asked for. `source: "unavailable"` means DT could not be reached — which is
+ *  a different thing from a genuinely empty day, and the app says so. */
+export interface Fleet {
+  vehicles: string[];
+  agents: string[];
+  source: "dt" | "unavailable";
+}
+
+/**
+ * Ask for the day's fleet.
+ *
+ * Never throws. Every caller is on a path a guard is waiting on, and the only
+ * sensible response to "DT is slow" at a gate is a text box, so the failure is
+ * swallowed here rather than handled at four call sites.
+ */
+export async function fleet(): Promise<Fleet> {
+  try {
+    const r = await fetch("/api/gate/fleet", { headers: headers(), cache: "no-store" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } catch {
+    return { vehicles: [], agents: [], source: "unavailable" };
+  }
+}
+
 export interface Bootstrap {
   guard: { id: string; name: string } | null;
   businessDate: string;
@@ -99,13 +125,14 @@ export async function drain(): Promise<SyncResult> {
     // Attribution travels with the batch: every row lands under the guard who
     // was signed in, not the phone's owner.
     guardId: getGuardId(),
-    trips: pick("trip"), scans: pick("scan"),
+    trips: pick("trip"), scans: pick("scan"), voids: pick("void"),
     shifts: pick("shift"), faceChecks: pick("face"),
   };
 
   let json: {
     trips?: { clientId: string; status: string; reason?: string }[];
     scans?: { clientId: string; status: string; reason?: string }[];
+    voids?: { clientId: string; status: string; reason?: string }[];
     shifts?: { clientId: string; status: string; reason?: string }[];
     faceChecks?: { clientId: string; status: string; reason?: string }[];
     photos?: { clientId: string; path: string; token?: string }[];
@@ -126,7 +153,7 @@ export async function drain(): Promise<SyncResult> {
   }
 
   const res: SyncResult = { ...empty, sent: items.length };
-  for (const group of [json.trips, json.scans, json.shifts, json.faceChecks]) {
+  for (const group of [json.trips, json.scans, json.voids, json.shifts, json.faceChecks]) {
     for (const o of group ?? []) {
       if (o.status === "stored") { res.stored++; }
       else if (o.status === "duplicate") { res.duplicate++; await outbox.remove(o.clientId); }
@@ -155,7 +182,7 @@ export async function drain(): Promise<SyncResult> {
 
   // Only now clear what the server confirmed. Doing this before the images
   // would drop the blob a moment before we tried to upload it.
-  for (const group of [json.trips, json.scans, json.shifts, json.faceChecks]) {
+  for (const group of [json.trips, json.scans, json.voids, json.shifts, json.faceChecks]) {
     for (const o of group ?? []) if (o.status === "stored") await outbox.remove(o.clientId);
   }
 

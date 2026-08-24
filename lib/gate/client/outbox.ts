@@ -18,7 +18,14 @@ const VERSION = 1;
 const ITEMS = "items";
 const BLOBS = "blobs";
 
-export type Kind = "trip" | "scan" | "shift" | "face";
+export type Kind = "trip" | "scan" | "shift" | "face" | "void";
+
+// "void" is the odd one out and worth saying plainly: it is not a movement,
+// it is a RETRACTION of one. A guard who scans the wrong box removes it, and
+// if that scan has already reached the server the removal has to travel too --
+// otherwise the phone shows twelve items and the reconciler counts thirteen.
+// A scan still sitting in this queue is simply deleted; nothing was claimed
+// yet, so there is nothing to retract.
 
 export interface OutboxItem {
   clientId: string;
@@ -85,6 +92,22 @@ export async function pending(): Promise<OutboxItem[]> {
 export async function remove(clientId: string) {
   await tx(ITEMS, "readwrite", (s) => s.delete(clientId));
   await tx(BLOBS, "readwrite", (s) => s.delete(clientId)).catch(() => {});
+}
+
+/**
+ * Drop an entry only if it is still queued, and say whether it was.
+ *
+ * The answer decides what happens next: `true` means the scan never left the
+ * phone and deleting it is the whole job; `false` means the server already has
+ * it and a void has to be sent. Doing this as one function rather than a
+ * separate "is it there?" check keeps the two from racing against a drain
+ * running at the same moment.
+ */
+export async function removeIfQueued(clientId: string): Promise<boolean> {
+  const cur = await tx<OutboxItem | undefined>(ITEMS, "readonly", (s) => s.get(clientId));
+  if (!cur) return false;
+  await remove(clientId);
+  return true;
 }
 
 export async function markRejected(clientId: string, reason: string) {

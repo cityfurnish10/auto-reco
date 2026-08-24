@@ -16,7 +16,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { identifyDevice, markDeviceSeen, withGuard } from "@/lib/gate/auth";
-import { applyBatch, type InFaceCheck, type InScan, type InShift, type InTrip } from "@/lib/gate/sync";
+import { applyBatch, type InFaceCheck, type InScan, type InShift, type InTrip,
+         type InVoid } from "@/lib/gate/sync";
 import { ATTENDANCE_BUCKET, EVIDENCE_BUCKET, signPhotoUploads } from "@/lib/gate/evidence";
 
 export const runtime = "nodejs";
@@ -36,7 +37,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "unknown or revoked device" }, { status: 401 });
   }
 
-  let body: { guardId?: string; trips?: InTrip[]; scans?: InScan[]; shifts?: InShift[]; faceChecks?: InFaceCheck[] };
+  let body: { guardId?: string; trips?: InTrip[]; scans?: InScan[]; voids?: InVoid[];
+              shifts?: InShift[]; faceChecks?: InFaceCheck[] };
   try {
     body = await req.json();
   } catch {
@@ -55,10 +57,14 @@ export async function POST(req: NextRequest) {
   const truncated =
     (body.trips?.length ?? 0) > MAX_TRIPS || (body.scans?.length ?? 0) > MAX_SCANS;
 
+  // Bounded like everything else, but generously: a guard correcting a badly
+  // loaded truck can retract a lot of rows in one go, and a void left stuck in
+  // the queue is a row still counting that the guard believes is gone.
+  const voids = (body.voids ?? []).slice(0, MAX_SCANS);
   const shifts = (body.shifts ?? []).slice(0, 20);
   const faceChecks = (body.faceChecks ?? []).slice(0, 40);
 
-  const report = await applyBatch(admin, who, { trips, scans, shifts, faceChecks });
+  const report = await applyBatch(admin, who, { trips, scans, voids, shifts, faceChecks });
   await markDeviceSeen(admin, device.deviceRowId);
 
   // Upload links for the rows that need an image. Handed back rather than
@@ -88,6 +94,7 @@ export async function POST(req: NextRequest) {
     ok: true,
     trips: report.trips,
     scans: report.scans,
+    voids: report.voids,
     shifts: report.shifts,
     faceChecks: report.faceChecks,
     photos,

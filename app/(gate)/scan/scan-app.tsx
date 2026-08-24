@@ -15,12 +15,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "@/components/icon";
 import { LANGS, makeT, type LangId } from "@/lib/gate/client/i18n";
 import * as outbox from "@/lib/gate/client/outbox";
-import { bootstrap, clearGuardId, drain, getGuardId, getToken, history, rosterFor, signIn,
-         type Bootstrap, type GuardOption, type HistoryTrip } from "@/lib/gate/client/api";
+import { bootstrap, clearGuardId, drain, fleet as fetchFleet, getGuardId, getToken, history,
+         rosterFor, signIn, type Bootstrap, type Fleet, type GuardOption,
+         type HistoryTrip } from "@/lib/gate/client/api";
 import { click, compress, feedback, position } from "@/lib/gate/client/media";
 import { decodeFrame, initScanner, openCamera, stopCamera } from "@/lib/gate/client/scanner";
 import { canonicalize } from "@/lib/engine/barcode";
-import { compare, describe as describeFace, fromArray, initFace } from "@/lib/gate/client/face";
+import { blocksEntry, compare, describe as describeFace, fromArray, initFace } from "@/lib/gate/client/face";
 
 type Screen =
   | "loading" | "unpaired" | "who" | "pin" | "checkin" | "today"
@@ -31,6 +32,11 @@ type Screen =
 
 interface ScanLine {
   clientId: string; barcode: string; label: string; flagged: boolean;
+  /** The QR spelling, when there was one. Kept apart from `barcode` above,
+   *  which falls back to a serial or a category name for display — removing a
+   *  line has to free the EXACT string the duplicate guard is holding, or the
+   *  item can never be scanned again on this trip. */
+  rawBarcode?: string | null;
 }
 
 const uid = () =>
@@ -67,6 +73,37 @@ export default function GateApp() {
   const [drv, setDrv] = useState("");
   const [tripId, setTripId] = useState<string | null>(null);
   const [lines, setLines] = useState<ScanLine[]>([]);
+  // The row a guard has asked to remove, held while they confirm. Removing a
+  // movement is the one destructive thing this app can do, so it never happens
+  // on a single tap next to a live scanner that is firing every two seconds.
+  const [confirmRemove, setConfirmRemove] = useState<ScanLine | null>(null);
+  // Which screen the manual-entry form should return to. It used to always go
+  // back to the scanner, which was fine while that was the only way in. The
+  // close screen is now the second, and it is the one that matters most: the
+  // last-minute box goes on the truck AFTER the guard has stopped scanning.
+  const [manualFrom, setManualFrom] = useState<"scan" | "closetrip">("scan");
+
+  // Today's trucks and agents, read live from DT. Null while it has not been
+  // asked for yet, which is a different state from "asked and found nothing" —
+  // the first shows a spinner, the second shows a text box.
+  const [fleet, setFleet] = useState<Fleet | null>(null);
+  // Whether the guard has chosen to type instead of pick, per field. Sticky
+  // for the trip: someone who has just typed a truck number that is not on the
+  // list should not be dropped back into that list for the agent as well.
+  const [vehTyped, setVehTyped] = useState(false);
+  const [drvTyped, setDrvTyped] = useState(false);
+
+  /**
+   * Refresh the fleet.
+   *
+   * Called on open and again when the trip form is about to be shown, which is
+   * the moment the answer has to be current. Never awaited by anything the
+   * guard is blocked on — the form renders with whatever it has and fills in.
+   */
+  const loadFleet = useCallback(async () => {
+    const f = await fetchFleet();
+    setFleet(f);
+  }, []);
   // Persisted, not just held. A guard whose phone dies mid-trip comes back to
   // the same trip; a start time read from memory would restart the clock and
   // report a forty-minute load as four, which reads as plausible and is not.
@@ -128,6 +165,10 @@ export default function GateApp() {
   const selfieStream = useRef<MediaStream | null>(null);
   const [selfieCam, setSelfieCam] = useState<"starting" | "live" | "blocked" | "frozen">("starting");
   const [shotUrl, setShotUrl] = useState<string | null>(null);
+  // The ITEM photo's preview, kept apart from the selfie's above. They live on
+  // different screens today; one refactor away from not doing, and an evidence
+  // photo showing the wrong picture is not a bug anybody would catch by eye.
+  const [itemUrl, setItemUrl] = useState<string | null>(null);
   // Bumped to restart the selfie camera after a retake.
   const [selfieNonce, setSelfieNonce] = useState(0);
   const [faceScore, setFaceScore] = useState<number | null>(null);
@@ -194,6 +235,12 @@ export default function GateApp() {
       // outright. That must not stop the app opening.
       try { await refreshQueue(); } catch { /* shown as zero until it recovers */ }
 
+      // Fleet in the background, deliberately NOT awaited. It is a
+      // convenience on a screen the guard has not reached yet; making the
+      // splash wait on a Mongo round trip to get there would be the wrong
+      // trade in every direction.
+      void loadFleet();
+
       let sawRoster = false;
       try {
         const r = await rosterFor();
@@ -225,6 +272,7 @@ export default function GateApp() {
             barcode: String(i.payload.barcode ?? i.payload.serialNo ?? ""),
             label: String(i.payload.product ?? ""),
             flagged: !!i.payload.overrideReason || i.payload.entryMethod === "manual",
+            rawBarcode: (i.payload.barcode as string | null) ?? null,
           })));
           for (const i of queued) {
             if (i.payload.barcode) seenRef.current.add(String(i.payload.barcode));
@@ -256,7 +304,7 @@ export default function GateApp() {
       setProblem({ titleKey: "somethingWrong", bodyKey: "offline" });
       setScreen("problem");
     });
-  }, [refreshQueue]);
+  }, [refreshQueue, loadFleet]);
 
   // One listener rather than sixty handlers. Capture phase, so it fires even
   // when a handler stops propagation, and it deliberately skips the scanner
@@ -449,10 +497,42 @@ export default function GateApp() {
     const bc = String(payload.barcode ?? payload.serialNo ?? label);
     if (payload.barcode) seenRef.current.add(String(payload.barcode));
     setLines((l) => {
-      const next = [{ clientId, barcode: bc, label, flagged }, ...l];
+      const next = [{ clientId, barcode: bc, label, flagged,
+                      rawBarcode: (payload.barcode as string | null) ?? null }, ...l];
       if (t0) setRate(`${((Date.now() - t0) / 1000 / next.length).toFixed(1)}s`);
       return next;
     });
+    await refreshQueue();
+    void sync();
+  }
+
+  /* ── taking a scan back ────────────────────────────────────────────────
+     A guard scans the box on the wrong pallet, or the driver refuses one at
+     the door. Without this the only options were leaving a wrong row in the
+     record or closing the trip and starting again, and the first is what
+     actually happened -- which is how a digital register starts lying in
+     exactly the way the paper one did.
+
+     Two paths, and which one applies is invisible to the guard:
+       still queued   delete it, nothing was ever claimed
+       already sent   queue a VOID, because the server is counting it
+     Either way the barcode is released so the item can be scanned again. */
+  async function removeLine(line: ScanLine) {
+    const wasQueued = await outbox.removeIfQueued(line.clientId);
+    if (!wasQueued) {
+      const voidId = uid();
+      await outbox.enqueue({
+        clientId: voidId, kind: "void",
+        payload: {
+          clientScanId: line.clientId,
+          reason: "removed by the guard during the trip",
+          voidedAt: new Date().toISOString(),
+        },
+      });
+    }
+    if (line.rawBarcode) seenRef.current.delete(line.rawBarcode);
+    setLines((l) => l.filter((x) => x.clientId !== line.clientId));
+    setConfirmRemove(null);
     await refreshQueue();
     void sync();
   }
@@ -532,15 +612,36 @@ export default function GateApp() {
     setItemCam("off");
   }, []);
 
-  async function grabPhoto() {
-    // First tap opens the viewfinder; second tap takes the shot. One control,
-    // and the guard can see what they are photographing before committing.
-    if (itemCam === "off" || itemCam === "blocked") { await openItemCamera(); return; }
+  /**
+   * Take the shot.
+   *
+   * Split out from opening the camera on purpose. One control that meant
+   * "open", then "capture", then nothing was impossible to label honestly --
+   * the box said "Take photo" while already showing a live picture, and a
+   * guard who wanted a second try had to cancel the whole entry. Now the
+   * viewfinder is a viewfinder and the button underneath is a shutter.
+   */
+  async function shootPhoto() {
     const v = itemVidRef.current;
     if (!v?.videoWidth) return;          // no frame has arrived yet
-    setPhoto(await compress(v, 900, 0.7));
+    const blob = await compress(v, 900, 0.7);
+    setPhoto(blob);
+    setItemUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob); });
     closeItemCamera();
   }
+
+  /** Throw the shot away and reopen the viewfinder. */
+  async function retakePhoto() {
+    setPhoto(null);
+    setItemUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    await openItemCamera();
+  }
+
+  /** Forget the item shot entirely — on leaving or completing an entry. */
+  const clearItemPhoto = useCallback(() => {
+    setPhoto(null);
+    setItemUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+  }, []);
 
   // Never leave a camera running behind a screen the guard has left. The
   // cleanup runs on the way OUT rather than synchronously on the way in, which
@@ -559,6 +660,9 @@ export default function GateApp() {
     veh.trim().length < 4 && "vehicleNo",
     drv.trim().length < 2 && "deliveryAgent",
   ].filter(Boolean) as string[];
+
+  /** The face the phone compared is confidently not this guard's. */
+  const faceBlocked = blocksEntry(faceVerdict);
 
   async function startTrip() {
     if (tripMissing.length > 0) return;
@@ -719,6 +823,10 @@ export default function GateApp() {
   }
 
   async function doCheckIn() {
+    // Belt and braces. The button is disabled in both these cases, but a
+    // check-in is the one moment identity is established for everything that
+    // follows, so it does not rely on a disabled attribute to hold the line.
+    if (!photo || blocksEntry(faceVerdict)) return;
     const clientId = uid();
     const pos = await position();
     await outbox.enqueue({
@@ -728,17 +836,18 @@ export default function GateApp() {
         inLat: pos?.coords.latitude ?? null, inLng: pos?.coords.longitude ?? null,
       },
     });
-    // The selfie is captured and queued; the on-device face match will attach
-    // its score here. Until that model ships, the verdict is 'review' so a
-    // human still sees it rather than it silently passing.
+    // The selfie is captured and queued with the verdict the phone reached.
+    // A 'fail' never gets this far -- it was refused above -- so what lands
+    // here is a pass, or something a manager should glance at.
     const faceId = uid();
     await outbox.enqueue({
       clientId: faceId, kind: "face",
       payload: {
         clientCheckId: faceId, clientShiftId: clientId, trigger: "check_in",
         capturedAt: new Date().toISOString(),
-        // The on-device verdict. Anything short of a clean pass goes to a
-        // manager to glance at — it never stops the guard working.
+        // The on-device verdict. A clean pass is filed and forgotten; a
+        // borderline one goes to a manager to glance at. A confident mismatch
+        // cannot appear here because it never got past the button.
         verdict: faceVerdict ?? "review",
         matchScore: faceScore,
         hasSelfie: !!photo, lat: pos?.coords.latitude ?? null, lng: pos?.coords.longitude ?? null,
@@ -940,15 +1049,24 @@ export default function GateApp() {
                       setPin("");
                       if (ok) {
                         // Their own state, not the phone's previous user's.
+                        // `onShift` is read from the RESPONSE rather than from
+                        // shiftId, which setShiftId has not written yet at this
+                        // point in the closure: a guard who reloaded mid-shift
+                        // was sent back to check-in as though they had just
+                        // arrived. Harmless while check-in was skippable; now
+                        // that it demands a matching photo it would strand
+                        // them, so it is read from the value we just fetched.
+                        let onShift = !!shiftId;
                         try { const b = await bootstrap(); setBoot(b);
                           if (b.openShift) { setShiftId(b.openShift.client_shift_id);
-                                             setShiftAt(b.openShift.checked_in_at); } } catch { /* offline */ }
+                                             setShiftAt(b.openShift.checked_in_at);
+                                             onShift = true; } } catch { /* offline */ }
                         // Back to whatever they were doing, if it still makes
                         // sense; otherwise the normal start of a shift.
                         let resume: Screen | null = null;
                         try { resume = localStorage.getItem("gate.screen") as Screen | null; } catch {}
                         setScreen(
-                          !shiftId ? "checkin"
+                          !onShift ? "checkin"
                           : resume && ["today","scan","newtrip","closetrip","queue","profile"].includes(resume)
                             ? resume : "today"
                         );
@@ -992,15 +1110,25 @@ export default function GateApp() {
               )}
             </div>
 
-            <div className="gcenter-txt">
+            <div className={`gcenter-txt${faceBlocked ? " bad" : ""}`}>
               <p>{faceVerdict === "pass" ? t("faceOk")
+                 : faceVerdict === "fail" ? t("faceNotYou")
                  : faceVerdict === "no_face" ? t("faceNone")
                  : faceVerdict ? t("faceReview") : t("selfieWhy")}</p>
             </div>
             <GeoCard t={t} boot={boot} />
           </div>
           <div className="gfoot">
-            <button className="gbtn primary" onClick={doCheckIn}>{t("checkIn")}</button>
+            <div style={{ flex: 1 }}>
+              {/* Two different refusals, and they must not read the same. No
+                  photo is something the guard can fix in three seconds; a face
+                  that is not theirs is not, and sending them round the retake
+                  loop for it would be a lie. */}
+              {!photo && <p className="gmiss">{t("selfieRequired")}</p>}
+              {faceBlocked && <p className="gmiss">{t("faceBlockedNote")}</p>}
+              <button className="gbtn primary" disabled={!photo || faceBlocked || matching}
+                      onClick={doCheckIn}>{t("checkIn")}</button>
+            </div>
           </div>
         </>
       )}
@@ -1032,7 +1160,15 @@ export default function GateApp() {
             {err && <p className="gnote">{err}</p>}
           </div>
           <div className="gfoot">
-            <button className="gbtn primary" onClick={() => setScreen(tripId ? "scan" : "newtrip")}>
+            <button className="gbtn primary" onClick={() => {
+              if (tripId) { setScreen("scan"); return; }
+              // Re-read the fleet on the way in. The copy fetched when the app
+              // opened may be hours old by now, and this is the one screen
+              // where being out of date costs the guard a typed truck number.
+              setVehTyped(false); setDrvTyped(false);
+              void loadFleet();
+              setScreen("newtrip");
+            }}>
               {tripId ? t("resumeTrip") : `＋ ${t("startTrip")}`}
             </button>
           </div>
@@ -1049,14 +1185,23 @@ export default function GateApp() {
               <button className="gdir" aria-pressed={dir === "OUT"} onClick={() => setDir("OUT")}>
                 <Icon name="arrow_up" size={30} />{t("outward")}</button>
             </div>
-            <Field label={t("vehicleNo")}>
-              <input className="gf mono" value={veh} placeholder="HR26 DK 8337"
-                onChange={(e) => setVeh(e.target.value.toUpperCase())}
-                autoCapitalize="characters" autoComplete="off" />
-            </Field>
-            <Field label={t("deliveryAgent")}>
-              <input className="gf" value={drv} onChange={(e) => setDrv(e.target.value)} autoComplete="off" />
-            </Field>
+            {/* Pick, do not type. Both of these are how a gate row is later
+                matched to a planned movement, and both were blank boxes: one
+                truck came back as four different strings depending on where
+                the guard put the spaces. The list is DT's own spelling. */}
+            <Picker t={t} label={t("vehicleNo")} hint={t("pickVehicle")}
+                    mono uppercase placeholder="HR26 DK 8337"
+                    options={fleet?.vehicles ?? null}
+                    unavailable={fleet?.source === "unavailable"}
+                    value={veh} onChange={setVeh}
+                    typing={vehTyped} onTyping={setVehTyped} />
+
+            <Picker t={t} label={t("deliveryAgent")} hint={t("pickAgent")}
+                    options={fleet?.agents ?? null}
+                    unavailable={fleet?.source === "unavailable"}
+                    value={drv} onChange={setDrv}
+                    typing={drvTyped} onTyping={setDrvTyped} />
+
             <p className="gnote">{t("vehNote")}</p>
           </div>
           <div className="gfoot">
@@ -1094,13 +1239,19 @@ export default function GateApp() {
                   <span className="tick"><Icon name={l.flagged ? "warning" : "check"} size={15} /></span>
                   <span className="txt"><span className="bc mono">{l.barcode}</span>
                     <span className="nm">{l.label}</span></span>
+                  {/* Deliberately small and on the far edge, away from where a
+                      thumb rests while scanning. It asks before it acts. */}
+                  <button className="gx" aria-label={`${t("remove")} ${l.barcode}`}
+                          onClick={() => setConfirmRemove(l)}>
+                    <Icon name="close" size={16} />
+                  </button>
                 </div>
               ))}
             </div>
             <div className="gscanfoot">
               <button className="gbtn sm ghost narrow" onClick={() => {
                 setCat(null); setNoSticker(false); setMId(""); setMQty(1);
-                setMNote(""); setPhoto(null); setScreen("manual");
+                setMNote(""); clearItemPhoto(); setManualFrom("scan"); setScreen("manual");
               }}><Icon name="add" size={20} /></button>
               <button className="gbtn sm ok" onClick={() => { stampElapsed(); setScreen("closetrip"); }}>{t("doneScanning")}</button>
             </div>
@@ -1121,10 +1272,12 @@ export default function GateApp() {
                 <button key={r} aria-pressed={reason === r} onClick={() => setReason(r)}>{t(r)}</button>
               ))}
             </div>
-            <PhotoBox t={t} photo={photo} cam={itemCam} videoRef={itemVidRef} onClick={grabPhoto} />
+            <PhotoBox t={t} photo={photo} url={itemUrl} cam={itemCam} videoRef={itemVidRef}
+                      onOpen={openItemCamera} onShoot={shootPhoto} onRetake={retakePhoto} />
           </div>
           <div className="gfoot">
-            <button className="gbtn ghost narrow" onClick={() => { setPendingScan(null); setScreen("scan"); }}>
+            <button className="gbtn ghost narrow"
+                    onClick={() => { setPendingScan(null); clearItemPhoto(); setScreen("scan"); }}>
               {t("cancel")}</button>
             <button className="gbtn warn" disabled={!reason || !photo}
               onClick={async () => {
@@ -1132,7 +1285,7 @@ export default function GateApp() {
                   barcode: pendingScan.barcode, entryMethod: "scan", itemKind: "unit",
                   overrideReason: t(reason!),
                 }, t(reason!), true, photo);
-                setPendingScan(null); setPhoto(null); setReason(null); setScreen("scan");
+                setPendingScan(null); clearItemPhoto(); setReason(null); setScreen("scan");
               }}>{t("allowIt")}</button>
           </div>
         </>
@@ -1140,7 +1293,8 @@ export default function GateApp() {
 
       {screen === "manual" && (
         <>
-          <Bar t={t} title={t("addManually")} left={<BackBtn onClick={() => setScreen("scan")} />} />
+          <Bar t={t} title={t("addManually")}
+               left={<BackBtn onClick={() => { clearItemPhoto(); setScreen(manualFrom); }} />} />
           <div className="gbody">
             {!cat && (
               <>
@@ -1191,7 +1345,8 @@ export default function GateApp() {
                         </div>
                       </Field>
                     )}
-                    <PhotoBox t={t} photo={photo} cam={itemCam} videoRef={itemVidRef} onClick={grabPhoto} />
+                    <PhotoBox t={t} photo={photo} url={itemUrl} cam={itemCam} videoRef={itemVidRef}
+                      onOpen={openItemCamera} onShoot={shootPhoto} onRetake={retakePhoto} />
                     <Field label={t("comments")}>
                       <input className="gf" value={mNote} onChange={(e) => setMNote(e.target.value)} autoComplete="off" />
                     </Field>
@@ -1202,7 +1357,8 @@ export default function GateApp() {
           </div>
           {cat && (cat !== "customer_return" || noSticker) && (
             <div className="gfoot">
-              <button className="gbtn ghost narrow" onClick={() => setScreen("scan")}>{t("cancel")}</button>
+              <button className="gbtn ghost narrow"
+                      onClick={() => { clearItemPhoto(); setScreen(manualFrom); }}>{t("cancel")}</button>
               <button className="gbtn primary"
                 disabled={!photo || (!COUNTED.includes(cat) && mId.trim().length < 4)}
                 onClick={async () => {
@@ -1215,8 +1371,8 @@ export default function GateApp() {
                     soNumber: !counted && mId.trim().startsWith("ON-") ? mId.trim() : null,
                     notes: mNote.trim() || null,
                   }, counted ? `${label} × ${mQty}` : label, true, photo);
-                  setCat(null); setPhoto(null); setMId(""); setMQty(1); setMNote("");
-                  setScreen("scan");
+                  setCat(null); clearItemPhoto(); setMId(""); setMQty(1); setMNote("");
+                  setScreen(manualFrom);
                 }}>{t("add")}</button>
             </div>
           )}
@@ -1237,11 +1393,32 @@ export default function GateApp() {
             {lines.map((l) => (
               <div key={l.clientId} className="gkv">
                 <span className="mono">{l.barcode}</span>
-                <span className={`gtag ${l.flagged ? "warn" : "ok"}`}>
-                  <Icon name={l.flagged ? "warning" : "check"} size={12} /></span>
+                <span className="growend">
+                  <span className={`gtag ${l.flagged ? "warn" : "ok"}`}>
+                    <Icon name={l.flagged ? "warning" : "check"} size={12} /></span>
+                  <button className="gx" aria-label={`${t("remove")} ${l.barcode}`}
+                          onClick={() => setConfirmRemove(l)}>
+                    <Icon name="close" size={15} />
+                  </button>
+                </span>
               </div>
             ))}
           </div>
+          {/* ── The last-minute box ──────────────────────────────────────
+              Directly above Close trip, because this is where the guard
+              already is when the loader shouts that one more went on. The
+              alternative -- walk back into the scanner, add it, walk out
+              again -- is exactly the friction that produces an unrecorded
+              item, and an unrecorded outward item is the failure this whole
+              app exists to stop. */}
+          <div className="glastmin">
+            <p className="gnote">{t("lastMinute")}</p>
+            <button className="gbtn sm ghost" onClick={() => {
+              setCat(null); setNoSticker(false); setMId(""); setMQty(1);
+              setMNote(""); clearItemPhoto(); setManualFrom("closetrip"); setScreen("manual");
+            }}><Icon name="add" size={18} />{t("addManually")}</button>
+          </div>
+
           <div className="gfoot">
             <button className="gbtn ghost narrow" onClick={() => setScreen("scan")}>{t("back")}</button>
             <button className="gbtn ok" onClick={closeTrip}>{t("closeTrip")}</button>
@@ -1385,6 +1562,33 @@ export default function GateApp() {
           </div>
         </>
       )}
+      {/* ── Confirming a removal ─────────────────────────────────────────
+          Above every screen, because both the scanning feed and the close
+          screen open it. It names the item being removed rather than asking
+          "are you sure?" about nothing in particular -- on a phone held at
+          arm's length next to a truck, that difference is the whole safeguard.
+          The safe choice is the wide one and it is on the left, where a thumb
+          reaching to dismiss lands first. */}
+      {confirmRemove && (
+        <div className="gsheet" role="dialog" aria-modal="true">
+          <div className="gsheetbox">
+            <h3>{t("removeItem")}</h3>
+            <div className="gcard warn col">
+              <div className="mono big">{confirmRemove.barcode}</div>
+              {confirmRemove.label && <span className="gsub">{confirmRemove.label}</span>}
+            </div>
+            <p>{t("removeWhy")}</p>
+            <div className="grow2">
+              <button className="gbtn ghost" onClick={() => setConfirmRemove(null)}>
+                {t("keepIt")}
+              </button>
+              <button className="gbtn warn" onClick={() => void removeLine(confirmRemove)}>
+                <Icon name="delete" size={17} />{t("remove")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1392,6 +1596,7 @@ export default function GateApp() {
 /* ── small pieces ────────────────────────────────────────────────────── */
 const KIND_LABEL: Record<outbox.Kind, string> = {
   trip: "kindTrip", scan: "kindScan", shift: "kindShift", face: "kindFace",
+  void: "removed",
 };
 const when = (ms: number) => {
   const mins = Math.round((Date.now() - ms) / 60000);
@@ -1416,28 +1621,167 @@ function GearBtn({ onClick }: { onClick: () => void }) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="gfld"><span>{label}</span>{children}</label>;
 }
-function PhotoBox({ t, photo, cam, videoRef, onClick }: {
-  t: (k: string) => string; photo: Blob | null;
-  cam: "off" | "starting" | "live" | "blocked";
-  videoRef: React.RefObject<HTMLVideoElement | null>;
-  onClick: () => void;
+/**
+ * Choose from today's list, or type it in.
+ *
+ * The escape hatch is not decoration. A truck substituted an hour ago is not
+ * in DT yet, a hired vehicle may never be, and DT itself can be unreachable —
+ * in every one of those cases something is physically at the gate and has to
+ * be recorded. A picker that could only pick would send the guard to the paper
+ * register, which is the outcome this whole app exists to prevent.
+ *
+ * So the list is the default and typing is one tap away, never the reverse.
+ * Three states, and they are deliberately distinguishable:
+ *
+ *   options === null    still loading — a short wait, not a failure
+ *   unavailable         DT could not be reached; typing, and we say why
+ *   options === []      DT answered, nothing is scheduled; typing
+ */
+function Picker({ t, label, hint, options, unavailable, value, onChange,
+                  typing, onTyping, mono, uppercase, placeholder }: {
+  t: (k: string) => string;
+  label: string; hint: string;
+  options: string[] | null;
+  unavailable: boolean;
+  value: string;
+  onChange: (v: string) => void;
+  typing: boolean;
+  onTyping: (v: boolean) => void;
+  mono?: boolean; uppercase?: boolean; placeholder?: string;
 }) {
+  const [filter, setFilter] = useState("");
+  const loading = options === null;
+  const empty = !loading && options.length === 0;
+  // Once there is nothing to pick from, typing is the only option and offering
+  // a way "back to the list" would be a lie.
+  const listMode = !typing && !loading && !empty;
+
+  const shown = listMode
+    ? options.filter((o) => o.toLowerCase().includes(filter.trim().toLowerCase()))
+    : [];
+
   return (
-    <button className={`gphoto${photo ? " done" : ""}${cam === "live" ? " live" : ""}`}
-            onClick={onClick}>
-      <video ref={videoRef} playsInline muted autoPlay
-             className={cam === "live" ? "" : "hidden"} />
-      {cam !== "live" && (
+    <Field label={label}>
+      {loading && (
+        <div className="gpickload">
+          <Icon name="progress_activity" size={17} className="gspinicon" />
+          <span>{t("starting")}</span>
+        </div>
+      )}
+
+      {listMode && (
         <>
-          <Icon name={photo ? "check_circle" : cam === "starting" ? "progress_activity" : "camera"}
-                size={30} className={cam === "starting" ? "gspinicon" : ""} />
-          <span>{photo ? t("photoTaken")
-                : cam === "blocked" ? t("cameraBlocked")
-                : cam === "starting" ? t("starting") : t("takePhoto")}</span>
+          {/* Only worth showing once the list is long enough to scroll past
+              what a thumb can reach. Below that it is a box in the way. */}
+          {options.length > 8 && (
+            <input className={`gf gpickfilter${mono ? " mono" : ""}`} value={filter}
+                   placeholder={hint} autoComplete="off"
+                   onChange={(e) => setFilter(e.target.value)} />
+          )}
+          <div className="gpicklist">
+            {shown.map((o) => (
+              <button key={o} type="button"
+                      className={`gpickopt${value === o ? " on" : ""}${mono ? " mono" : ""}`}
+                      onClick={() => onChange(o)}>
+                {o}
+                {value === o && <Icon name="check" size={16} />}
+              </button>
+            ))}
+            {shown.length === 0 && <p className="gnote">{t("noFleetYet")}</p>}
+          </div>
+          <button type="button" className="gbtn sm ghost"
+                  onClick={() => { onTyping(true); onChange(""); }}>
+            {t("typeItIn")}
+          </button>
         </>
       )}
-      {cam === "live" && <span className="gshutter">{t("tapToCapture")}</span>}
-    </button>
+
+      {!listMode && !loading && (
+        <>
+          <input className={`gf${mono ? " mono" : ""}`} value={value} placeholder={placeholder}
+                 autoComplete="off"
+                 autoCapitalize={uppercase ? "characters" : undefined}
+                 onChange={(e) => onChange(uppercase ? e.target.value.toUpperCase() : e.target.value)} />
+          {unavailable && <p className="gnote">{t("noFleetYet")}</p>}
+          {typing && !empty && (
+            <button type="button" className="gbtn sm ghost" onClick={() => onTyping(false)}>
+              {t("backToList")}
+            </button>
+          )}
+        </>
+      )}
+    </Field>
+  );
+}
+
+/**
+ * The item photo: a square viewfinder with a shutter under it.
+ *
+ * It was one tall button that opened the camera on the first tap and captured
+ * on the second, with no way back — a guard who blinked had to abandon the
+ * whole entry and start again. Three things changed and each earns its place:
+ *
+ *   SQUARE      a phone camera preview is not the shape of a wide, short box,
+ *               so the old one cropped hard and showed a slice of the item.
+ *               1:1 is what the guard actually gets.
+ *   A SHUTTER   a separate, labelled button. The frame shows what will be
+ *               captured; the button captures it. Neither pretends to be the
+ *               other.
+ *   RETAKE      always available once a shot exists. Blurred, dark, wrong box —
+ *               all one tap to fix, and all previously required cancelling.
+ *
+ * These photos are the only evidence a manual entry or an override carries, so
+ * a guard being able to see and redo one is not a nicety.
+ */
+function PhotoBox({ t, photo, url, cam, videoRef, onOpen, onShoot, onRetake }: {
+  t: (k: string) => string;
+  photo: Blob | null;
+  /** Object URL of the captured frame, so the guard sees what they took. */
+  url: string | null;
+  cam: "off" | "starting" | "live" | "blocked";
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  onOpen: () => void;
+  onShoot: () => void;
+  onRetake: () => void;
+}) {
+  return (
+    <div className="gphotowrap">
+      <div className={`gphotoframe${photo ? " done" : ""}${cam === "live" ? " live" : ""}`}>
+        <video ref={videoRef} playsInline muted autoPlay
+               className={cam === "live" && !url ? "" : "hidden"} />
+        {/* eslint-disable-next-line @next/next/no-img-element -- a local blob;
+            next/image cannot take an object URL. */}
+        {url && <img src={url} alt="" />}
+        {!url && cam !== "live" && (
+          <div className="gphotoempty">
+            <Icon name={cam === "starting" ? "progress_activity" : "camera"}
+                  size={34} className={cam === "starting" ? "gspinicon" : ""} />
+            <span>{cam === "blocked" ? t("cameraBlocked")
+                 : cam === "starting" ? t("starting") : t("photoNeeded")}</span>
+          </div>
+        )}
+        {/* Corner marks, the same language as the scanner's reticle, so the
+            square reads as a viewfinder rather than an empty card. */}
+        {!url && <div className="gretic sm"><i /><i /><i /><i /></div>}
+      </div>
+
+      <div className="gphotobtns">
+        {photo ? (
+          <button className="gbtn sm ghost" onClick={onRetake}>
+            <Icon name="refresh" size={17} />{t("retake")}
+          </button>
+        ) : cam === "live" ? (
+          <button className="gbtn sm primary" onClick={onShoot}>
+            <Icon name="camera" size={17} />{t("takePicture")}
+          </button>
+        ) : (
+          <button className="gbtn sm primary" onClick={onOpen} disabled={cam === "starting"}>
+            <Icon name="camera" size={17} />
+            {cam === "blocked" ? t("cameraBlocked") : t("takePicture")}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 function GeoCard({ t, boot }: { t: (k: string) => string; boot: Bootstrap | null }) {

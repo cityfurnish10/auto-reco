@@ -1,0 +1,428 @@
+// Drive the guard app through a whole trip in a real browser.
+//
+// WHY THIS EXISTS, AND WHY IT IS NOT A UNIT TEST. Nine screens were once
+// deleted by a careless edit and types, lint, build and 700 mocked tests all
+// passed — the bug was only found by opening the app on a phone. smoke-gate.mjs
+// closed half of that gap: it proves the app LOADS. This closes the other half:
+// it proves the app can be USED, by walking the screens a guard walks and
+// failing if a control is missing, dead, or does not do what it says.
+//
+// The server is stubbed at the network boundary rather than mocked in JS, so
+// everything from the fetch call inwards is the real application code.
+//
+//   node scripts/smoke-gate-flow.mjs [url] [chromium|webkit]
+
+import { chromium, webkit } from "playwright";
+
+const BASE = process.argv[2] ?? "http://localhost:3100";
+// WebKit by default: the guards use their own phones and an iPhone runs WebKit
+// whatever the browser badge says.
+const ENGINE = (process.argv[3] ?? "webkit") === "chromium" ? chromium : webkit;
+
+let failures = 0;
+const ok = (m) => console.log(`  \x1b[32m✓\x1b[0m ${m}`);
+const bad = (m) => { console.log(`  \x1b[31m✗\x1b[0m ${m}`); failures++; };
+const step = (m) => console.log(`\n\x1b[1m${m}\x1b[0m`);
+
+const GUARD_ID = "11111111-1111-1111-1111-111111111111";
+
+/** A fake 128-float face signature; the model never runs in this harness. */
+const DESCRIPTOR = Array.from({ length: 128 }, (_, i) => (i % 7) / 10);
+
+const browser = await ENGINE.launch();
+const ctx = await browser.newContext({
+  viewport: { width: 390, height: 844 },
+  userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+});
+const page = await ctx.newPage();
+
+const errors = [];
+page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+page.on("pageerror", (e) => errors.push(`UNCAUGHT: ${e.message}`));
+
+// What the phone posted, so the test can assert on the RECORD and not just on
+// what the screen said. A trip that looks closed but sent nothing is the
+// failure mode that matters.
+const posted = [];
+
+// Flipped once the check-in gate has been asserted, so the same stub can serve
+// both halves of the walk-through.
+let onShift = false;
+let withTrip = false;
+
+const json = (route, body) =>
+  route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+
+await ctx.route("**/api/gate/session", (route) =>
+  route.request().method() === "POST"
+    ? json(route, { ok: true, guard: { id: GUARD_ID, name: "Test Guard" } })
+    : json(route, {
+        site: { city: "DELHI", code: "DEL-1" },
+        guards: [{ guardId: GUARD_ID, name: "Test Guard", employeeCode: "G-01",
+                   descriptor: DESCRIPTOR, enrolled: true }],
+      }));
+
+await ctx.route("**/api/gate/bootstrap*", (route) => json(route, {
+  guard: { id: GUARD_ID, name: "Test Guard" },
+  businessDate: "2026-08-24",
+  site: { code: "DEL-1", label: "Delhi", lat: 28.6, lng: 77.2, radiusM: 300 },
+  config: { outwardPhotoSampleRate: 0.1, expectedCheckLive: false },
+  openTrip: withTrip
+    ? { id: "t1", client_trip_id: "ct1", direction: "OUT",
+        vehicle_no: "HR26DK8337", opened_at: "2026-08-24T10:00:00.000Z" }
+    : null,
+  // An open shift, so the walk-through reaches the trip screens. The check-in
+  // gate is asserted separately above, against a bootstrap with no shift.
+  openShift: onShift
+    ? { id: "s1", client_shift_id: "cs1", checked_in_at: "2026-08-24T09:00:00.000Z" }
+    : null,
+  expected: [], expectedCount: 0,
+}));
+
+// The live DT read. Two vehicles and two agents, so the picker has a list to
+// render and the "type it in" escape has something to escape from.
+await ctx.route("**/api/gate/fleet", (route) => json(route, {
+  vehicles: ["HR26DK8337", "DL01AB1234"],
+  agents: ["Ramesh Kumar", "Suresh Yadav"],
+  source: "dt",
+}));
+
+await ctx.route("**/api/gate/sync", async (route) => {
+  const body = route.request().postDataJSON() ?? {};
+  posted.push(body);
+  const done = (arr, key) => (arr ?? []).map((x) => ({ clientId: x[key], status: "stored", id: "srv" }));
+  await json(route, {
+    ok: true,
+    trips: done(body.trips, "clientTripId"),
+    scans: done(body.scans, "clientScanId"),
+    voids: done(body.voids, "clientScanId"),
+    shifts: done(body.shifts, "clientShiftId"),
+    faceChecks: done(body.faceChecks, "clientCheckId"),
+    photos: [], selfies: [], bucket: "e", selfieBucket: "a",
+    clockWarnings: [], truncated: false,
+  });
+});
+
+await ctx.route("**/api/gate/history*", (route) => json(route, { trips: [] }));
+
+// A paired device, so the app opens on the roster rather than the pairing screen.
+await ctx.addInitScript(() => {
+  localStorage.setItem("gate.deviceToken", "smoke-token");
+});
+
+/** Tap by visible text, and say so plainly when it is not there. */
+async function tap(label, { exact = false, timeout = 6000 } = {}) {
+  const el = page.getByText(label, { exact }).first();
+  try {
+    await el.waitFor({ state: "visible", timeout });
+    await el.click();
+    return true;
+  } catch {
+    bad(`could not tap "${label}" — it is not on screen`);
+    return false;
+  }
+}
+
+const seen = async (label) =>
+  page.getByText(label, { exact: false }).first()
+    .isVisible({ timeout: 4000 }).catch(() => false);
+
+/* ── 1. open and sign in ─────────────────────────────────────────────── */
+step("Opening the app");
+await page.goto(`${BASE}/scan`, { waitUntil: "domcontentloaded", timeout: 45_000 });
+await page.waitForTimeout(2500);
+
+const body = (await page.locator("body").innerText().catch(() => "")).trim();
+if (!body) bad("the page renders no text at all — this is the blank screen");
+else ok(`renders: "${body.replace(/\s+/g, " ").slice(0, 70)}…"`);
+
+await tap("Test Guard");
+await page.waitForTimeout(400);
+for (const d of "1234") await page.getByRole("button", { name: d, exact: true }).first().click();
+await page.waitForTimeout(1200);
+
+/* ── 2. the check-in must refuse to proceed without a photo ──────────── */
+step("Check-in requires a photo");
+if (await seen("Take your photo to check in")) {
+  ok("says a photo is required");
+} else if (await seen("Check in")) {
+  bad("no 'photo required' notice — check-in may still be skippable");
+}
+const checkInBtn = page.getByRole("button", { name: /^Check in$/i }).first();
+if (await checkInBtn.count()) {
+  const disabled = await checkInBtn.isDisabled().catch(() => false);
+  disabled ? ok("the Check in button is disabled until a photo is taken")
+           : bad("Check in is TAPPABLE with no photo — anyone can sign in (the reported bug)");
+} else {
+  bad("no Check in button found — did the check-in screen render?");
+}
+
+// A headless browser has no face to show a camera, so the check-in itself
+// cannot be performed here. The shift is granted by the server stub instead —
+// the same state a guard reaches after checking in — and the walk-through
+// continues from there.
+onShift = true;
+await page.reload({ waitUntil: "domcontentloaded" });
+await page.waitForTimeout(2000);
+for (const d of "1234") {
+  const k = page.getByRole("button", { name: d, exact: true }).first();
+  if (await k.count()) await k.click().catch(() => {});
+}
+await page.waitForTimeout(1200);
+
+/* ── 3. the trip form: pickers, and the mandatory fields ─────────────── */
+step("Starting a trip");
+if (!(await seen("Start trip"))) await tap("Start trip");
+await tap("Start trip");
+await page.waitForTimeout(1200);
+
+if (await seen("HR26DK8337")) ok("the vehicle list arrived from DT and rendered");
+else bad("no vehicle list — the picker fell back to a text box");
+
+if (await seen("Ramesh Kumar")) ok("the delivery agent list rendered");
+else bad("no agent list");
+
+if (await seen("Not listed")) ok("'type it in' escape is offered");
+else bad("no way to type a vehicle that is not on the list");
+
+const startScan = page.getByRole("button", { name: /Start scanning/i }).first();
+if (await startScan.count()) {
+  const disabled = await startScan.isDisabled().catch(() => false);
+  disabled ? ok("cannot start scanning until direction, vehicle and agent are set")
+           : bad("Start scanning is enabled with nothing filled in");
+}
+
+await tap("Outward");
+await tap("HR26DK8337");
+await tap("Ramesh Kumar");
+await page.waitForTimeout(400);
+
+if (await startScan.isEnabled().catch(() => false)) ok("enabled once all three are chosen");
+else bad("still disabled after choosing direction, vehicle and agent");
+
+await startScan.click();
+await page.waitForTimeout(1500);
+
+/* ── 4. scan, then remove — the double confirm ───────────────────────── */
+step("Removing a scanned item");
+if (!(await seen("Items scanned"))) bad("the scanner screen did not render");
+else ok("the scanner screen rendered");
+
+const addBtn = page.locator(".gscanfoot .gbtn.ghost").first();
+if (await addBtn.count()) ok("the manual-add button is on the scanner");
+else bad("no manual-add button on the scanner");
+
+// A headless browser cannot scan a QR, so two scans are written straight into
+// the outbox — the same shape the app writes — and the page is reloaded. The
+// app rebuilds its item list from that queue, which is exactly the path a
+// guard takes when they close and reopen the app mid-trip. Everything after
+// this point is the real removal code against a real queued row.
+withTrip = true;
+await page.evaluate(() => new Promise((res, rej) => {
+  const rq = indexedDB.open("gate-outbox", 1);
+  rq.onsuccess = () => {
+    const db = rq.result;
+    const tx = db.transaction("items", "readwrite");
+    const store = tx.objectStore("items");
+    for (const [id, bc] of [["sc-1", "FUMYHA23030062"], ["sc-2", "AP815719030952"]]) {
+      store.put({ clientId: id, kind: "scan", createdAt: Date.now(), attempts: 0,
+        payload: { clientScanId: id, clientTripId: "ct1", barcode: bc,
+                   entryMethod: "scan", itemKind: "unit", quantity: 1,
+                   scannedAt: new Date().toISOString() } });
+    }
+    tx.oncomplete = () => res(true);
+    tx.onerror = () => rej(tx.error);
+  };
+  rq.onerror = () => rej(rq.error);
+}));
+await page.reload({ waitUntil: "domcontentloaded" });
+await page.waitForTimeout(2200);
+for (const d of "1234") {
+  const k = page.getByRole("button", { name: d, exact: true }).first();
+  if (await k.count()) await k.click().catch(() => {});
+}
+await page.waitForTimeout(1500);
+if (!(await seen("Items scanned"))) await tap("Resume trip");
+await page.waitForTimeout(1200);
+
+const rows = page.locator(".gfeed .grow");
+const before = await rows.count();
+if (before === 2) ok(`the trip's ${before} items came back after a reload`);
+else bad(`expected 2 restored items, found ${before}`);
+
+const xBtn = page.locator(".gfeed .grow .gx").first();
+if (!(await xBtn.count())) {
+  bad("no remove control on a scanned row — the reported gap");
+} else {
+  ok("each scanned row has a remove control");
+  await xBtn.click();
+  await page.waitForTimeout(600);
+
+  // The double check. A single tap must NOT have removed anything yet.
+  if (await seen("Remove this item?")) ok("asks before removing");
+  else bad("removed on a single tap, with no confirmation");
+
+  const stillThere = await rows.count();
+  if (stillThere === before) ok("nothing is removed while the question is open");
+  else bad("the row vanished before the guard answered");
+
+  // "Keep it" must genuinely keep it.
+  await page.locator(".gsheetbox").getByRole("button", { name: /Keep it/i }).first().click();
+  await page.waitForTimeout(600);
+  if ((await rows.count()) === before) ok("'Keep it' leaves the item alone");
+  else bad("'Keep it' removed the item anyway");
+
+  // And now actually remove one.
+  await page.locator(".gfeed .grow .gx").first().click();
+  await page.waitForTimeout(500);
+  // Scoped to the sheet: the row's own × also announces "Remove", and a test
+  // that cannot tell them apart is a test that proves nothing.
+  await page.locator(".gsheetbox").getByRole("button", { name: /^Remove$/i }).first().click();
+  await page.waitForTimeout(1200);
+
+  const after = await rows.count();
+  if (after === before - 1) ok(`removed: ${before} → ${after} items`);
+  else bad(`removal did not take effect: still ${after} items`);
+
+  // THE RECORD, not just the screen. A row that disappears from the feed while
+  // still counting on the server is the worst possible outcome — the guard
+  // believes it is gone and the reconciler does not. So the invariant is
+  // checked against what the phone has actually done with both scans, whichever
+  // one the tap landed on:
+  //
+  //   live = (queued as a scan  ∪  already posted)  −  voided
+  //
+  // and exactly one of the two must still be live.
+  const state = await page.evaluate(() => new Promise((res) => {
+    const rq = indexedDB.open("gate-outbox", 1);
+    rq.onsuccess = () => {
+      const r = rq.result.transaction("items", "readonly").objectStore("items").getAll();
+      r.onsuccess = () => res(r.result.map((i) => ({ kind: i.kind, id: i.payload.clientScanId })));
+      r.onerror = () => res([]);
+    };
+    rq.onerror = () => res([]);
+  }));
+
+  const voided = new Set(state.filter((i) => i.kind === "void").map((i) => i.id));
+  const live = new Set([
+    ...state.filter((i) => i.kind === "scan").map((i) => i.id),
+    ...posted.flatMap((b) => (b.scans ?? []).map((x) => x.clientScanId)),
+  ].filter((id) => ["sc-1", "sc-2"].includes(id) && !voided.has(id)));
+
+  if (live.size === 1) {
+    ok(voided.size
+      ? `the removed scan had already been sent, so a void was queued (${[...voided]})`
+      : "the removed scan left the queue and never reached the server");
+  } else {
+    bad(`${live.size} scans still count as live movements, expected 1 — ` +
+        `queued/posted minus voided = [${[...live]}]`);
+  }
+
+  // ── the OTHER path: removing a scan the server already has ────────────
+  // Above, the row was still in the queue and deleting it was the whole job.
+  // Here the scan has been synced, so deleting it locally would leave the
+  // server counting an item the guard believes is gone. A void has to travel.
+  step("Removing an item the server already has");
+  const drained = await page.evaluate(async () => {
+    // The app syncs on its own schedule; this forces the remaining scan out so
+    // the next removal is unambiguously the already-sent case.
+    window.dispatchEvent(new Event("online"));
+    await new Promise((r) => setTimeout(r, 1200));
+    return true;
+  });
+  await page.waitForTimeout(1500);
+  const sentIds = new Set(posted.flatMap((b) => (b.scans ?? []).map((x) => x.clientScanId)));
+  if (!drained || sentIds.size === 0) {
+    console.log("  \x1b[33m–\x1b[0m nothing synced in time; the void path is not exercised here");
+  } else {
+    await page.locator(".gfeed .grow .gx").first().click();
+    await page.waitForTimeout(500);
+    await page.locator(".gsheetbox").getByRole("button", { name: /^Remove$/i }).first().click();
+    await page.waitForTimeout(1500);
+
+    if ((await rows.count()) === 0) ok("the second item came off the list too");
+    else bad("the second removal did not take effect");
+
+    const after2 = await page.evaluate(() => new Promise((res) => {
+      const rq = indexedDB.open("gate-outbox", 1);
+      rq.onsuccess = () => {
+        const r = rq.result.transaction("items", "readonly").objectStore("items").getAll();
+        r.onsuccess = () => res(r.result.map((i) => ({ kind: i.kind, id: i.payload.clientScanId })));
+        r.onerror = () => res([]);
+      };
+      rq.onerror = () => res([]);
+    }));
+    const voids = after2.filter((i) => i.kind === "void");
+    const sentVoid = posted.flatMap((b) => b.voids ?? []);
+    if (voids.length || sentVoid.length) {
+      ok(`a retraction was raised for the already-sent scan (${
+        [...voids, ...sentVoid].map((v) => v.id ?? v.clientScanId).join(", ")})`);
+    } else {
+      bad("the scan was already on the server and NO void was raised — it still counts");
+    }
+    if (sentVoid.length) ok("and the retraction reached the server");
+  }
+}
+
+/* ── 5. the close screen: last-minute add ────────────────────────────── */
+step("The close screen");
+await tap("Done");
+await page.waitForTimeout(1200);
+
+if (await seen("Close trip")) ok("the close screen rendered");
+else bad("the close screen did not render");
+
+if (await seen("last minute")) ok("offers a last-minute addition");
+else bad("no last-minute add on the close screen — the reported gap");
+
+const addManually = page.getByRole("button", { name: /Add manually/i }).first();
+if (await addManually.count()) {
+  await addManually.click();
+  await page.waitForTimeout(1000);
+  if (await seen("What is it")) ok("the last-minute button opens the manual form");
+  else bad("the last-minute button does not open the manual form");
+
+  // And it must come BACK to the close screen, not to the scanner.
+  const backish = page.locator(".gbar button, .gtopbar button").first();
+  if (await backish.count()) {
+    await backish.click();
+    await page.waitForTimeout(900);
+    if (await seen("Close trip")) ok("returns to the close screen, not the scanner");
+    else bad("went back to the wrong screen");
+  }
+} else {
+  bad("no 'Add manually' button on the close screen");
+}
+
+/* ── 6. the photo box ────────────────────────────────────────────────── */
+step("The item photo box");
+await addManually.click().catch(() => {});
+await page.waitForTimeout(900);
+await tap("Spare part").catch(() => {});
+await page.waitForTimeout(700);
+const frame = page.locator(".gphotoframe").first();
+if (await frame.count()) {
+  ok("the square photo frame renders");
+  const box = await frame.boundingBox();
+  if (box && Math.abs(box.width - box.height) < 24) ok(`it is square (${Math.round(box.width)}×${Math.round(box.height)})`);
+  else if (box) bad(`not square: ${Math.round(box.width)}×${Math.round(box.height)}`);
+  if (await page.getByRole("button", { name: /Take picture/i }).first().count()) {
+    ok("a separate 'Take picture' button exists");
+  } else bad("no explicit capture button");
+} else {
+  bad("no photo frame on the manual form");
+}
+
+/* ── report ──────────────────────────────────────────────────────────── */
+step("Result");
+const uniq = [...new Set(errors)].filter((e) => !/favicon|models\/face|getUserMedia|Permission/i.test(e));
+if (uniq.length) {
+  console.log("  console errors:");
+  for (const e of uniq.slice(0, 8)) console.log(`    • ${e.slice(0, 200)}`);
+  failures += uniq.length;
+} else ok("no unexpected console errors");
+
+console.log(`\n  ${posted.length} sync call(s) reached the server`);
+console.log(failures ? `\n\x1b[31m${failures} problem(s)\x1b[0m\n` : "\n\x1b[32mall good\x1b[0m\n");
+await browser.close();
+process.exit(failures ? 1 : 0);

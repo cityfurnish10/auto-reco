@@ -54,6 +54,37 @@ export const STRINGS: Record<string, Row> = {
   retake:{en:"Retake",hi:"दोबारा लें",mr:"पुन्हा घ्या",kn:"ಮತ್ತೆ ತೆಗೆಯಿರಿ",te:"మళ్లీ తీయండి"},
   faceOk:{en:"Photo matched",hi:"फोटो मिल गई",mr:"फोटो जुळला",kn:"ಫೋಟೋ ಹೊಂದಿಕೆಯಾಯಿತು",te:"ఫోటో సరిపోలింది"},
   faceReview:{en:"Saved — your manager will check this",hi:"सेव हो गया — मैनेजर जाँच लेंगे",mr:"सेव्ह झाले — मॅनेजर तपासतील",kn:"ಉಳಿಸಲಾಗಿದೆ — ಮ್ಯಾನೇಜರ್ ಪರಿಶೀಲಿಸುತ್ತಾರೆ",te:"సేవ్ అయింది — మేనేజర్ తనిఖీ చేస్తారు"},
+  // ── The face check refuses ────────────────────────────────────────────
+  // Only ever shown for a confident mismatch. It has to be unmistakable
+  // WITHOUT accusing the person holding the phone of anything — they may
+  // simply be a guard whose enrolment photo is four years and a beard old.
+  faceNotYou:{en:"This is not the enrolled face",hi:"यह रजिस्टर किया हुआ चेहरा नहीं है",mr:"हा नोंदवलेला चेहरा नाही",kn:"ಇದು ನೋಂದಾಯಿತ ಮುಖವಲ್ಲ",te:"ఇది నమోదైన ముఖం కాదు"},
+  faceBlockedNote:{en:"Cannot check in. Please see your manager.",hi:"चेक-इन नहीं हो सकता। अपने मैनेजर से मिलें।",mr:"चेक-इन होऊ शकत नाही. मॅनेजरला भेटा.",kn:"ಚೆಕ್-ಇನ್ ಸಾಧ್ಯವಿಲ್ಲ. ನಿಮ್ಮ ಮ್ಯಾನೇಜರ್ ಅವರನ್ನು ಭೇಟಿ ಮಾಡಿ.",te:"చెక్-ఇన్ కాదు. మీ మేనేజర్‌ను కలవండి."},
+  selfieRequired:{en:"Take your photo to check in",hi:"चेक-इन के लिए अपनी फोटो लें",mr:"चेक-इनसाठी तुमचा फोटो काढा",kn:"ಚೆಕ್-ಇನ್ ಮಾಡಲು ನಿಮ್ಮ ಫೋಟೋ ತೆಗೆಯಿರಿ",te:"చెక్-ఇన్ కోసం మీ ఫోటో తీసుకోండి"},
+  faceNotEnrolled:{en:"No reference photo on file — ask your manager to add one",hi:"रेफरेंस फोटो नहीं है — मैनेजर से जुड़वाएँ",mr:"संदर्भ फोटो नाही — मॅनेजरकडून जोडून घ्या",kn:"ಉಲ್ಲೇಖ ಫೋಟೋ ಇಲ್ಲ — ಮ್ಯಾನೇಜರ್ ಅವರನ್ನು ಸೇರಿಸಲು ಕೇಳಿ",te:"రిఫరెన్స్ ఫోటో లేదు — మేనేజర్‌ను జోడించమని అడగండి"},
+
+  // ── Removing something already scanned ────────────────────────────────
+  removeItem:{en:"Remove this item?",hi:"यह आइटम हटाएँ?",mr:"ही वस्तू काढायची?",kn:"ಈ ವಸ್ತುವನ್ನು ತೆಗೆಯುವುದೇ?",te:"ఈ వస్తువును తీసివేయాలా?"},
+  removeWhy:{en:"It will not count in this trip. Scan it again if it really moved.",hi:"यह इस ट्रिप में नहीं गिना जाएगा। अगर सच में गया है तो दोबारा स्कैन करें।",mr:"ही या ट्रिपमध्ये मोजली जाणार नाही. खरंच गेली असेल तर पुन्हा स्कॅन करा.",kn:"ಇದು ಈ ಟ್ರಿಪ್‌ನಲ್ಲಿ ಎಣಿಕೆಯಾಗುವುದಿಲ್ಲ. ನಿಜವಾಗಿ ಹೋಗಿದ್ದರೆ ಮತ್ತೆ ಸ್ಕ್ಯಾನ್ ಮಾಡಿ.",te:"ఇది ఈ ట్రిప్‌లో లెక్కించబడదు. నిజంగా వెళ్లితే మళ్లీ స్కాన్ చేయండి."},
+  remove:{en:"Remove",hi:"हटाएँ",mr:"काढा",kn:"ತೆಗೆಯಿರಿ",te:"తీసివేయండి"},
+  keepIt:{en:"Keep it",hi:"रहने दें",mr:"राहू द्या",kn:"ಇರಲಿ",te:"ఉంచండి"},
+  removed:{en:"Removed",hi:"हटा दिया",mr:"काढले",kn:"ತೆಗೆಯಲಾಗಿದೆ",te:"తీసివేయబడింది"},
+
+  // ── Last-minute additions on the close screen ─────────────────────────
+  lastMinute:{en:"Something loaded at the last minute?",hi:"आख़िरी वक़्त पर कुछ और चढ़ा?",mr:"शेवटच्या क्षणी काही चढवले?",kn:"ಕೊನೆಯ ಕ್ಷಣದಲ್ಲಿ ಏನಾದರೂ ಹತ್ತಿಸಿದ್ದೀರಾ?",te:"చివరి నిమిషంలో ఏదైనా ఎక్కించారా?"},
+
+  // ── Vehicle / agent pickers ───────────────────────────────────────────
+  pickVehicle:{en:"Choose the vehicle",hi:"गाड़ी चुनें",mr:"गाडी निवडा",kn:"ವಾಹನವನ್ನು ಆರಿಸಿ",te:"వాహనాన్ని ఎంచుకోండి"},
+  pickAgent:{en:"Choose the delivery agent",hi:"डिलीवरी एजेंट चुनें",mr:"डिलिव्हरी एजंट निवडा",kn:"ಡೆಲಿವರಿ ಏಜೆಂಟ್ ಆರಿಸಿ",te:"డెలివరీ ఏజెంట్‌ను ఎంచుకోండి"},
+  typeItIn:{en:"Not listed — type it in",hi:"सूची में नहीं — खुद लिखें",mr:"यादीत नाही — स्वतः लिहा",kn:"ಪಟ್ಟಿಯಲ್ಲಿಲ್ಲ — ನೀವೇ ಬರೆಯಿರಿ",te:"జాబితాలో లేదు — మీరే టైప్ చేయండి"},
+  backToList:{en:"Back to the list",hi:"सूची पर वापस",mr:"यादीकडे परत",kn:"ಪಟ್ಟಿಗೆ ಹಿಂತಿರುಗಿ",te:"జాబితాకు తిరిగి"},
+  scheduledToday:{en:"Scheduled today",hi:"आज शेड्यूल",mr:"आज नियोजित",kn:"ಇಂದು ನಿಗದಿ",te:"ఈరోజు షెడ్యూల్"},
+  noFleetYet:{en:"Nothing scheduled found — type it in",hi:"कोई शेड्यूल नहीं मिला — खुद लिखें",mr:"नियोजित काही मिळाले नाही — स्वतः लिहा",kn:"ನಿಗದಿತವಾದದ್ದು ಸಿಗಲಿಲ್ಲ — ನೀವೇ ಬರೆಯಿರಿ",te:"షెడ్యూల్ ఏదీ దొరకలేదు — మీరే టైప్ చేయండి"},
+
+  // ── The photo box ─────────────────────────────────────────────────────
+  takePicture:{en:"Take picture",hi:"फोटो लें",mr:"फोटो काढा",kn:"ಫೋಟೋ ತೆಗೆಯಿರಿ",te:"ఫోటో తీయండి"},
+  photoNeeded:{en:"A photo is required",hi:"फोटो ज़रूरी है",mr:"फोटो आवश्यक आहे",kn:"ಫೋಟೋ ಅಗತ್ಯ",te:"ఫోటో అవసరం"},
+
   faceNone:{en:"No face found — try again in better light",hi:"चेहरा नहीं दिखा — बेहतर रोशनी में दोबारा लें",mr:"चेहरा दिसला नाही — चांगल्या उजेडात पुन्हा घ्या",kn:"ಮುಖ ಕಾಣಲಿಲ್ಲ — ಒಳ್ಳೆಯ ಬೆಳಕಿನಲ್ಲಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ",te:"ముఖం కనిపించలేదు — మంచి వెలుతురులో మళ్లీ ప్రయత్నించండి"},
   whoAreYou:{en:"Who is on duty?",hi:"ड्यूटी पर कौन है?",mr:"ड्युटीवर कोण आहे?",kn:"ಕರ್ತವ್ಯದಲ್ಲಿ ಯಾರಿದ್ದಾರೆ?",te:"డ్యూటీలో ఎవరు ఉన్నారు?"},
   tapYourName:{en:"Tap your name",hi:"अपना नाम चुनें",mr:"तुमचे नाव निवडा",kn:"ನಿಮ್ಮ ಹೆಸರು ಆಯ್ಕೆಮಾಡಿ",te:"మీ పేరు ఎంచుకోండి"},

@@ -4,7 +4,7 @@
 // building and is indistinguishable from a real second dispatch afterwards.
 
 import { describe, expect, it } from "vitest";
-import { applyBatch, type InScan, type InTrip } from "../../lib/gate/sync";
+import { applyBatch, type InScan, type InTrip, type InVoid } from "../../lib/gate/sync";
 import type { GateIdentity } from "../../lib/gate/auth";
 
 const WHO: GateIdentity = {
@@ -33,6 +33,7 @@ function stubDb(opts: { existingTrips?: Record<string, string> } = {}) {
   const scanIds = new Set<string>();
   const perTripBarcodes = new Set<string>();
   const updates: Record<string, unknown>[] = [];
+  const voidUpdates: Record<string, unknown>[] = [];
   let n = 0;
 
   const dup = { error: { code: "23505", message: "duplicate key" }, data: null };
@@ -82,6 +83,23 @@ function stubDb(opts: { existingTrips?: Record<string, string> } = {}) {
       }
       // gate_scans
       return {
+        update(u: Record<string, unknown>) {
+          // Mirrors PostgREST: .update().eq().eq().select() resolves to the
+          // rows it touched, and an empty array when it matched nothing.
+          const filters: Record<string, string> = {};
+          const self = {
+            eq(col: string, val: string) { filters[col] = val; return self; },
+            select: async () => {
+              const hit = scanRows.filter((r) =>
+                Object.entries(filters).every(([c, v]) => r[c] === v) &&
+                r.status !== "void");
+              for (const r of hit) Object.assign(r, u);
+              voidUpdates.push({ ...u, matched: hit.length });
+              return { data: hit.map((_, i) => ({ id: `scan-${i + 1}` })), error: null };
+            },
+          };
+          return self;
+        },
         insert(row: Record<string, unknown>) {
           return {
             select: () => ({
@@ -101,7 +119,7 @@ function stubDb(opts: { existingTrips?: Record<string, string> } = {}) {
       };
     },
   };
-  return { db: db as never, scanRows, tripRows, updates };
+  return { db: db as never, scanRows, tripRows, updates, voidUpdates };
 }
 
 describe("applyBatch — replay safety", () => {
@@ -267,5 +285,91 @@ describe("applyBatch — the control rules", () => {
       trips: [trip()], scans: [scan({ quantity: 4 })],
     });
     expect(r.scans[0].status).toBe("rejected");
+  });
+});
+
+
+// ── Retractions ──────────────────────────────────────────────────────────
+// A guard scans the wrong box and takes it back. Before this existed the only
+// options were leaving a wrong row in the record or abandoning the trip, and
+// the first is what actually happened — which is how a digital register starts
+// lying in exactly the way the paper one did.
+//
+// The row is never deleted. It is marked void with a reason, and the reconcile
+// connector reads status='recorded' only, so it stops counting the moment this
+// lands while the trail still shows it was corrected rather than that it never
+// existed.
+
+const voidOf = (o: Partial<InVoid> = {}): InVoid => ({
+  clientScanId: "cs-1", reason: "removed by the guard during the trip",
+  voidedAt: "2026-08-21T10:35:00Z", ...o,
+});
+
+describe("applyBatch — retracting a scan", () => {
+  it("marks the scan void, with its reason and who did it", async () => {
+    const { db, scanRows, voidUpdates } = stubDb();
+    await applyBatch(db, WHO, { trips: [trip()], scans: [scan()] });
+    const r = await applyBatch(db, WHO, { voids: [voidOf()] });
+
+    expect(r.voids[0].status).toBe("stored");
+    expect(scanRows[0].status).toBe("void");
+    expect(scanRows[0].void_reason).toBe("removed by the guard during the trip");
+    expect(scanRows[0].voided_by).toBe("guard-1");
+    // The movement is still THERE. A source of truth that can erase its own
+    // history is not one.
+    expect(scanRows).toHaveLength(1);
+    expect(voidUpdates[0].matched).toBe(1);
+  });
+
+  it("applies scans BEFORE voids inside one batch", async () => {
+    // A phone offline for an hour can hold both the scan and its retraction.
+    // Applying the void first would leave the scan behind it as a live row —
+    // the exact double-count this is meant to prevent.
+    const { db, scanRows } = stubDb();
+    await applyBatch(db, WHO, {
+      trips: [trip()], scans: [scan()], voids: [voidOf()],
+    });
+    expect(scanRows[0].status).toBe("void");
+  });
+
+  it("cannot reach across cities", async () => {
+    // The city comes from the DEVICE, so a phone at one gate cannot retract a
+    // movement recorded at another — the mistake a client-supplied identifier
+    // invites on day one.
+    const { db, scanRows } = stubDb();
+    await applyBatch(db, WHO, { trips: [trip()], scans: [scan()] });
+    const other: GateIdentity = { ...WHO, city: "MUMBAI" };
+    const r = await applyBatch(db, other, { voids: [voidOf()] });
+
+    expect(scanRows[0].status).not.toBe("void");
+    // Nothing matched, which from the phone's side is "already dealt with" —
+    // a retraction it retries forever is a queue that never drains.
+    expect(r.voids[0].status).toBe("duplicate");
+  });
+
+  it("treats a replayed void as a duplicate rather than an error", async () => {
+    const { db } = stubDb();
+    await applyBatch(db, WHO, { trips: [trip()], scans: [scan()] });
+    await applyBatch(db, WHO, { voids: [voidOf()] });
+    const again = await applyBatch(db, WHO, { voids: [voidOf()] });
+    expect(again.voids[0].status).toBe("duplicate");
+  });
+
+  it("refuses a retraction with no reason", async () => {
+    // The schema requires it too (gate_scans_void_has_reason), but an
+    // unexplained disappearance should never get as far as the database.
+    const { db } = stubDb();
+    await applyBatch(db, WHO, { trips: [trip()], scans: [scan()] });
+    const r = await applyBatch(db, WHO, { voids: [voidOf({ reason: "  " })] });
+    expect(r.voids[0].status).toBe("rejected");
+  });
+
+  it("a void for a scan the server never saw is not an error", async () => {
+    // The phone removed something that had not synced yet and queued the void
+    // anyway, or the batch arrived out of order. Either way the phone's wish is
+    // granted and the queue must drain.
+    const { db } = stubDb();
+    const r = await applyBatch(db, WHO, { voids: [voidOf({ clientScanId: "never-existed" })] });
+    expect(r.voids[0].status).toBe("duplicate");
   });
 });
