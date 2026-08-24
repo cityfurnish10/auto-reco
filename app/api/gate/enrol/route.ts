@@ -68,9 +68,19 @@ export async function POST(req: NextRequest) {
   // from that device -- including the sync API -- passes without the parameter.
   // Pairing is already a one-time act, which is exactly where this belongs.
   //
-  // Vercel injects the secret automatically once Protection Bypass is enabled.
-  // Absent (production, or protection off) the link is built unchanged.
-  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  // SCOPED TO PREVIEW DEPLOYMENTS ONLY, and that restriction is the important
+  // half. The bypass secret is a PROJECT-level credential: Vercel injects it
+  // into every deployment once the feature is switched on, production
+  // included. Appending it wherever it happens to exist would put a secret
+  // that unlocks protected deployments into production pairing links that have
+  // no need of it -- links which then travel over WhatsApp to guards' phones.
+  //
+  // VERCEL_ENV is "production" | "preview" | "development", so a production
+  // link is built exactly as it was before this existed.
+  const bypass =
+    process.env.VERCEL_ENV === "preview"
+      ? process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+      : undefined;
   const q = new URLSearchParams({ t: token });
   if (bypass) {
     q.set("x-vercel-protection-bypass", bypass);
