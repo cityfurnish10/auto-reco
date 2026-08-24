@@ -144,9 +144,6 @@
 .gkey:active { background:var(--card2); }
 .gkey.blank { background:transparent; border:0; }
 
-.gselfie { width:168px; height:168px; border-radius:50%; margin:0 auto 18px; display:block;
-  background:var(--card2); border:2px dashed var(--rule); font-size:50px; color:var(--fg3); }
-.gselfie.done { border-style:solid; border-color:var(--ok); background:var(--okbg); color:var(--ok); }
 
 .gphoto { width:100%; height:128px; border-radius:14px; border:2px dashed var(--rule);
   display:flex; align-items:center; justify-content:center; flex-direction:column; gap:6px;
@@ -225,7 +222,6 @@
 .gspin { width:34px; height:34px; border-radius:50%; border:3px solid var(--rule);
   border-top-color:var(--fg2); animation:gspin 1s linear infinite; }
 @keyframes gspin { to { transform:rotate(360deg) } }
-.gate .gselfie.busy{opacity:.6}
 /* A card that is also a button — used for the sync status, which doubles as
    the way into the queue. No extra chrome; the card is the affordance. */
 .gate .gplain{background:none;border:0;padding:0;width:100%;text-align:left;font:inherit;color:inherit;display:block}
@@ -234,3 +230,18 @@
 .gate .gcard h3{display:flex;align-items:center;gap:7px}
 .gate .gtag{display:inline-flex;align-items:center;gap:4px}
 .gate .grow .tick{display:flex}
+
+/* The check-in selfie. A live preview the guard can see before they tap —
+   replacing an off-DOM video read after a fixed delay, which returned black on
+   a real phone. Mirrored, because an un-mirrored selfie preview feels wrong to
+   everyone who has ever used a phone. */
+.gate .gselfiewrap{position:relative;width:200px;height:200px;border-radius:50%;
+  overflow:hidden;margin:0 auto 14px;background:var(--card2);border:2px solid var(--rule);
+  display:grid;place-items:center;color:var(--fg3)}
+.gate .gselfiewrap video,.gate .gselfiewrap img{position:absolute;inset:0;width:100%;
+  height:100%;object-fit:cover;transform:scaleX(-1)}
+.gate .gselfiewrap .hidden{display:none}
+.gate .gselfiebusy{position:absolute;inset:0;display:grid;place-items:center;
+  background:rgba(0,0,0,.35);color:#fff}
+.gate .gselfiebtns{display:flex;justify-content:center;margin-bottom:16px}
+.gate .gselfiebtns .gbtn{flex:0 0 auto;padding:0 22px}

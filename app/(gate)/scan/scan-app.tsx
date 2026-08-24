@@ -108,6 +108,10 @@ export default function GateApp() {
   const [roster, setRoster] = useState<GuardOption[]>([]);
   const [me, setMe] = useState<GuardOption | null>(null);
   // The live face signature and what it scored against this guard's stored one.
+  const selfieRef = useRef<HTMLVideoElement>(null);
+  const selfieStream = useRef<MediaStream | null>(null);
+  const [selfieCam, setSelfieCam] = useState<"starting" | "live" | "blocked">("starting");
+  const [shotUrl, setShotUrl] = useState<string | null>(null);
   const [faceScore, setFaceScore] = useState<number | null>(null);
   const [faceVerdict, setFaceVerdict] = useState<"pass" | "review" | "fail" | "no_face" | null>(null);
   const [matching, setMatching] = useState(false);
@@ -187,7 +191,42 @@ export default function GateApp() {
     return () => { clearInterval(id); window.removeEventListener("online", on); };
   }, [sync]);
 
-  /* ── camera ────────────────────────────────────────────────────────── */
+  /* ── selfie camera ─────────────────────────────────────────────────────
+     A VISIBLE, PLAYING video element, not an off-DOM one grabbed after a fixed
+     delay. The old version created a detached <video>, waited half a second and
+     read a frame — which on a real phone returns black: an element that is not
+     in the document is not guaranteed to render, and half a second is a guess
+     at how long a front camera takes to produce its first frame, not a fact.
+     Here the guard can SEE themselves before they tap, which also means they
+     can tell the difference between a bad photo and a broken camera. */
+  useEffect(() => {
+    if (screen !== "checkin") {
+      selfieStream.current?.getTracks().forEach((t) => t.stop());
+      selfieStream.current = null;
+      return;
+    }
+    let live = true;
+    (async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) { setSelfieCam("blocked"); return; }
+        const st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        if (!live) { st.getTracks().forEach((t) => t.stop()); return; }
+        selfieStream.current = st;
+        if (selfieRef.current) {
+          selfieRef.current.srcObject = st;
+          await selfieRef.current.play().catch(() => {});
+        }
+        setSelfieCam("live");
+      } catch { setSelfieCam("blocked"); }
+    })();
+    return () => {
+      live = false;
+      selfieStream.current?.getTracks().forEach((t) => t.stop());
+      selfieStream.current = null;
+    };
+  }, [screen]);
+
+  /* ── scanner camera ────────────────────────────────────────────────────── */
   useEffect(() => {
     if (screen !== "scan") {
       if (loopRef.current) cancelAnimationFrame(loopRef.current);
@@ -306,6 +345,34 @@ export default function GateApp() {
   // Point the loop at the latest closure AFTER each render, not during one —
   // a ref written while rendering is a side effect in the render path.
   useEffect(() => { onDecodedRef.current = onDecoded; });
+
+  /* ── the check-in selfie ───────────────────────────────────────────────── */
+  async function takeSelfie() {
+    const v = selfieRef.current;
+    // videoWidth is 0 until the first frame has actually arrived. Checking it
+    // is what makes this reliable where a timer was not.
+    if (!v?.videoWidth) return;
+    setMatching(true);
+    try {
+      const blob = await compress(v, 640, 0.75);
+      setPhoto(blob);
+      setShotUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob); });
+      // The comparison runs here, on the phone. Nothing is uploaded to decide it.
+      const live = await describeFace(v);
+      const r = compare(live, fromArray(me?.descriptor));
+      setFaceScore(r.score); setFaceVerdict(r.verdict);
+    } catch {
+      // The model failed to load, or the frame was unreadable. Recorded as
+      // needing a look rather than blocking the shift — a guard who cannot
+      // check in leaves no attendance record at all.
+      setFaceVerdict("no_face");
+    } finally { setMatching(false); }
+  }
+
+  function retakeSelfie() {
+    setPhoto(null); setFaceScore(null); setFaceVerdict(null);
+    setShotUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+  }
 
   /* ── capture a photo from the live camera ──────────────────────────── */
   async function grabPhoto() {
@@ -535,32 +602,34 @@ export default function GateApp() {
         <>
           <Bar t={t} title={t("checkIn")} />
           <div className="gbody">
-            <button className={`gselfie${photo ? " done" : ""}${matching ? " busy" : ""}`}
-              disabled={matching}
-              onClick={async () => {
-                setMatching(true);
-                try {
-                  const st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-                  const v = document.createElement("video");
-                  v.srcObject = st; v.muted = true; v.setAttribute("playsinline", "true");
-                  await v.play(); await pause(500);
-                  setPhoto(await compress(v, 640, 0.75));
-                  // The whole comparison happens right here on the phone.
-                  // Nothing is uploaded to decide it.
-                  const live = await describeFace(v);
-                  const r = compare(live, fromArray(me?.descriptor));
-                  setFaceScore(r.score); setFaceVerdict(r.verdict);
-                  st.getTracks().forEach((x) => x.stop());
-                } catch {
-                  // Camera refused, or the model failed to load. Recorded as
-                  // needing a look rather than blocking the shift — a guard who
-                  // cannot check in has no attendance record at all.
-                  setFaceVerdict("no_face");
-                } finally { setMatching(false); }
-              }}>{matching ? <Icon name="progress_activity" size={44} className="gspinicon" />
-                  : photo ? <Icon name="check" size={48} /> : <Icon name="camera" size={44} />}</button>
+            <div className="gselfiewrap">
+              <video ref={selfieRef} playsInline muted autoPlay
+                className={selfieCam === "live" && !shotUrl ? "" : "hidden"} />
+              {/* eslint-disable-next-line @next/next/no-img-element -- a local
+                  blob; next/image cannot take an object URL. */}
+              {shotUrl && <img src={shotUrl} alt="" />}
+              {!shotUrl && selfieCam !== "live" && (
+                <Icon name={selfieCam === "blocked" ? "camera" : "progress_activity"}
+                      size={40} className={selfieCam === "starting" ? "gspinicon" : ""} />
+              )}
+              {matching && <span className="gselfiebusy">
+                <Icon name="progress_activity" size={34} className="gspinicon" /></span>}
+            </div>
+
+            <div className="gselfiebtns">
+              {photo ? (
+                <button className="gbtn sm ghost" onClick={retakeSelfie} disabled={matching}>
+                  <Icon name="refresh" size={17} />{t("retake")}
+                </button>
+              ) : (
+                <button className="gbtn sm primary" onClick={takeSelfie}
+                        disabled={matching || selfieCam !== "live"}>
+                  <Icon name="camera" size={17} />{t("takeSelfie")}
+                </button>
+              )}
+            </div>
+
             <div className="gcenter-txt">
-              <h3>{t("takeSelfie")}</h3>
               <p>{faceVerdict === "pass" ? t("faceOk")
                  : faceVerdict === "no_face" ? t("faceNone")
                  : faceVerdict ? t("faceReview") : t("selfieWhy")}</p>
