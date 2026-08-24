@@ -47,7 +47,7 @@ export default function GateClient({ user }: { user: SessionUser }) {
         ))}
       </div>
 
-      {tab === "activity" && <Activity />}
+      {tab === "activity" && <Activity user={user} />}
       {tab === "guards" && <Guards user={user} />}
       {tab === "devices" && <Devices user={user} />}
       {tab === "gates" && <Gates />}
@@ -57,24 +57,47 @@ export default function GateClient({ user }: { user: SessionUser }) {
 }
 
 /* ── Activity ───────────────────────────────────────────────────────── */
+interface TripItem {
+  id: string; barcode: string | null; serialNo: string | null; product: string | null;
+  soNumber: string | null; itemKind: string; quantity: number; entryMethod: string;
+  override: string | null; exception: string | null; awaitingBarcode: boolean;
+  geoOk: boolean | null; hasPhoto: boolean; scannedAt: string;
+}
+interface Trip {
+  id: string; direction: string; vehicleNo: string; driverName: string | null;
+  carrierRef: string | null; city: string; siteCode: string;
+  openedAt: string; closedAt: string | null; status: string; durationSec: number | null;
+  guardName: string; itemCount: number; overrides: number; manual: number; items: TripItem[];
+}
 interface ActivityData {
   businessDate: string;
-  totals: { items: number; trips: number; scanned: number; manual: number;
+  totals: { trips: number; items: number; scanned: number; manual: number;
             overrides: number; awaitingBarcode: number; scannedShare: number | null };
-  trips: { id: string; direction: string; vehicleNo: string; openedAt: string;
-           closedAt: string | null; status: string; guardName: string; items: number }[];
-  scans: { id: string; direction: string; barcode: string | null; itemKind: string;
-           quantity: number; entryMethod: string; override: boolean;
-           awaitingBarcode: boolean; scannedAt: string; guardName: string }[];
+  guards: { id: string; name: string }[];
+  trips: Trip[];
 }
 
-function Activity() {
+const today = () => new Date().toISOString().slice(0, 10);
+
+function Activity({ user }: { user: SessionUser }) {
   const [d, setD] = useState<ActivityData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [open, setOpen] = useState<Trip | null>(null);
+
+  // Filters. Date first because it is the one always used; a manager is pinned
+  // to their own city so that filter only appears for an admin.
+  const [date, setDate] = useState(today());
+  const [city, setCity] = useState<string>(user.city ?? "");
+  const [guardId, setGuardId] = useState("");
+  const [direction, setDirection] = useState("");
 
   const load = useCallback(() => {
-    fetch("/api/gate/activity", { credentials: "same-origin" })
+    const q = new URLSearchParams({ date });
+    if (city) q.set("city", city);
+    if (guardId) q.set("guardId", guardId);
+    if (direction) q.set("direction", direction);
+    fetch(`/api/gate/activity?${q}`, { credentials: "same-origin" })
       .then(async (r) => {
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
@@ -83,70 +106,161 @@ function Activity() {
       .then((j) => { setLoadErr(null); setD(j); })
       .catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [date, city, guardId, direction]);
   useEffect(() => { load(); }, [load]);
-
-  if (loading) return <p className="text-text-muted text-sm">Loading…</p>;
-  if (loadErr) return <LoadError what="gate activity" detail={loadErr} onRetry={load} />;
-  if (!d?.totals) return <Empty text="Nothing recorded at the gate yet." />;
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Items" value={d.totals.items} />
-        <Stat label="Trips" value={d.totals.trips} />
-        {/* The number the pilot is judged on: how much is scanned rather than
-            typed. A falling share means guards are working around the scanner. */}
-        <Stat label="Scanned" value={d.totals.scannedShare === null ? "—" : `${d.totals.scannedShare}%`}
-              tone={d.totals.scannedShare !== null && d.totals.scannedShare < 80 ? "warn" : "ok"} />
-        <Stat label="Overrides" value={d.totals.overrides}
-              tone={d.totals.overrides > 0 ? "warn" : "ok"} />
+      {/* One row, wrapping. Every control the same height so the row reads as a
+          single band rather than a jumble of differently sized boxes. */}
+      <div className="card p-3 flex flex-wrap gap-2 items-center">
+        <input type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)}
+          className="h-9 px-2 rounded-control border border-border bg-surface-card text-sm" />
+        {!user.city && (
+          <select value={city} onChange={(e) => setCity(e.target.value)}
+            className="h-9 px-2 rounded-control border border-border bg-surface-card text-sm">
+            <option value="">All cities</option>
+            {CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
+        <select value={guardId} onChange={(e) => setGuardId(e.target.value)}
+          className="h-9 px-2 rounded-control border border-border bg-surface-card text-sm">
+          <option value="">All guards</option>
+          {(d?.guards ?? []).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+        </select>
+        <select value={direction} onChange={(e) => setDirection(e.target.value)}
+          className="h-9 px-2 rounded-control border border-border bg-surface-card text-sm">
+          <option value="">In and out</option>
+          <option value="IN">Inward</option>
+          <option value="OUT">Outward</option>
+        </select>
+        {(guardId || direction || (!user.city && city)) && (
+          <button className="btn btn-compact btn-secondary"
+            onClick={() => { setGuardId(""); setDirection(""); setCity(user.city ?? ""); }}>
+            Clear
+          </button>
+        )}
+        <span className="ml-auto text-xs text-text-muted">{d?.businessDate ?? date}</span>
       </div>
-      {d.totals.awaitingBarcode > 0 && (
-        <div className="card p-4 border border-warning/30 text-sm">
-          <b>{d.totals.awaitingBarcode}</b> item{d.totals.awaitingBarcode === 1 ? "" : "s"} awaiting a barcode.
-        </div>
+
+      {loadErr && <LoadError what="gate activity" detail={loadErr} onRetry={load} />}
+      {loading && !d && <p className="text-text-muted text-sm">Loading…</p>}
+
+      {d && !loadErr && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Stat label="Trips" value={d.totals.trips} />
+            <Stat label="Items" value={d.totals.items} />
+            {/* The number the pilot is judged on. Amber below 80% because a
+                falling share means guards are working around the scanner. */}
+            <Stat label="Scanned" value={d.totals.scannedShare === null ? "—" : `${d.totals.scannedShare}%`}
+                  tone={d.totals.scannedShare !== null && d.totals.scannedShare < 80 ? "warn" : "ok"} />
+            <Stat label="Overrides" value={d.totals.overrides}
+                  tone={d.totals.overrides > 0 ? "warn" : "ok"} />
+          </div>
+
+          {d.totals.awaitingBarcode > 0 && (
+            <div className="card p-4 border border-warning/30 text-sm">
+              <b>{d.totals.awaitingBarcode}</b> item{d.totals.awaitingBarcode === 1 ? "" : "s"} awaiting a barcode.
+            </div>
+          )}
+
+          {d.trips.length === 0 ? <Empty text="No trips recorded for these filters." /> : (
+            <div className="card overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr>
+                    {["Guard", "Vehicle", "Direction", "Items", "Opened", "Took", "Status"].map((h) => (
+                      <th key={h} className="text-left px-4 py-2.5 text-xs uppercase tracking-wide text-text-muted whitespace-nowrap">{h}</th>
+                    ))}
+                    <th className="w-10" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {d.trips.map((tr) => (
+                    <tr key={tr.id} onClick={() => setOpen(tr)}
+                        className="border-t border-border hover:bg-surface-elevated cursor-pointer transition-colors duration-150">
+                      <td className="px-4 py-2.5 font-medium text-text-primary whitespace-nowrap">{tr.guardName || "—"}</td>
+                      <td className="px-4 py-2.5 font-mono whitespace-nowrap">{tr.vehicleNo}</td>
+                      <td className="px-4 py-2.5">
+                        <span className={`badge ${tr.direction === "OUT" ? "badge-medium" : "badge-info"}`}>
+                          {tr.direction === "OUT" ? "Outward" : "Inward"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 tabular-nums">
+                        {tr.itemCount}
+                        {tr.overrides > 0 && <span className="badge badge-high ml-2">{tr.overrides} override</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{clock(tr.openedAt)}</td>
+                      <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap tabular-nums">{took(tr.durationSec)}</td>
+                      <td className="px-4 py-2.5">
+                        <span className={`badge ${tr.status === "closed" ? "badge-done" : "badge-info"}`}>{tr.status}</span>
+                      </td>
+                      <td className="px-2 text-text-muted"><Icon name="chevron_right" size={17} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
 
-      <Section title={`Trips · ${d.businessDate}`}>
-        {d.trips.length === 0 ? <Empty text="No trips yet today." /> : (
-          <Table head={["Vehicle", "Direction", "Guard", "Items", "Status"]}>
-            {d.trips.map((t) => (
-              <tr key={t.id}>
-                <td className="font-mono">{t.vehicleNo}</td>
-                <td>{t.direction}</td><td>{t.guardName}</td>
-                <td className="text-right tabular-nums">{t.items}</td>
-                <td><span className={`badge ${t.status === "closed" ? "badge-done" : "badge-info"}`}>{t.status}</span></td>
-              </tr>
-            ))}
-          </Table>
-        )}
-      </Section>
-
-      <Section title="Items">
-        {d.scans.length === 0 ? <Empty text="Nothing scanned yet today." /> : (
-          <Table head={["Barcode", "Kind", "Qty", "How", "Guard", "Time"]}>
-            {d.scans.map((s) => (
-              <tr key={s.id}>
-                {/* The RAW scanned spelling — never the fold. That is the whole
-                    point of the scanning project. */}
-                <td className="font-mono">{s.barcode ?? "—"}</td>
-                <td>{s.itemKind.replace(/_/g, " ")}</td>
-                <td className="text-right tabular-nums">{s.quantity}</td>
-                <td>
-                  <span className={`badge ${s.entryMethod === "scan" ? "badge-done" : "badge-medium"}`}>
-                    {s.entryMethod}
-                  </span>
-                  {s.override && <span className="badge badge-high ml-1">override</span>}
-                </td>
-                <td>{s.guardName}</td>
-                <td className="text-text-secondary whitespace-nowrap">{time(s.scannedAt)}</td>
-              </tr>
-            ))}
-          </Table>
-        )}
-      </Section>
+      <TripModal trip={open} onClose={() => setOpen(null)} />
     </div>
+  );
+}
+
+/** Everything about one trip, including the items the table only counts. */
+function TripModal({ trip, onClose }: { trip: Trip | null; onClose: () => void }) {
+  if (!trip) return null;
+  return (
+    <Modal open onClose={onClose}
+      title={`${trip.vehicleNo} · ${trip.direction === "OUT" ? "Outward" : "Inward"}`}
+      subtitle={`${trip.guardName} · ${trip.city}`} size="lg">
+      <div className="grid sm:grid-cols-2 gap-x-8 mb-5">
+        <Row k="Guard" v={trip.guardName || "—"} />
+        <Row k="Driver" v={trip.driverName ?? "—"} />
+        <Row k="Opened" v={clock(trip.openedAt)} mono />
+        <Row k="Closed" v={trip.closedAt ? clock(trip.closedAt) : "still open"} mono />
+        <Row k="Took" v={took(trip.durationSec)} mono />
+        <Row k="Items" v={`${trip.itemCount}${trip.manual ? ` · ${trip.manual} typed` : ""}`} />
+      </div>
+
+      {trip.items.length === 0 ? <Empty text="No items on this trip." /> : (
+        <div className="overflow-x-auto border border-border rounded-control">
+          <table className="w-full text-sm">
+            <thead>
+              <tr>
+                {["Barcode", "Item", "Kind", "Qty", "How", "Time"].map((h) => (
+                  <th key={h} className="text-left px-3 py-2 text-xs uppercase tracking-wide text-text-muted whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {trip.items.map((it) => (
+                <tr key={it.id} className="border-t border-border">
+                  {/* Raw scanned spelling — never the fold. */}
+                  <td className="px-3 py-2 font-mono">{it.barcode ?? it.serialNo ?? "—"}</td>
+                  <td className="px-3 py-2">{it.product ?? "—"}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{it.itemKind.replace(/_/g, " ")}</td>
+                  <td className="px-3 py-2 tabular-nums">{it.quantity}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <span className={`badge ${it.entryMethod === "scan" ? "badge-done" : "badge-medium"}`}>
+                      {it.entryMethod}
+                    </span>
+                    {it.override && <span className="badge badge-high ml-1" title={it.override}>override</span>}
+                    {it.awaitingBarcode && <span className="badge badge-medium ml-1">no barcode</span>}
+                    {it.hasPhoto && <Icon name="camera" size={13} className="inline ml-1 text-text-muted" />}
+                  </td>
+                  <td className="px-3 py-2 text-text-secondary whitespace-nowrap">{clock(it.scannedAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -595,6 +709,8 @@ function Devices({ user }: { user: SessionUser }) {
 
       {err && <div className="card p-3 text-sm text-danger border border-danger/30">{err}</div>}
 
+      <DeviceList city={user.city} refresh={pairing?.label ?? ""} />
+
       {pairing && (
         <div className="card p-5 space-y-3">
           <h3 className="font-headline text-lg">Open this on the phone</h3>
@@ -724,6 +840,86 @@ function Gates() {
   );
 }
 
+interface DeviceRow {
+  id: string; deviceId: string; city: string; label: string | null;
+  status: string; lastSeenAt: string | null; createdAt: string;
+  signIns: { guardName: string; ok: boolean; reason: string | null; at: string }[];
+}
+
+/**
+ * The enrolled phones and who has signed in on each.
+ *
+ * Refusals are shown beside successes on purpose. One wrong PIN is somebody
+ * fumbling; five on one handset is the only visible sign that a phone is being
+ * tried by someone it does not belong to.
+ */
+function DeviceList({ city, refresh }: { city: string | null; refresh: string }) {
+  const [rows, setRows] = useState<DeviceRow[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    const q = city ? `?city=${encodeURIComponent(city)}` : "";
+    fetch(`/api/gate/devices${q}`, { credentials: "same-origin" })
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+        return j;
+      })
+      .then((j) => { setErr(null); setRows(j.devices ?? []); })
+      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+  }, [city]);
+  useEffect(() => { load(); }, [load, refresh]);
+
+  if (err) return <LoadError what="the enrolled phones" detail={err} onRetry={load} />;
+  if (rows.length === 0) return <Empty text="No phones enrolled yet." />;
+
+  return (
+    <div className="space-y-3">
+      <h3 className="font-headline text-base text-text-primary">Enrolled phones</h3>
+      {rows.map((dv) => {
+        const failed = dv.signIns.filter((s) => !s.ok).length;
+        return (
+          <div key={dv.id} className="card p-4">
+            <button className="w-full flex items-center gap-3 text-left"
+                    onClick={() => setOpenId(openId === dv.id ? null : dv.id)}>
+              <Icon name="shield" size={18} className="text-text-muted" />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-text-primary">
+                  {dv.label || "Gate phone"} <span className="text-text-muted font-normal">· {dv.city}</span>
+                </div>
+                <div className="text-xs text-text-muted">
+                  {dv.lastSeenAt ? `Last used ${time(dv.lastSeenAt)}` : "Never used"}
+                  {" · "}{dv.signIns.length} sign-in{dv.signIns.length === 1 ? "" : "s"}
+                </div>
+              </div>
+              {failed > 0 && <span className="badge badge-high">{failed} refused</span>}
+              <span className={`badge ${dv.status === "active" ? "badge-done" : "badge-suppressed"}`}>{dv.status}</span>
+              <Icon name={openId === dv.id ? "expand_less" : "expand_more"} size={17} className="text-text-muted" />
+            </button>
+
+            {openId === dv.id && (
+              dv.signIns.length === 0
+                ? <p className="text-sm text-text-muted mt-3">Nobody has signed in on this phone yet.</p>
+                : <div className="mt-3 border-t border-border pt-2">
+                    {dv.signIns.map((si, i) => (
+                      <div key={i} className="flex items-center gap-3 py-1.5 text-sm">
+                        <Icon name={si.ok ? "check_circle" : "warning"} size={15}
+                              className={si.ok ? "text-success" : "text-danger"} />
+                        <span className="flex-1">{si.guardName}</span>
+                        {!si.ok && <span className="text-danger text-xs">{(si.reason ?? "refused").replace(/_/g, " ")}</span>}
+                        <span className="text-text-muted text-xs whitespace-nowrap">{time(si.at)}</span>
+                      </div>
+                    ))}
+                  </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ── Reviews ────────────────────────────────────────────────────────── */
 interface Check {
   id: string; guardName: string; city: string; trigger: string; capturedAt: string;
@@ -811,6 +1007,11 @@ function Reviews() {
 }
 
 /* ── shared ─────────────────────────────────────────────────────────── */
+const clock = (iso: string) =>
+  new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const took = (secs: number | null) =>
+  secs === null ? "—" : secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+
 const time = (iso: string) =>
   new Date(iso).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 

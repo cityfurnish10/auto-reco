@@ -50,15 +50,32 @@ export async function POST(req: NextRequest) {
 
   if (!body.guardId || !body.pin) return NextResponse.json({ ok: false }, { status: 400 });
 
+  // Every attempt is recorded, refused ones included. A run of wrong PINs on
+  // one handset is the only signal that somebody is trying phones that are not
+  // theirs, and keeping only the successes would throw that away. Best-effort:
+  // a logging failure must never stop a guard starting their shift.
+  const note = async (ok: boolean, reason?: string) => {
+    await admin.from("gate_sign_ins").insert({
+      device_id: device.deviceId,
+      city: device.city,
+      guard_id: body.guardId ?? null,
+      ok, reason: reason ?? null,
+      user_agent: (req.headers.get("user-agent") ?? "").slice(0, 200),
+    }).then(() => {}, () => {});
+  };
+
   // Scoped to this device's own city, so a phone at one gate cannot sign in a
   // guard from another — the mistake a shared codebase makes by accident.
   const guards = await guardsForDevice(admin, device);
   if (!guards.some((g) => g.guardId === body.guardId)) {
+    await note(false, "not_at_this_gate");
     return NextResponse.json({ ok: false }, { status: 401 });
   }
   if (!(await verifyGuardPin(admin, body.guardId, body.pin))) {
+    await note(false, "wrong_pin");
     return NextResponse.json({ ok: false }, { status: 401 });
   }
+  await note(true);
   const g = guards.find((x) => x.guardId === body.guardId)!;
   return NextResponse.json({ ok: true, guard: { id: g.guardId, name: g.name } });
 }

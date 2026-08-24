@@ -60,6 +60,40 @@ export async function GET() {
   });
 }
 
+/** POST is enrolment; this lists the phones and who has used them. */
+export async function listDevices(city: string | null) {
+  const admin = createAdminClient();
+  let q = admin.from("gate_devices")
+    .select("id,device_id,city,site_code,device_label,status,last_seen_at,created_at")
+    .order("created_at", { ascending: false });
+  if (city) q = q.eq("city", city);
+  const { data } = await q;
+  const devices = (data ?? []) as Record<string, unknown>[];
+
+  // The sign-in history for these phones. Refusals included -- a run of wrong
+  // PINs on one handset is the only signal anyone is trying phones that are
+  // not theirs, and it is worthless if only successes are kept.
+  const ids = devices.map((d) => d.device_id as string);
+  const { data: signIns } = ids.length
+    ? await admin.from("gate_sign_ins")
+        .select("device_id,ok,reason,at,app_users!guard_id(name)")
+        .in("device_id", ids).order("at", { ascending: false }).limit(200)
+    : { data: [] };
+
+  return devices.map((d) => ({
+    id: d.id, deviceId: d.device_id, city: d.city, siteCode: d.site_code,
+    label: d.device_label, status: d.status,
+    lastSeenAt: d.last_seen_at, createdAt: d.created_at,
+    signIns: ((signIns ?? []) as Record<string, unknown>[])
+      .filter((x) => x.device_id === d.device_id)
+      .slice(0, 20)
+      .map((x) => ({
+        guardName: (x.app_users as { name?: string })?.name ?? "—",
+        ok: x.ok, reason: x.reason, at: x.at,
+      })),
+  }));
+}
+
 export async function POST(req: NextRequest) {
   const me = await getCurrentAppUser();
   if (!me || (me.role !== "admin" && me.role !== "manager")) {
