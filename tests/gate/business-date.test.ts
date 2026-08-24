@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import { resolveBusinessDate, CLOCK_SKEW_LIMIT_MS } from "../../lib/gate/business-date";
-import { geoOk, distanceM } from "../../lib/gate/config";
+import { geoOk, distanceM, type GateSite } from "../../lib/gate/config";
 
 // IST is UTC+5:30, so 15:00 IST is 09:30 UTC.
 const utc = (iso: string) => new Date(iso).toISOString();
@@ -50,25 +50,43 @@ describe("resolveBusinessDate", () => {
 });
 
 describe("geofence", () => {
+  // A pinned gate. Real coordinates now live in the database (0026), captured
+  // by a manager standing at the warehouse — geocoding the postal address puts
+  // the point in the middle of the village, a kilometre from the building.
+  const gate: GateSite = {
+    city: "DELHI", siteCode: "GUR", label: "Delhi NCR",
+    address: null, serves: null,
+    lat: 28.4595, lng: 77.0266, radiusM: 300,
+  };
+
   it("accepts a fix at the gate", () => {
-    expect(geoOk("DELHI", 28.4595, 77.0266)).toBe(true);
+    expect(geoOk(gate, 28.4595, 77.0266)).toBe(true);
   });
 
   it("rejects a fix kilometres away", () => {
-    expect(geoOk("DELHI", 28.7041, 77.1025)).toBe(false);
+    expect(geoOk(gate, 28.7041, 77.1025)).toBe(false);
   });
 
   it("returns null — NOT false — when there is no fix", () => {
     // A phone indoors against a metal shutter often cannot get one. Treating
     // unknown as outside would flag honest work and teach the guard that the
     // location check is noise.
-    expect(geoOk("DELHI", null, null)).toBeNull();
-    expect(geoOk("DELHI", 28.4595, undefined)).toBeNull();
+    expect(geoOk(gate, null, null)).toBeNull();
+    expect(geoOk(gate, 28.4595, undefined)).toBeNull();
+  });
+
+  it("returns null when the gate has not been pinned yet", () => {
+    // The state every city is in until somebody stands there and presses the
+    // button. Skipping the check is right; failing it would reject every scan
+    // in a city whose coordinates nobody has supplied.
+    const unpinned: GateSite = { ...gate, lat: null, lng: null };
+    expect(geoOk(unpinned, 28.4595, 77.0266)).toBeNull();
+    expect(geoOk(null, 28.4595, 77.0266)).toBeNull();
   });
 
   it("measures distance sanely", () => {
     expect(Math.round(distanceM(28.4595, 77.0266, 28.4595, 77.0266))).toBe(0);
-    const d = distanceM(28.4595, 77.0266, 28.4695, 77.0266); // ~0.01 deg lat
+    const d = distanceM(28.4595, 77.0266, 28.4695, 77.0266);
     expect(d).toBeGreaterThan(1000);
     expect(d).toBeLessThan(1200);
   });

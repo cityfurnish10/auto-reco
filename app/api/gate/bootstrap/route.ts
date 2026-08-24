@@ -12,7 +12,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { identifyDevice, withGuard } from "@/lib/gate/auth";
-import { EXPECTED_CHECK_LIVE, OUTWARD_PHOTO_SAMPLE_RATE, siteFor } from "@/lib/gate/config";
+import { EXPECTED_CHECK_LIVE, OUTWARD_PHOTO_SAMPLE_RATE, loadSite } from "@/lib/gate/config";
 import { currentBusinessDate } from "@/lib/reconcile/cron-dates";
 
 export const runtime = "nodejs";
@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
       : Promise.resolve({ data: null }),
   ]);
 
-  const site = siteFor(device.city);
+  const site = await loadSite(admin, device.city);
 
   return NextResponse.json({
     // Null when no guard has signed in yet — the app then shows the name list.

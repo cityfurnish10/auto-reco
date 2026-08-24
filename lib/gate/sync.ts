@@ -23,7 +23,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { GateIdentity } from "./auth";
 import { resolveBusinessDate } from "./business-date";
-import { geoOk, isCounted, INWARD_ONLY_KINDS, OUTWARD_PHOTO_SAMPLE_RATE } from "./config";
+import { geoOk, isCounted, loadSite, INWARD_ONLY_KINDS, OUTWARD_PHOTO_SAMPLE_RATE,
+         type GateSite } from "./config";
 import type { Direction } from "../engine/types";
 import type { GateItemKind } from "../db/schema";
 
@@ -121,6 +122,9 @@ export async function applyBatch(
   now: Date = new Date()
 ): Promise<SyncReport> {
   const report: SyncReport = { trips: [], scans: [], shifts: [], faceChecks: [], clockWarnings: [] };
+  // One lookup for the whole batch. A forty-scan sync should not ask the
+  // database forty times where the gate is.
+  const site: GateSite | null = await loadSite(admin, who.city).catch(() => null);
   // client_trip_id -> server uuid, for the scans that follow in this same batch.
   const tripIds = new Map<string, string>();
 
@@ -273,7 +277,7 @@ export async function applyBatch(
       lat: sc.lat ?? null,
       lng: sc.lng ?? null,
       accuracy_m: sc.accuracyM ?? null,
-      geo_ok: geoOk(who.city, sc.lat, sc.lng),
+      geo_ok: geoOk(site, sc.lat, sc.lng),
       scanned_at: sc.scannedAt,
       guard_id: who.guardId,
       device_id: who.deviceId,
@@ -321,9 +325,9 @@ export async function applyBatch(
       checked_out_at: sh.checkedOutAt ?? null,
       business_date: d.businessDate,
       in_lat: sh.inLat ?? null, in_lng: sh.inLng ?? null,
-      in_geo_ok: geoOk(who.city, sh.inLat, sh.inLng),
+      in_geo_ok: geoOk(site, sh.inLat, sh.inLng),
       out_lat: sh.outLat ?? null, out_lng: sh.outLng ?? null,
-      out_geo_ok: geoOk(who.city, sh.outLat, sh.outLng),
+      out_geo_ok: geoOk(site, sh.outLat, sh.outLng),
       status: sh.status ?? "open",
     };
     const ins = await admin.from("guard_shifts").insert(row).select("id").maybeSingle();
@@ -339,7 +343,7 @@ export async function applyBatch(
             await admin.from("guard_shifts")
               .update({ status: "closed", checked_out_at: sh.checkedOutAt,
                         out_lat: sh.outLat ?? null, out_lng: sh.outLng ?? null,
-                        out_geo_ok: geoOk(who.city, sh.outLat, sh.outLng) })
+                        out_geo_ok: geoOk(site, sh.outLat, sh.outLng) })
               .eq("id", data.id).eq("status", "open");
           }
         }
@@ -376,7 +380,7 @@ export async function applyBatch(
       captured_at: f.capturedAt, selfie_path: selfiePath,
       match_score: f.matchScore ?? null, verdict: f.verdict,
       lat: f.lat ?? null, lng: f.lng ?? null,
-      geo_ok: geoOk(who.city, f.lat, f.lng),
+      geo_ok: geoOk(site, f.lat, f.lng),
       review_state: review,
     }).select("id").maybeSingle();
 

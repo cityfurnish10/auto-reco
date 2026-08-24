@@ -12,7 +12,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { hashToken, newDeviceToken } from "@/lib/gate/auth";
-import { siteFor } from "@/lib/gate/config";
+import { loadSite, siteCodeFor } from "@/lib/gate/config";
 import { ensureBuckets } from "@/lib/gate/evidence";
 import { CITIES, type City } from "@/lib/sample-data";
 
@@ -38,14 +38,14 @@ export async function POST(req: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const site = siteFor(city);
+  const site = await loadSite(admin, city);
   const token = newDeviceToken();
 
   const { data, error } = await admin
     .from("gate_devices")
     .insert({
       city,
-      site_code: site?.siteCode ?? city.slice(0, 3),
+      site_code: site?.siteCode ?? siteCodeFor(city),
       device_id: randomUUID(),
       device_label: body.deviceLabel?.trim() || null,
       token_hash: hashToken(token),
@@ -65,6 +65,6 @@ export async function POST(req: NextRequest) {
     deviceToken: token,
     // Hand this to the guard's phone; opening it once pairs the device.
     pairingUrl: `${base}/scan/pair?t=${encodeURIComponent(token)}`,
-    site: site ? { code: site.siteCode, label: site.label, lat: site.lat, lng: site.lng, radiusM: site.radiusM } : null,
+    site: site && { code: site.siteCode, label: site.label, lat: site.lat, lng: site.lng, radiusM: site.radiusM },
   });
 }

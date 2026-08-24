@@ -6,6 +6,7 @@
 // server's idea of the sample rate and the phone's ever diverge, the phone
 // wins for hours at a time — so there must be exactly one definition.
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { City } from "../sample-data";
 import type { GateItemKind } from "../db/schema";
 
@@ -27,22 +28,49 @@ export interface GateSite {
   city: City;
   siteCode: string;
   label: string;
-  lat: number;
-  lng: number;
+  address: string | null;
+  serves: string | null;
+  /** Null until somebody stands at the gate and pins it. */
+  lat: number | null;
+  lng: number | null;
   radiusM: number;
 }
 
-export const GATE_SITES: GateSite[] = [
-  { city: "DELHI",     siteCode: "GUR", label: "Gurugram",  lat: 28.4595, lng: 77.0266, radiusM: 300 },
-  { city: "MUMBAI",    siteCode: "MUM", label: "Mumbai",    lat: 19.0760, lng: 72.8777, radiusM: 300 },
-  { city: "PUNE",      siteCode: "PUN", label: "Pune",      lat: 18.5204, lng: 73.8567, radiusM: 300 },
-  { city: "HYDERABAD", siteCode: "HYD", label: "Hyderabad", lat: 17.3850, lng: 78.4867, radiusM: 300 },
-  { city: "BANGALORE", siteCode: "BAN", label: "Bangalore", lat: 12.9716, lng: 77.5946, radiusM: 300 },
-];
-
-export function siteFor(city: City): GateSite | undefined {
-  return GATE_SITES.find((s) => s.city === city);
+/**
+ * The gates, read from the database (migration 0026) rather than compiled in.
+ *
+ * They were constants, and the constants were placeholders -- which is why
+ * every scan so far recorded geo_ok = false. Geocoding the postal address does
+ * not fix it either: the address resolves to the centre of the village, over a
+ * kilometre from the building, and a geofence built on that looks right while
+ * rejecting honest work. A manager pins it from the gate instead.
+ */
+export async function loadSites(db: SupabaseClient): Promise<GateSite[]> {
+  const { data, error } = await db
+    .from("gate_sites")
+    .select("city,site_code,label,address,serves,lat,lng,radius_m");
+  if (error || !data) return [];
+  return data.map((r) => ({
+    city: r.city as City,
+    siteCode: r.site_code as string,
+    label: r.label as string,
+    address: (r.address as string) ?? null,
+    serves: (r.serves as string) ?? null,
+    lat: (r.lat as number) ?? null,
+    lng: (r.lng as number) ?? null,
+    radiusM: (r.radius_m as number) ?? 400,
+  }));
 }
+
+export async function loadSite(db: SupabaseClient, city: City): Promise<GateSite | null> {
+  return (await loadSites(db)).find((s) => s.city === city) ?? null;
+}
+
+/** Site code without a round trip — the codes are fixed and mirror Odoo's. */
+const SITE_CODES: Record<City, string> = {
+  DELHI: "GUR", MUMBAI: "MUM", PUNE: "PUN", HYDERABAD: "HYD", BANGALORE: "BAN",
+};
+export const siteCodeFor = (city: City) => SITE_CODES[city];
 
 /**
  * Share of clean outward scans drawn for a photo spot-check.
@@ -89,13 +117,15 @@ export function distanceM(
  * flag honest work. Absence of evidence is recorded as absence, not as failure.
  */
 export function geoOk(
-  city: City,
+  site: GateSite | null | undefined,
   lat: number | null | undefined,
   lng: number | null | undefined
 ): boolean | null {
+  // Null, never false, in all three "we cannot tell" cases: no fix from the
+  // phone, no gate pinned yet, or no site configured. Recording "unknown" as
+  // "outside the gate" would flag honest work and teach everyone to ignore it.
   if (lat == null || lng == null) return null;
-  const site = siteFor(city);
-  if (!site) return null;
+  if (!site || site.lat == null || site.lng == null) return null;
   return distanceM(lat, lng, site.lat, site.lng) <= site.radiusM;
 }
 

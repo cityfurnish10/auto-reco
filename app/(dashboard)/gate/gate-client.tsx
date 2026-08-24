@@ -15,12 +15,13 @@ import { Modal } from "@/components/modal";
 import { CITIES } from "@/lib/sample-data";
 import type { SessionUser } from "@/lib/demo-auth";
 
-type Tab = "activity" | "guards" | "devices" | "reviews";
+type Tab = "activity" | "guards" | "devices" | "gates" | "reviews";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "activity", label: "Activity", icon: "dashboard" },
   { id: "guards", label: "Guards", icon: "group" },
   { id: "devices", label: "Devices", icon: "upload_file" },
+  { id: "gates", label: "Gates", icon: "location_on" },
   { id: "reviews", label: "Reviews", icon: "pending_actions" },
 ];
 
@@ -49,6 +50,7 @@ export default function GateClient({ user }: { user: SessionUser }) {
       {tab === "activity" && <Activity />}
       {tab === "guards" && <Guards user={user} />}
       {tab === "devices" && <Devices user={user} />}
+      {tab === "gates" && <Gates />}
       {tab === "reviews" && <Reviews />}
     </section>
   );
@@ -599,6 +601,108 @@ function Devices({ user }: { user: SessionUser }) {
             onClick={() => navigator.clipboard?.writeText(pairing.url)}>Copy link</button>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── Gates ──────────────────────────────────────────────────────────── */
+interface Site {
+  city: string; siteCode: string; label: string; address: string | null;
+  serves: string | null; plusCode: string | null;
+  lat: number | null; lng: number | null;
+  radiusM: number; locatedAt: string | null; accuracyM: number | null; pinned: boolean;
+}
+
+/**
+ * Where each warehouse gate is, pinned from the gate itself.
+ *
+ * Not geocoded from the address: searching "Dera Mandi" returns the centre of
+ * the village, more than a kilometre from the building, and a geofence built on
+ * that rejects every honest scan while looking perfectly reasonable. Somebody
+ * standing at the gate pressing a button is the only source that is right.
+ */
+function Gates() {
+  const [sites, setSites] = useState<Site[]>([]);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    fetch("/api/gate/sites", { credentials: "same-origin" })
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+        return j;
+      })
+      .then((j) => { setLoadErr(null); setSites(j.sites ?? []); })
+      .catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function pin(city: string) {
+    setBusy(city); setMsg(null);
+    try {
+      const pos = await new Promise<GeolocationPosition>((res, rej) =>
+        navigator.geolocation.getCurrentPosition(res, rej,
+          { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 }));
+      const r = await fetch("/api/gate/sites", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          city, lat: pos.coords.latitude, lng: pos.coords.longitude,
+          accuracyM: pos.coords.accuracy,
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setMsg(j.error ?? `Could not save (HTTP ${r.status})`); return; }
+      setMsg(`${city} pinned to within ${Math.round(pos.coords.accuracy)}m.`);
+      load();
+    } catch {
+      setMsg("Could not read your location. Allow location access and try again.");
+    } finally { setBusy(null); }
+  }
+
+  if (loadErr) return <LoadError what="the gates" detail={loadErr} onRetry={load} />;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-text-muted text-sm">
+        Stand at the warehouse gate and press <b>Set from here</b>. Until a gate is
+        pinned, its location check is skipped rather than failed.
+      </p>
+      {msg && <div className="card p-3 text-sm">{msg}</div>}
+      <div className="space-y-3">
+        {sites.map((s) => (
+          <div key={s.city} className="card p-4 flex gap-4 flex-wrap items-start">
+            <div className="flex-1 min-w-[240px]">
+              <div className="flex items-center gap-2">
+                <b className="text-text-primary">{s.label}</b>
+                <span className={`badge ${s.pinned ? "badge-done" : "badge-medium"}`}>
+                  {s.pinned ? "pinned" : "not set"}
+                </span>
+              </div>
+              {s.serves && <div className="text-xs text-text-muted mt-0.5">Serves {s.serves}</div>}
+              {s.address && <div className="text-sm text-text-secondary mt-1.5">{s.address}</div>}
+              <div className="text-xs text-text-muted mt-1.5 font-mono">
+                {s.pinned
+                  ? `${s.lat!.toFixed(5)}, ${s.lng!.toFixed(5)} · ${s.radiusM}m radius` +
+                    (s.locatedAt ? " · pinned on site" : s.plusCode ? ` · from ${s.plusCode}` : "")
+                  : "no coordinates yet — location check skipped"}
+              </div>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {s.pinned && (
+                <a className="btn btn-compact btn-secondary" target="_blank" rel="noreferrer"
+                   href={`https://www.google.com/maps?q=${s.lat},${s.lng}`}>Check on map</a>
+              )}
+              <button className="btn btn-compact btn-primary" disabled={busy === s.city}
+                onClick={() => pin(s.city)}>
+                {busy === s.city ? "Reading…" : s.pinned ? "Re-set from here" : "Set from here"}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
