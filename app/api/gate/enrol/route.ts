@@ -29,9 +29,17 @@ export const dynamic = "force-dynamic";
  * Booleans and a name only. The secret itself is never returned.
  */
 export async function GET() {
-  const me = await getCurrentAppUser();
-  if (!me || me.role !== "admin") {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  // NOT session-gated, deliberately, and confined to preview so it can never
+  // answer on production. Requiring a session made the diagnostic useless for
+  // the exact failure it exists to explain: it returned "forbidden" while the
+  // dashboard worked, because a session cookie belongs to ONE hostname and a
+  // Vercel project has several (the branch URL and a per-build URL). Debugging
+  // the debugger is not a good use of anyone's evening.
+  //
+  // Nothing here is a secret: booleans, a commit hash, and hostnames that are
+  // already visible in the address bar.
+  if (process.env.VERCEL_ENV === "production") {
+    return NextResponse.json({ error: "not available" }, { status: 404 });
   }
   const env = process.env.VERCEL_ENV ?? null;
   const secret = !!process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
