@@ -281,3 +281,6 @@
   border:0;padding:4px 0;font:inherit;color:var(--fg);text-align:left}
 .gate .ghistrip .mono{flex:1;font-family:var(--mono);font-size:14px}
 .gate .gcard.col.tap{cursor:pointer}
+/* What a disabled action is still waiting for. A greyed-out button with no
+   explanation is a dead end; naming the gap turns it into an instruction. */
+.gate .gmiss{margin:0 0 8px;font-size:13px;color:var(--warn);text-align:center}

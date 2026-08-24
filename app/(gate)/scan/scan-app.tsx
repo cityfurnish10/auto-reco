@@ -67,6 +67,9 @@ export default function GateApp() {
   const [drv, setDrv] = useState("");
   const [tripId, setTripId] = useState<string | null>(null);
   const [lines, setLines] = useState<ScanLine[]>([]);
+  // Persisted, not just held. A guard whose phone dies mid-trip comes back to
+  // the same trip; a start time read from memory would restart the clock and
+  // report a forty-minute load as four, which reads as plausible and is not.
   const [t0, setT0] = useState(0);
   const [trips, setTrips] = useState(0);
   // Running totals for the day. `lines` is the OPEN trip only and is cleared
@@ -138,6 +141,16 @@ export default function GateApp() {
     try { localStorage.setItem("gate.screen", screen); } catch { /* storage blocked */ }
   }, [screen]);
 
+  // The day's totals, kept against the date so they reset themselves at
+  // midnight rather than carrying yesterday's numbers into this morning.
+  const saveDay = (t: number, i: number) => {
+    try {
+      localStorage.setItem("gate.day", JSON.stringify({
+        d: new Date().toISOString().slice(0, 10), trips: t, items: i,
+      }));
+    } catch { /* storage blocked */ }
+  };
+
   const refreshQueue = useCallback(async () => {
     const c = await outbox.counts();
     setQueue({ waiting: c.waiting, rejected: c.rejected });
@@ -159,6 +172,19 @@ export default function GateApp() {
         if (saved) setLang(saved);
         setNight(localStorage.getItem("gate.night") === "1");
       } catch { /* storage blocked — defaults are fine */ }
+
+      // Restore the day's totals and the open trip's clock.
+      try {
+        const raw = localStorage.getItem("gate.day");
+        if (raw) {
+          const d = JSON.parse(raw) as { d: string; trips: number; items: number };
+          if (d.d === new Date().toISOString().slice(0, 10)) {
+            setTrips(d.trips); setItemsToday(d.items);
+          }
+        }
+        const t = localStorage.getItem("gate.t0");
+        if (t) setT0(Number(t));
+      } catch { /* storage blocked — totals restart, nothing is lost */ }
 
       let token: string | null = null;
       try { token = getToken(); } catch { /* storage blocked */ }
@@ -525,8 +551,17 @@ export default function GateApp() {
   }, [screen, closeItemCamera]);
 
   /* ── trip ──────────────────────────────────────────────────────────── */
+  // Direction, vehicle and delivery agent are all required. A trip without an
+  // agent named cannot be traced back to a person once the truck has gone,
+  // which is most of the point of recording it.
+  const tripMissing = [
+    !dir && "inOrOut",
+    veh.trim().length < 4 && "vehicleNo",
+    drv.trim().length < 2 && "deliveryAgent",
+  ].filter(Boolean) as string[];
+
   async function startTrip() {
-    if (!dir || veh.trim().length < 4) return;
+    if (tripMissing.length > 0) return;
     const clientId = uid();
     await outbox.enqueue({
       clientId, kind: "trip",
@@ -538,7 +573,10 @@ export default function GateApp() {
       },
     });
     setTripId(clientId); setLines([]); seenRef.current = new Set();
-    setT0(Date.now()); await refreshQueue(); void sync();
+    const started = Date.now();
+    setT0(started);
+    try { localStorage.setItem("gate.t0", String(started)); } catch { /* storage blocked */ }
+    await refreshQueue(); void sync();
     setScreen("scan");
   }
 
@@ -552,8 +590,9 @@ export default function GateApp() {
         closedAt: new Date().toISOString(), status: "closed",
       },
     });
-    setTrips((n) => n + 1);
+    setTrips((n) => { const v = n + 1; saveDay(v, itemsToday + lines.length); return v; });
     setItemsToday((n) => n + lines.length);
+    try { localStorage.removeItem("gate.t0"); } catch { /* storage blocked */ }
     setTripId(null); setDir(null); setVeh(""); setDrv("");
     setLines([]); seenRef.current = new Set();
     await refreshQueue(); void sync(); setScreen("today");
@@ -1015,14 +1054,19 @@ export default function GateApp() {
                 onChange={(e) => setVeh(e.target.value.toUpperCase())}
                 autoCapitalize="characters" autoComplete="off" />
             </Field>
-            <Field label={t("driverName")}>
+            <Field label={t("deliveryAgent")}>
               <input className="gf" value={drv} onChange={(e) => setDrv(e.target.value)} autoComplete="off" />
             </Field>
             <p className="gnote">{t("vehNote")}</p>
           </div>
           <div className="gfoot">
-            <button className="gbtn primary" disabled={!dir || veh.trim().length < 4}
-              onClick={startTrip}>{t("startScanning")}</button>
+            <div style={{ flex: 1 }}>
+              {tripMissing.length > 0 && (
+                <p className="gmiss">{t("needs")} {tripMissing.map((k) => t(k)).join(", ")}</p>
+              )}
+              <button className="gbtn primary" disabled={tripMissing.length > 0}
+                      onClick={startTrip}>{t("startScanning")}</button>
+            </div>
           </div>
         </>
       )}

@@ -220,7 +220,7 @@ function TripModal({ trip, onClose }: { trip: Trip | null; onClose: () => void }
       subtitle={`${trip.guardName} · ${trip.city}`} size="lg">
       <div className="grid sm:grid-cols-2 gap-x-8 mb-5">
         <Row k="Guard" v={trip.guardName || "—"} />
-        <Row k="Driver" v={trip.driverName ?? "—"} />
+        <Row k="Delivery agent" v={trip.driverName ?? "—"} />
         <Row k="Opened" v={clock(trip.openedAt)} mono />
         <Row k="Closed" v={trip.closedAt ? clock(trip.closedAt) : "still open"} mono />
         <Row k="Took" v={took(trip.durationSec)} mono />
