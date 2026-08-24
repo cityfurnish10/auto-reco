@@ -537,7 +537,7 @@ export default function GateApp() {
           safe, and what to do — never a bare error string. */}
       {screen === "problem" && (
         <>
-          <Bar t={t} title={t("somethingWrong")}
+          <Bar t={t} title={t("appName")}
                left={<BackBtn onClick={() => setScreen(shiftId ? "today" : "who")} />} />
           <div className="gbody">
             <div className="ghero">
@@ -639,6 +639,336 @@ export default function GateApp() {
               clearGuardId(); setMe(null); setShiftId(null); setShiftAt(null);
               setScreen("who");
             }}>{t("switchGuard")}</button>
+          </div>
+        </>
+      )}
+
+      {screen === "who" && (
+        <>
+          <Bar t={t} title={t("whoAreYou")} right={<GearBtn onClick={() => setScreen("settings")} />} />
+          <div className="gbody">
+            <p className="glead">{t("tapYourName")}</p>
+            <div className="gopts">
+              {roster.map((g) => (
+                <button key={g.guardId} onClick={() => { setMe(g); setPin(""); setPinBad(false); setScreen("pin"); }}>
+                  <Icon name="person" size={19} />{g.name}
+                  {g.employeeCode && <span className="gsub" style={{ marginLeft: "auto" }}>{g.employeeCode}</span>}
+                </button>
+              ))}
+            </div>
+            {roster.length === 0 && <p className="gnote">{t("noGuards")}</p>}
+          </div>
+        </>
+      )}
+
+      {screen === "pin" && (
+        <>
+          <Bar t={t} title={me?.name ?? t("enterPin")}
+               left={<BackBtn onClick={() => { clearGuardId(); setMe(null); setPin(""); setScreen("who"); }} />}
+               right={<GearBtn onClick={() => setScreen("settings")} />} />
+          <div className="gbody">
+            <div className="ghero"><div className="gglyph"><Icon name="lock" size={46} /></div>
+              <h1>{pinBad ? t("wrongPin") : t("enterPin")}</h1>
+              <p>{t("pinHint")}</p></div>
+            <div className="gdots">{[0,1,2,3].map((i) =>
+              <i key={i} className={i < pin.length ? "on" : ""} />)}</div>
+            <div className="gpad">
+              {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((k, i) => (
+                <button key={i} className={`gkey${k === "" ? " blank" : ""}`} disabled={k === ""}
+                  onClick={async () => {
+                    setPinBad(false);
+                    if (k === "⌫") return setPin((p) => p.slice(0, -1));
+                    const next = pin.length < 4 ? pin + k : pin;
+                    setPin(next);
+                    if (next.length === 4 && me) {
+                      const ok = await signIn(me.guardId, next);
+                      setPin("");
+                      if (ok) {
+                        // Their own state, not the phone's previous user's.
+                        try { const b = await bootstrap(); setBoot(b);
+                          if (b.openShift) { setShiftId(b.openShift.client_shift_id);
+                                             setShiftAt(b.openShift.checked_in_at); } } catch { /* offline */ }
+                        setScreen(shiftId ? "today" : "checkin");
+                      } else setPinBad(true);
+                    }
+                  }}>{k}</button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {screen === "checkin" && (
+        <>
+          <Bar t={t} title={t("checkIn")} />
+          <div className="gbody">
+            <div className="gselfiewrap">
+              <video ref={selfieRef} playsInline muted autoPlay
+                className={selfieCam === "live" && !shotUrl ? "" : "hidden"} />
+              {/* eslint-disable-next-line @next/next/no-img-element -- a local
+                  blob; next/image cannot take an object URL. */}
+              {shotUrl && <img src={shotUrl} alt="" />}
+              {!shotUrl && selfieCam !== "live" && (
+                <Icon name={selfieCam === "blocked" ? "camera" : "progress_activity"}
+                      size={40} className={selfieCam === "starting" ? "gspinicon" : ""} />
+              )}
+              {matching && <span className="gselfiebusy">
+                <Icon name="progress_activity" size={34} className="gspinicon" /></span>}
+            </div>
+
+            <div className="gselfiebtns">
+              {photo ? (
+                <button className="gbtn sm ghost" onClick={retakeSelfie} disabled={matching}>
+                  <Icon name="refresh" size={17} />{t("retake")}
+                </button>
+              ) : (
+                <button className="gbtn sm primary" onClick={takeSelfie}
+                        disabled={matching || selfieCam !== "live"}>
+                  <Icon name="camera" size={17} />{t("takeSelfie")}
+                </button>
+              )}
+            </div>
+
+            <div className="gcenter-txt">
+              <p>{faceVerdict === "pass" ? t("faceOk")
+                 : faceVerdict === "no_face" ? t("faceNone")
+                 : faceVerdict ? t("faceReview") : t("selfieWhy")}</p>
+            </div>
+            <GeoCard t={t} boot={boot} />
+          </div>
+          <div className="gfoot">
+            <button className="gbtn primary" onClick={doCheckIn}>{t("checkIn")}</button>
+          </div>
+        </>
+      )}
+
+      {screen === "today" && (
+        <>
+          <Bar t={t} title={t("today")} right={<GearBtn onClick={() => setScreen("settings")} />} />
+          <div className="gbody">
+            <button className="gplain" onClick={() => setScreen("queue")}>
+              <SyncCard t={t} online={online} queue={queue} onSync={() => void sync()} />
+            </button>
+            {shiftAt && (
+              <div className="gcard ok">
+                <Icon name="check_circle" size={22} className="gbig" />
+                <div><b>{t("onDuty")}</b><span>{t("since")} {fmt(shiftAt)}</span></div>
+              </div>
+            )}
+            <div className="gcard col">
+              <div className="gkv"><span>{t("tripsToday")}</span><b>{trips}</b></div>
+              <div className="gkv"><span>{t("itemsToday")}</span><b>{itemsToday + lines.length}</b></div>
+            </div>
+            {err && <p className="gnote">{err}</p>}
+          </div>
+          <div className="gfoot">
+            <button className="gbtn primary" onClick={() => setScreen(tripId ? "scan" : "newtrip")}>
+              {tripId ? t("resumeTrip") : `＋ ${t("startTrip")}`}
+            </button>
+          </div>
+        </>
+      )}
+
+      {screen === "newtrip" && (
+        <>
+          <Bar t={t} title={t("startTrip")} left={<BackBtn onClick={() => setScreen("today")} />} />
+          <div className="gbody">
+            <div className="gbig2">
+              <button className="gdir" aria-pressed={dir === "IN"} onClick={() => setDir("IN")}>
+                <Icon name="arrow_down" size={30} />{t("inward")}</button>
+              <button className="gdir" aria-pressed={dir === "OUT"} onClick={() => setDir("OUT")}>
+                <Icon name="arrow_up" size={30} />{t("outward")}</button>
+            </div>
+            <Field label={t("vehicleNo")}>
+              <input className="gf mono" value={veh} placeholder="HR26 DK 8337"
+                onChange={(e) => setVeh(e.target.value)} autoComplete="off" />
+            </Field>
+            <Field label={t("driverName")}>
+              <input className="gf" value={drv} onChange={(e) => setDrv(e.target.value)} autoComplete="off" />
+            </Field>
+            <p className="gnote">{t("vehNote")}</p>
+          </div>
+          <div className="gfoot">
+            <button className="gbtn primary" disabled={!dir || veh.trim().length < 4}
+              onClick={startTrip}>{t("startScanning")}</button>
+          </div>
+        </>
+      )}
+
+      {screen === "scan" && (
+        <>
+          <Bar t={t} title={dir === "IN" ? t("inward") : t("outward")}
+               left={<BackBtn onClick={() => { stampElapsed(); setScreen("closetrip"); }} />}
+               right={<span className="gsub mono">{veh}</span>} />
+          <div className="gscan">
+            <div className="gview">
+              <video ref={videoRef} playsInline muted />
+              <div className="gretic"><i /><i /><i /><i /></div>
+              <div className={`gflash ${flash}`} />
+              <div className="ghint">{hint || t("pointAtCode")}</div>
+            </div>
+            <div className="gtally">
+              <span className="n">{lines.length}</span>
+              <span className="lbl">{t("itemsScanned")}</span>
+              <span className="rate mono">{rate}</span>
+            </div>
+            <div className="gfeed">
+              {lines.map((l) => (
+                <div key={l.clientId} className={`grow${l.flagged ? " flag" : ""}`}>
+                  <span className="tick"><Icon name={l.flagged ? "warning" : "check"} size={15} /></span>
+                  <span className="txt"><span className="bc mono">{l.barcode}</span>
+                    <span className="nm">{l.label}</span></span>
+                </div>
+              ))}
+            </div>
+            <div className="gscanfoot">
+              <button className="gbtn sm ghost narrow" onClick={() => {
+                setCat(null); setNoSticker(false); setMId(""); setMQty(1);
+                setMNote(""); setPhoto(null); setScreen("manual");
+              }}><Icon name="add" size={20} /></button>
+              <button className="gbtn sm ok" onClick={() => { stampElapsed(); setScreen("closetrip"); }}>{t("doneScanning")}</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {screen === "resolve" && pendingScan && (
+        <>
+          <Bar t={t} title={t("notOnList")} />
+          <div className="gbody">
+            <div className="gcard warn col">
+              <div className="mono big">{pendingScan.barcode}</div>
+            </div>
+            <p className="glead">{t("whyLeaving")}</p>
+            <div className="gopts">
+              {REASONS.map((r) => (
+                <button key={r} aria-pressed={reason === r} onClick={() => setReason(r)}>{t(r)}</button>
+              ))}
+            </div>
+            <PhotoBox t={t} photo={photo} onClick={grabPhoto} />
+          </div>
+          <div className="gfoot">
+            <button className="gbtn ghost narrow" onClick={() => { setPendingScan(null); setScreen("scan"); }}>
+              {t("cancel")}</button>
+            <button className="gbtn warn" disabled={!reason || !photo}
+              onClick={async () => {
+                await addScan({
+                  barcode: pendingScan.barcode, entryMethod: "scan", itemKind: "unit",
+                  overrideReason: t(reason!),
+                }, t(reason!), true, photo);
+                setPendingScan(null); setPhoto(null); setReason(null); setScreen("scan");
+              }}>{t("allowIt")}</button>
+          </div>
+        </>
+      )}
+
+      {screen === "manual" && (
+        <>
+          <Bar t={t} title={t("addManually")} left={<BackBtn onClick={() => setScreen("scan")} />} />
+          <div className="gbody">
+            {!cat && (
+              <>
+                <p className="glead">{t("whatIsIt")}</p>
+                <div className="gopts">
+                  {(CATS[dir ?? "OUT"]).map(([id, key, icon]) => (
+                    <button key={id} onClick={() => { setCat(id); setNoSticker(false); }}>
+                      <Icon name={icon} size={19} className="ic" />{t(key)}</button>
+                  ))}
+                </div>
+              </>
+            )}
+            {cat && (
+              <>
+                <button className="gcard tap" onClick={() => setCat(null)}>
+                  <Icon name={CATS[dir ?? "OUT"].find((c) => c[0] === cat)![2]} size={22} className="gbig" />
+                  <div><b>{t(CATS[dir ?? "OUT"].find((c) => c[0] === cat)![1])}</b></div>
+                  <span className="gsub">{t("change")}</span>
+                </button>
+
+                {cat === "customer_return" && !noSticker ? (
+                  <div className="gcard col">
+                    <h3>{t("hasSticker")}</h3><p>{t("stickerWhy")}</p>
+                    <div className="grow2">
+                      <button className="gbtn sm ghost" onClick={() => setScreen("scan")}>{t("yesScanIt")}</button>
+                      <button className="gbtn sm warn" onClick={() => setNoSticker(true)}>{t("noSticker")}</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {noSticker && (
+                      <div className="gcard warn col">
+                        <h3><Icon name="warning" size={17} /> {t("stickerMissing")}</h3><p>{t("stickerMissingWhy")}</p>
+                      </div>
+                    )}
+                    {!COUNTED.includes(cat) && (
+                      <Field label={t("serialOrOrder")}>
+                        <input className="gf mono" value={mId} onChange={(e) => setMId(e.target.value)} autoComplete="off" />
+                      </Field>
+                    )}
+                    {cat !== "customer_return" && (
+                      <Field label={t("quantity")}>
+                        <div className="gqty">
+                          <button className="gkey" onClick={() => setMQty((q) => Math.max(1, q - 1))}>−</button>
+                          <input className="gf mono" inputMode="numeric" value={mQty}
+                            onChange={(e) => setMQty(Math.max(1, parseInt(e.target.value, 10) || 1))} />
+                          <button className="gkey" onClick={() => setMQty((q) => q + 1)}>＋</button>
+                        </div>
+                      </Field>
+                    )}
+                    <PhotoBox t={t} photo={photo} onClick={grabPhoto} />
+                    <Field label={t("comments")}>
+                      <input className="gf" value={mNote} onChange={(e) => setMNote(e.target.value)} autoComplete="off" />
+                    </Field>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+          {cat && (cat !== "customer_return" || noSticker) && (
+            <div className="gfoot">
+              <button className="gbtn ghost narrow" onClick={() => setScreen("scan")}>{t("cancel")}</button>
+              <button className="gbtn primary"
+                disabled={!photo || (!COUNTED.includes(cat) && mId.trim().length < 4)}
+                onClick={async () => {
+                  const counted = COUNTED.includes(cat);
+                  const label = t(CATS[dir ?? "OUT"].find((c) => c[0] === cat)![1]);
+                  await addScan({
+                    barcode: null, serialNo: counted ? null : mId.trim().toUpperCase(),
+                    entryMethod: "manual", itemKind: cat,
+                    quantity: cat === "customer_return" ? 1 : mQty,
+                    soNumber: !counted && mId.trim().startsWith("ON-") ? mId.trim() : null,
+                    notes: mNote.trim() || null,
+                  }, counted ? `${label} × ${mQty}` : label, true, photo);
+                  setCat(null); setPhoto(null); setMId(""); setMQty(1); setMNote("");
+                  setScreen("scan");
+                }}>{t("add")}</button>
+            </div>
+          )}
+        </>
+      )}
+
+      {screen === "closetrip" && (
+        <>
+          <Bar t={t} title={t("closeTrip")} left={<BackBtn onClick={() => setScreen("scan")} />} />
+          <div className="gbody">
+            <div className="gcard col">
+              <div className="gkv"><span>{t("direction")}</span><b>{dir === "IN" ? t("inward") : t("outward")}</b></div>
+              <div className="gkv"><span>{t("vehicleNo")}</span><b className="mono">{veh}</b></div>
+              <div className="gkv"><span>{t("itemsScanned")}</span><b>{lines.length}</b></div>
+              <div className="gkv"><span>{t("flagged")}</span><b>{lines.filter((l) => l.flagged).length}</b></div>
+              <div className="gkv"><span>{t("timeTaken")}</span><b className="mono">{elapsed}</b></div>
+            </div>
+            {lines.map((l) => (
+              <div key={l.clientId} className="gkv">
+                <span className="mono">{l.barcode}</span>
+                <span className={`gtag ${l.flagged ? "warn" : "ok"}`}>
+                  <Icon name={l.flagged ? "warning" : "check"} size={12} /></span>
+              </div>
+            ))}
+          </div>
+          <div className="gfoot">
+            <button className="gbtn ghost narrow" onClick={() => setScreen("scan")}>{t("back")}</button>
+            <button className="gbtn ok" onClick={closeTrip}>{t("closeTrip")}</button>
           </div>
         </>
       )}
