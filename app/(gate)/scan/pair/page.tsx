@@ -38,8 +38,11 @@ function Pair() {
   useEffect(() => {
     if (!token) return;
     setToken(token);
-    // Straight into the app, replacing the entry so the token does not sit in
-    // the phone's history or survive in a shared screenshot of the address bar.
+    // Straight into the app, replacing the entry so neither the device token
+    // nor the Vercel bypass secret sits in the phone's history or survives in a
+    // screenshot of the address bar. The bypass has already done its job by
+    // this point -- Vercel set a cookie on the way in, so the app and its API
+    // keep working from here without it.
     const id = setTimeout(() => router.replace("/scan"), 800);
     return () => clearTimeout(id);
   }, [token, router]);

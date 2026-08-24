@@ -57,14 +57,35 @@ export async function POST(req: NextRequest) {
   await ensureBuckets(admin);
 
   const base = process.env.NEXT_PUBLIC_APP_URL ?? "";
+
+  // VERCEL DEPLOYMENT PROTECTION. On Hobby, preview deployments sit behind a
+  // Vercel login that cannot be switched off -- so a guard's phone, which has
+  // no Vercel account, is bounced to an SSO page and reports "cannot connect
+  // to the server". The app is fine; nothing ever reaches it.
+  //
+  // The bypass secret carried on the pairing link fixes it once per phone:
+  // x-vercel-set-bypass-cookie leaves a cookie behind, so every later request
+  // from that device -- including the sync API -- passes without the parameter.
+  // Pairing is already a one-time act, which is exactly where this belongs.
+  //
+  // Vercel injects the secret automatically once Protection Bypass is enabled.
+  // Absent (production, or protection off) the link is built unchanged.
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  const q = new URLSearchParams({ t: token });
+  if (bypass) {
+    q.set("x-vercel-protection-bypass", bypass);
+    q.set("x-vercel-set-bypass-cookie", "samesitenone");
+  }
+
   return NextResponse.json({
     ok: true,
+    protectionBypass: !!bypass,
     deviceRowId: data.id,
     deviceId: data.device_id,
     // SHOWN ONCE.
     deviceToken: token,
     // Hand this to the guard's phone; opening it once pairs the device.
-    pairingUrl: `${base}/scan/pair?t=${encodeURIComponent(token)}`,
+    pairingUrl: `${base}/scan/pair?${q.toString()}`,
     site: site && { code: site.siteCode, label: site.label, lat: site.lat, lng: site.lng, radiusM: site.radiusM },
   });
 }
