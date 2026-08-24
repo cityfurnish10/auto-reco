@@ -206,11 +206,19 @@ export default function GateApp() {
     return r;
   }, [refreshQueue]);
 
-  // ~6.7MB of weights. Loaded while the guard is on the PIN pad so the pause
-  // lands where they are already typing, not after they have taken the selfie.
-  useEffect(() => {
-    if (screen === "pin" || screen === "checkin") void initFace().catch(() => {});
-  }, [screen]);
+  // NOT PRELOADED ANY MORE, and the reason matters.
+  //
+  // This used to warm the face model on the PIN screen so the pause landed
+  // while the guard was typing. On a desktop that is a kindness; on an iPhone
+  // it is a hazard. iOS Safari enforces a per-tab memory ceiling and kills the
+  // page outright when it is crossed -- no error, no message, just a blank
+  // screen. TensorFlow plus 6.7MB of weights is squarely in that territory, and
+  // every engine available here (Chromium, desktop WebKit) has no such ceiling,
+  // so nothing local reproduces it.
+  //
+  // The model now loads only when the guard actually taps to take the selfie,
+  // and only on that screen. A guard who never checks in never pays for it, and
+  // the scanning path -- the part that must not fail -- never touches it at all.
 
   useEffect(() => {
     const id = setInterval(() => { void sync(); }, 20_000);
@@ -376,6 +384,8 @@ export default function GateApp() {
   useEffect(() => { onDecodedRef.current = onDecoded; });
 
   /* ── the check-in selfie ───────────────────────────────────────────────── */
+  const [faceReady, setFaceReady] = useState(false);
+
   async function takeSelfie() {
     const v = selfieRef.current;
     // videoWidth is 0 until the first frame has actually arrived. Checking it
@@ -383,6 +393,9 @@ export default function GateApp() {
     if (!v?.videoWidth) return;
     setMatching(true);
     try {
+      // Loaded here, on demand, rather than warmed in advance -- see the note
+      // above the removed preload.
+      if (!faceReady) { await initFace(); setFaceReady(true); }
       const blob = await compress(v, 640, 0.75);
       setPhoto(blob);
       setShotUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob); });
