@@ -27,7 +27,7 @@ type Screen =
   | "newtrip" | "scan" | "resolve" | "manual" | "closetrip" | "settings"
   // The two that decide whether a guard trusts the app when it is not
   // behaving: what went wrong, and what is still waiting to be sent.
-  | "problem" | "queue" | "profile" | "history";
+  | "problem" | "queue" | "profile" | "history" | "randomcheck";
 
 interface ScanLine {
   clientId: string; barcode: string; label: string; flagged: boolean;
@@ -109,6 +109,11 @@ export default function GateApp() {
   const [hist, setHist] = useState<{ trips: HistoryTrip[]; totals: { trips: number; items: number } } | null>(null);
   const [histErr, setHistErr] = useState<string | null>(null);
   const [openTripId, setOpenTripId] = useState<string | null>(null);
+  // Random in-shift photo checks. Times are drawn ONCE when the shift starts
+  // and kept, so reopening the app cannot dodge a prompt by resetting the
+  // clock — which would make the whole check optional in practice.
+  const [checkTimes, setCheckTimes] = useState<number[]>([]);
+  const [screenBefore, setScreenBefore] = useState<Screen>("today");
   const [rejected, setRejected] = useState<outbox.OutboxItem[]>([]);
   const [pendingItems, setPendingItems] = useState<outbox.OutboxItem[]>([]);
   // The gate's roster and the guard who has signed in on this phone. A device
@@ -281,7 +286,7 @@ export default function GateApp() {
      Here the guard can SEE themselves before they tap, which also means they
      can tell the difference between a bad photo and a broken camera. */
   useEffect(() => {
-    if (screen !== "checkin") {
+    if (screen !== "checkin" && screen !== "randomcheck") {
       selfieStream.current?.getTracks().forEach((t) => t.stop());
       selfieStream.current = null;
       return;
@@ -559,6 +564,90 @@ export default function GateApp() {
     try { setHist(await history(d)); }
     catch (e) { setHistErr(e instanceof Error ? e.message : String(e)); }
   }, []);
+
+  /* ── random in-shift photo checks ──────────────────────────────────────
+     Two or three per shift at unannounced moments, confirming the same person
+     is still on duty. Start and end of shift prove who arrived and who left;
+     these are what make substitution in between visible.
+
+     Scheduled once and persisted. Drawing new times on each app start would
+     let a guard avoid every prompt by reopening the app, and a check you can
+     dodge is not a check. */
+  const scheduleChecks = useCallback((startedAt: number) => {
+    const SHIFT_H = 9;
+    const n = 2 + Math.floor(Math.random() * 2);          // two or three
+    const times: number[] = [];
+    for (let i = 0; i < n; i++) {
+      // One per slice of the shift, at a random point inside it, so they are
+      // spread out rather than arriving together.
+      const lo = ((i + 0.5) / (n + 1)) * SHIFT_H * 3600_000;
+      const hi = ((i + 1.5) / (n + 1)) * SHIFT_H * 3600_000;
+      times.push(Math.round(startedAt + lo + Math.random() * (hi - lo)));
+    }
+    setCheckTimes(times);
+    try { localStorage.setItem("gate.checks", JSON.stringify(times)); } catch { /* storage blocked */ }
+  }, []);
+
+  useEffect(() => {
+    if (!shiftId) return;
+    // Deferred by a tick so the read-or-schedule is not a synchronous setState
+    // in an effect body, which cascades renders.
+    const id = setTimeout(() => {
+      let saved: string | null = null;
+      try { saved = localStorage.getItem("gate.checks"); } catch { /* storage blocked */ }
+      if (saved) {
+        try { setCheckTimes(JSON.parse(saved) as number[]); return; } catch { /* corrupt */ }
+      }
+      scheduleChecks(shiftAt ? Date.parse(shiftAt) : Date.now());
+    }, 0);
+    return () => clearTimeout(id);
+  }, [shiftId, shiftAt, scheduleChecks]);
+
+  useEffect(() => {
+    if (!shiftId || checkTimes.length === 0) return;
+    const id = setInterval(() => {
+      // Never interrupt a scan in progress. A prompt over a live scanner mid-
+      // load is exactly how a guard learns to resent the app; it waits for a
+      // quiet screen instead, which arrives within minutes.
+      if (screen === "scan" || screen === "resolve" || screen === "manual"
+          || screen === "randomcheck" || screen === "checkin") return;
+      const due = checkTimes.find((t) => Date.now() >= t);
+      if (!due) return;
+      setCheckTimes((ts) => {
+        const left = ts.filter((t) => t !== due);
+        try { localStorage.setItem("gate.checks", JSON.stringify(left)); } catch {}
+        return left;
+      });
+      setScreenBefore(screen);
+      setPhoto(null); setFaceScore(null); setFaceVerdict(null);
+      setShotUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+      setSelfieCam("starting"); setSelfieNonce((n) => n + 1);
+      setScreen("randomcheck");
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [shiftId, checkTimes, screen]);
+
+  async function submitRandomCheck() {
+    const id = uid();
+    const pos = await position();
+    await outbox.enqueue({
+      clientId: id, kind: "face",
+      payload: {
+        clientCheckId: id, clientShiftId: shiftId, trigger: "random",
+        capturedAt: new Date().toISOString(),
+        // 'skipped' is deliberate and not a failure: a prompt the guard could
+        // not answer must read as unanswered, never as a mismatch.
+        verdict: photo ? (faceVerdict ?? "review") : "skipped",
+        matchScore: faceScore, hasSelfie: !!photo,
+        lat: pos?.coords.latitude ?? null, lng: pos?.coords.longitude ?? null,
+      },
+    });
+    if (photo) await outbox.putBlob(id, photo);
+    setPhoto(null); setFaceScore(null); setFaceVerdict(null);
+    setShotUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    await refreshQueue(); void sync();
+    setScreen(screenBefore);
+  }
 
   /* ── attendance ────────────────────────────────────────────────────── */
   async function checkOut() {
@@ -1168,6 +1257,54 @@ export default function GateApp() {
                 ))}
               </div>
             ))}
+          </div>
+        </>
+      )}
+
+      {/* ── Random photo check ──────────────────────────────────────────
+          Unannounced, and deliberately not dismissible without answering one
+          way or the other — but "not now" IS an answer, recorded as skipped
+          rather than as a failure. A guard with their hands full is not a
+          guard committing fraud. */}
+      {screen === "randomcheck" && (
+        <>
+          <Bar t={t} title={t("photoCheck")} />
+          <div className="gbody">
+            <div className="gselfiewrap">
+              <video ref={selfieRef} playsInline muted autoPlay
+                className={selfieCam === "live" && !shotUrl ? "" : "hidden"} />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {shotUrl && <img src={shotUrl} alt="" />}
+              {!shotUrl && selfieCam !== "live" && (
+                <Icon name={selfieCam === "blocked" ? "camera" : "progress_activity"}
+                      size={40} className={selfieCam === "starting" ? "gspinicon" : ""} />
+              )}
+              {matching && <span className="gselfiebusy">
+                <Icon name="progress_activity" size={34} className="gspinicon" /></span>}
+            </div>
+            <div className="gselfiebtns">
+              {photo ? (
+                <button className="gbtn sm ghost" onClick={retakeSelfie} disabled={matching}>
+                  <Icon name="refresh" size={17} />{t("retake")}
+                </button>
+              ) : (
+                <button className="gbtn sm primary" onClick={takeSelfie}
+                        disabled={matching || selfieCam !== "live"}>
+                  <Icon name="camera" size={17} />{t("takeSelfie")}
+                </button>
+              )}
+            </div>
+            <div className="gcenter-txt">
+              <h3>{t("stillOnDuty")}</h3>
+              <p>{faceVerdict === "pass" ? t("faceOk")
+                 : faceVerdict === "no_face" ? t("faceNone")
+                 : faceVerdict ? t("faceReview") : t("randomCheckWhy")}</p>
+            </div>
+          </div>
+          <div className="gfoot">
+            <button className="gbtn ghost narrow" onClick={submitRandomCheck}>{t("notNow")}</button>
+            <button className="gbtn primary" disabled={!photo || matching}
+                    onClick={submitRandomCheck}>{t("done")}</button>
           </div>
         </>
       )}
