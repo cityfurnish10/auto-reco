@@ -654,6 +654,7 @@ function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
 function Devices({ user }: { user: SessionUser }) {
   const [pairing, setPairing] = useState<{ url: string; label: string } | null>(null);
   const [diag, setDiag] = useState<Record<string, unknown> | null>(null);
+  const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [label, setLabel] = useState("Gate phone");
@@ -709,7 +710,6 @@ function Devices({ user }: { user: SessionUser }) {
 
       {err && <div className="card p-3 text-sm text-danger border border-danger/30">{err}</div>}
 
-      <DeviceList city={user.city} refresh={pairing?.label ?? ""} />
 
       {pairing && (
         <div className="card p-5 space-y-3">
@@ -730,10 +730,16 @@ function Devices({ user }: { user: SessionUser }) {
               <div>System variables exposed: <code>{String(diag.systemVarsExposed)}</code></div>
             </div>
           )}
-          <button className="btn btn-secondary"
-            onClick={() => navigator.clipboard?.writeText(pairing.url)}>Copy link</button>
+          <button className="btn btn-primary"
+            onClick={() => {
+              navigator.clipboard?.writeText(pairing.url);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2500);
+            }}>{copied ? "Copied" : "Copy link"}</button>
         </div>
       )}
+
+      <DeviceList city={user.city} refresh={pairing?.label ?? ""} />
     </div>
   );
 }
@@ -836,6 +842,7 @@ function Gates() {
           </div>
         ))}
       </div>
+
     </div>
   );
 }
