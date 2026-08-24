@@ -6,33 +6,15 @@
 //
 //   node scripts/db-readonly-check.mjs
 
-import { readFileSync } from "node:fs";
-import pg from "pg";
+import { connectReadonly, readonlyUrl } from "./db-connect.mjs";
 
-// Read .env.local directly — this script runs outside Next, which is what
-// normally loads it.
-function envLocal(key) {
-  try {
-    for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
-      if (m && m[1] === key) return m[2].trim().replace(/^["']|["']$/g, "");
-    }
-  } catch { /* no file yet */ }
-  return process.env[key];
-}
-
-const url = envLocal("DATABASE_READONLY_URL");
-if (!url) {
-  console.error("DATABASE_READONLY_URL is not set in .env.local.");
-  process.exit(1);
-}
-
-const client = new pg.Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
+let client;
 const ok = (m) => console.log(`  \x1b[32m✓\x1b[0m ${m}`);
 const bad = (m) => console.log(`  \x1b[31m✗\x1b[0m ${m}`);
 
 try {
-  await client.connect();
+  readonlyUrl();
+  client = await connectReadonly();
   ok("connected");
 
   const who = await client.query("select current_user, current_database()");
@@ -84,5 +66,5 @@ try {
   );
   process.exitCode = 1;
 } finally {
-  await client.end().catch(() => {});
+  await client?.end().catch(() => {});
 }
