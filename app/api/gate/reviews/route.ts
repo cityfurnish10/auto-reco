@@ -27,6 +27,9 @@ export async function GET(req: NextRequest) {
   }
   const admin = createAdminClient();
   const state = req.nextUrl.searchParams.get("state") ?? "pending";
+  const trigger = req.nextUrl.searchParams.get("trigger");
+  const guardId = req.nextUrl.searchParams.get("guardId");
+  const date = req.nextUrl.searchParams.get("date");
 
   let q = admin
     .from("guard_face_checks")
@@ -34,6 +37,13 @@ export async function GET(req: NextRequest) {
     .order("captured_at", { ascending: false })
     .limit(100);
   if (state !== "all") q = q.eq("review_state", state);
+  if (trigger) q = q.eq("trigger", trigger);
+  if (guardId) q = q.eq("guard_id", guardId);
+  if (date) {
+    // A calendar day in IST, which is how anyone asking will mean it.
+    q = q.gte("captured_at", `${date}T00:00:00+05:30`)
+         .lt("captured_at", `${date}T23:59:59.999+05:30`);
+  }
   if (me.role === "manager") q = q.eq("city", me.city ?? "");
 
   const { data, error } = await q;
@@ -43,6 +53,7 @@ export async function GET(req: NextRequest) {
   const checks = await Promise.all(
     ((data ?? []) as Record<string, unknown>[]).map(async (r) => ({
       id: r.id,
+      guardId: r.guard_id,
       guardName: (r.app_users as { name?: string })?.name ?? "",
       city: r.city,
       trigger: r.trigger,

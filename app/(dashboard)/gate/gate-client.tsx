@@ -929,21 +929,32 @@ function DeviceList({ city, refresh }: { city: string | null; refresh: string })
 
 /* ── Reviews ────────────────────────────────────────────────────────── */
 interface Check {
-  id: string; guardName: string; city: string; trigger: string; capturedAt: string;
+  id: string; guardId: string; guardName: string; city: string; trigger: string; capturedAt: string;
   matchScore: number | null; verdict: string; reviewState: string;
   geoOk: boolean | null; selfieUrl: string | null;
 }
 
+/**
+ * Every photo check, not only the ones needing a decision.
+ *
+ * It listed pending checks alone, so a random in-shift check that PASSED was
+ * recorded and then invisible — you could see that someone had failed a check
+ * but never that the checks were happening at all, which is most of what you
+ * want from a spot check.
+ */
 function Reviews() {
   const [rows, setRows] = useState<Check[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // No synchronous setState here: `loading` already starts true, and on a
-  // reload after a decision a briefly stale card is better than a flash of
-  // spinner over the queue someone is working through.
   const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [state, setState] = useState<"pending" | "all">("pending");
+  const [trigger, setTrigger] = useState("");
+  const [date, setDate] = useState("");
+
   const load = useCallback(() => {
-    fetch("/api/gate/reviews", { credentials: "same-origin" })
+    const q = new URLSearchParams({ state });
+    if (trigger) q.set("trigger", trigger);
+    if (date) q.set("date", date);
+    fetch(`/api/gate/reviews?${q}`, { credentials: "same-origin" })
       .then(async (r) => {
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
@@ -952,7 +963,7 @@ function Reviews() {
       .then((j) => { setLoadErr(null); setRows(j.checks ?? []); })
       .catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [state, trigger, date]);
   useEffect(() => { load(); }, [load]);
 
   async function decide(id: string, decision: "accepted" | "rejected") {
@@ -963,52 +974,91 @@ function Reviews() {
     load();
   }
 
-  if (loading) return <p className="text-text-muted text-sm">Loading…</p>;
-  if (loadErr) return <LoadError what="the review queue" detail={loadErr} onRetry={load} />;
-  if (rows.length === 0) return <Empty text="Nothing waiting. Every check-in matched." />;
-
   return (
-    <div className="space-y-3">
-      <p className="text-text-muted text-sm">
-        Photos the phone could not match confidently. A guard is never blocked by this —
-        the shift already happened.
-      </p>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {rows.map((c) => (
-          <div key={c.id} className="card p-4 space-y-3">
-            {c.selfieUrl
-              /* eslint-disable-next-line @next/next/no-img-element -- a signed
-                 storage URL that expires in 30 minutes; next/image would cache
-                 and optimise a private face photo, which is not what we want. */
-              ? <img src={c.selfieUrl} alt={`Check-in photo for ${c.guardName}`}
-                     className="w-full h-44 object-cover rounded-control" />
-              : <div className="w-full h-44 rounded-control bg-surface-elevated grid place-items-center text-text-muted text-sm">
-                  No photo
-                </div>}
-            <div>
-              <b className="text-text-primary">{c.guardName}</b>
-              <div className="text-xs text-text-muted">
-                {c.city} · {c.trigger.replace(/_/g, " ")} · {time(c.capturedAt)}
-              </div>
-              <div className="text-xs text-text-muted mt-1">
-                {/* The raw distance, shown rather than hidden: the thresholds are
-                    a starting point and this is what re-tunes them. */}
-                {c.matchScore === null ? "no score" : `score ${c.matchScore}`}
-                {c.geoOk === false && " · outside the gate"}
-                {c.geoOk === null && " · no location"}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button className="btn btn-compact btn-primary flex-1" onClick={() => decide(c.id, "accepted")}>
-                It&rsquo;s them
-              </button>
-              <button className="btn btn-compact btn-secondary flex-1" onClick={() => decide(c.id, "rejected")}>
-                Not them
-              </button>
-            </div>
-          </div>
-        ))}
+    <div className="space-y-4">
+      <div className="card p-3 flex flex-wrap gap-2 items-center">
+        <div className="bg-surface-elevated rounded-control p-1 flex">
+          {([["pending", "Needs a look"], ["all", "Everything"]] as const).map(([v, label]) => (
+            <button key={v} onClick={() => setState(v)}
+              className={state === v
+                ? "px-3 py-1 text-sm font-medium rounded-control bg-surface-card shadow-card"
+                : "px-3 py-1 text-sm text-text-secondary rounded-control"}>{label}</button>
+          ))}
+        </div>
+        <select value={trigger} onChange={(e) => setTrigger(e.target.value)}
+          className="h-9 px-2 rounded-control border border-border bg-surface-card text-sm">
+          <option value="">Check-in, check-out and spot checks</option>
+          <option value="check_in">Check-in only</option>
+          <option value="check_out">Check-out only</option>
+          <option value="random">Spot checks only</option>
+        </select>
+        <input type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)}
+          className="h-9 px-2 rounded-control border border-border bg-surface-card text-sm" />
+        {(trigger || date) && (
+          <button className="btn btn-compact btn-secondary"
+            onClick={() => { setTrigger(""); setDate(""); }}>Clear</button>
+        )}
+        <span className="ml-auto text-xs text-text-muted">{rows.length} shown</span>
       </div>
+
+      {loadErr && <LoadError what="the photo checks" detail={loadErr} onRetry={load} />}
+      {loading && <p className="text-text-muted text-sm">Loading…</p>}
+
+      {!loading && !loadErr && rows.length === 0 && (
+        <Empty text={state === "pending"
+          ? "Nothing waiting. Every check matched."
+          : "No photo checks for these filters."} />
+      )}
+
+      {!loadErr && rows.length > 0 && (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {rows.map((c) => (
+            <div key={c.id} className="card p-4 space-y-3">
+              {c.selfieUrl
+                /* eslint-disable-next-line @next/next/no-img-element -- a signed
+                   URL that expires; next/image would cache a face photo. */
+                ? <img src={c.selfieUrl} alt={`Photo check for ${c.guardName}`}
+                       className="w-full h-44 object-cover rounded-control" />
+                : <div className="w-full h-44 rounded-control bg-surface-elevated grid place-items-center text-text-muted text-sm">
+                    Photo expired or not taken
+                  </div>}
+              <div>
+                <div className="flex items-center gap-2">
+                  <b className="text-text-primary">{c.guardName}</b>
+                  <span className={`badge ${c.trigger === "random" ? "badge-info" : "badge-done"}`}>
+                    {c.trigger === "random" ? "spot check"
+                      : c.trigger === "check_in" ? "check-in" : "check-out"}
+                  </span>
+                </div>
+                <div className="text-xs text-text-muted mt-1">{c.city} · {time(c.capturedAt)}</div>
+                <div className="text-xs text-text-muted mt-1">
+                  {/* The raw distance, shown rather than hidden: the thresholds
+                      are a starting point and this is what re-tunes them. */}
+                  {c.matchScore === null ? "no score" : `score ${c.matchScore}`}
+                  {c.verdict === "skipped" && " · not answered"}
+                  {c.geoOk === false && " · outside the gate"}
+                  {c.geoOk === null && " · no location"}
+                </div>
+              </div>
+              {c.reviewState === "pending" ? (
+                <div className="flex gap-2">
+                  <button className="btn btn-compact btn-primary flex-1" onClick={() => decide(c.id, "accepted")}>
+                    It&rsquo;s them
+                  </button>
+                  <button className="btn btn-compact btn-secondary flex-1" onClick={() => decide(c.id, "rejected")}>
+                    Not them
+                  </button>
+                </div>
+              ) : (
+                <span className={`badge ${c.reviewState === "rejected" ? "badge-high"
+                  : c.reviewState === "accepted" ? "badge-done" : "badge-suppressed"}`}>
+                  {c.reviewState === "none" ? "matched" : c.reviewState}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
