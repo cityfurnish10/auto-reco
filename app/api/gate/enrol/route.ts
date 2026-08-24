@@ -19,6 +19,39 @@ import { CITIES, type City } from "@/lib/sample-data";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * GET — what this deployment can actually see.
+ *
+ * A page can be cached, a component can be stale, and a conditional can hide
+ * the very thing meant to explain a failure. This is a plain URL that answers
+ * the question directly, with nothing between the runtime and the reader.
+ *
+ * Booleans and a name only. The secret itself is never returned.
+ */
+export async function GET() {
+  const me = await getCurrentAppUser();
+  if (!me || me.role !== "admin") {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  const env = process.env.VERCEL_ENV ?? null;
+  const secret = !!process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  return NextResponse.json({
+    vercelEnv: env,
+    secretPresent: secret,
+    systemVarsExposed: !!process.env.VERCEL_URL,
+    deploymentUrl: process.env.VERCEL_URL ?? null,
+    appUrl: process.env.NEXT_PUBLIC_APP_URL ?? null,
+    gitCommit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? null,
+    // The two conditions that decide whether a pairing link carries a bypass.
+    bypassWillApply: env === "preview" && secret,
+    verdict:
+      env === null ? "System environment variables are not exposed to this deployment."
+      : env !== "preview" ? `This deployment reports itself as "${env}", not preview.`
+      : !secret ? "Protection Bypass secret is not attached to this deployment — redeploy after enabling it."
+      : "Bypass will be added to pairing links.",
+  });
+}
+
 export async function POST(req: NextRequest) {
   const me = await getCurrentAppUser();
   if (!me || (me.role !== "admin" && me.role !== "manager")) {
