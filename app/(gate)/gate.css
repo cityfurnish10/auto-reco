@@ -245,3 +245,8 @@
   background:rgba(0,0,0,.35);color:#fff}
 .gate .gselfiebtns{display:flex;justify-content:center;margin-bottom:16px}
 .gate .gselfiebtns .gbtn{flex:0 0 auto;padding:0 22px}
+/* The signed-in name is a button into the profile — it is the most-glanced-at
+   thing on a shared phone, so it is also the obvious place to tap. */
+.gate .gbrand .who{background:none;border:0;color:inherit;font:inherit;opacity:.75;
+  padding:4px 0;max-width:44%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gate .gbrand .who:active{opacity:1}

@@ -17,6 +17,21 @@ const ADMIN_ONLY_PATHS = [
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request: { headers: request.headers } });
   const { pathname } = request.nextUrl;
+
+  // Belt and braces for the face-model files. The matcher below already
+  // excludes them and that is what actually fixed this; the line is kept
+  // because the cost of the exclusion ever being edited away is out of all
+  // proportion to a string comparison.
+  //
+  // WHAT WENT WRONG, because the symptom pointed nowhere near the cause.
+  // public/ is NOT covered by the _next/static exclusion, so every request for
+  // a model was answered with a redirect to /login. The loader then fed an HTML
+  // login page to a binary parser, failed, and every check-in recorded
+  // "no_face" — indistinguishable from a broken camera. Two rounds of camera
+  // work were spent before anyone looked at the network.
+  //
+  // Anything under /models is a public static asset with nothing to protect.
+  if (pathname.startsWith("/models/")) return response;
   const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
 
   // Demo mode: Supabase not wired up yet — sessions come from the demo
@@ -126,6 +141,13 @@ export const config = {
   // own auth: cron uses CRON_SECRET, and api/gate uses a device token issued at
   // enrolment.
   //
+  // `models` holds the face-recognition weights, and leaving it out cost the
+  // whole feature. Static files under public/ are NOT covered by the
+  // _next/static exclusion, so every request for a model was answered with a
+  // redirect to /login. The app then fed an HTML login page to a model loader,
+  // which failed, and every check-in recorded verdict "no_face" -- looking
+  // exactly like a camera fault. It was never the camera.
+  //
   // `scan` is the guard app itself, for the same reason: a guard has no
   // dashboard session, so without the exclusion the phone gets the login page
   // instead of the app. The page is only a shell — every byte of data it shows
@@ -139,6 +161,6 @@ export const config = {
   // cookie-bound client directly and works whether or not middleware ran, so
   // excluding the prefix costs nothing.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|robots.txt|sitemap.xml|api/cron|api/gate|scan).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|robots.txt|sitemap.xml|api/cron|api/gate|scan|models).*)",
   ],
 };
