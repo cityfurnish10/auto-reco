@@ -524,7 +524,7 @@ export default function GateApp() {
           safe, and what to do — never a bare error string. */}
       {screen === "problem" && (
         <>
-          <Bar t={t} title={t("appName")}
+          <Bar t={t} title={t("somethingWrong")}
                left={<BackBtn onClick={() => setScreen(shiftId ? "today" : "who")} />} />
           <div className="gbody">
             <div className="ghero">
