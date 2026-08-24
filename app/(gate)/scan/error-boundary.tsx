@@ -61,16 +61,36 @@ class Boundary extends Component<{ children: ReactNode }, State> {
 }
 
 /**
- * Catches what the boundary cannot: a throw from outside the render pass, and
- * an unhandled rejection. Both otherwise vanish into a console nobody on a
- * warehouse floor can open.
+ * Stray runtime errors — reported, never fatal.
+ *
+ * THE MISTAKE THIS CORRECTS. The first version replaced the entire app on ANY
+ * window error. Every page emits harmless ones, and cross-origin events arrive
+ * with no detail at all ("Script error."), so a trivial event blanked a working
+ * screen mid-shift. That is far worse than the failure it was written for.
+ *
+ * A React render error genuinely justifies replacing the tree: the tree is
+ * broken. An error beside the render does not — the app is still standing, the
+ * queue is intact, and the guard can carry on scanning. So it surfaces as a
+ * banner they can dismiss, with the detail available if anyone wants it.
+ *
+ * Contentless cross-origin errors are ignored entirely. They carry no
+ * information a person could act on, and showing "Script error." to a guard at
+ * a gate is noise dressed as diagnosis.
  */
 function GlobalErrors({ children }: { children: ReactNode }) {
-  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   useEffect(() => {
-    const onErr = (e: ErrorEvent) => setError(e.message || "Unknown error");
-    const onRej = (e: PromiseRejectionEvent) =>
-      setError(e.reason instanceof Error ? e.reason.message : String(e.reason));
+    const useful = (m: string) => {
+      const t = m.trim();
+      // The browser's way of saying "an error happened somewhere I will not
+      // tell you about". Nothing to show and nothing to do.
+      return t && !/^script error\.?$/i.test(t);
+    };
+    const onErr = (e: ErrorEvent) => { if (useful(e.message)) setNotice(e.message); };
+    const onRej = (e: PromiseRejectionEvent) => {
+      const m = e.reason instanceof Error ? e.reason.message : String(e.reason ?? "");
+      if (useful(m)) setNotice(m);
+    };
     window.addEventListener("error", onErr);
     window.addEventListener("unhandledrejection", onRej);
     return () => {
@@ -78,9 +98,18 @@ function GlobalErrors({ children }: { children: ReactNode }) {
       window.removeEventListener("unhandledrejection", onRej);
     };
   }, []);
-  return error
-    ? <Fallback detail={error} onReset={() => { setError(null); location.reload(); }} />
-    : <>{children}</>;
+
+  return (
+    <>
+      {children}
+      {notice && (
+        <div className="gnotice" role="status">
+          <span>{notice.slice(0, 140)}</span>
+          <button onClick={() => setNotice(null)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
+    </>
+  );
 }
 
 export default function GateErrorBoundary({ children }: { children: ReactNode }) {

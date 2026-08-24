@@ -250,3 +250,15 @@
 .gate .gbrand .who{background:none;border:0;color:inherit;font:inherit;opacity:.75;
   padding:4px 0;max-width:44%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gate .gbrand .who:active{opacity:1}
+
+/* A stray runtime error: reported without taking the screen away. The app is
+   still standing and the guard can still scan — replacing everything would
+   lose them the trip they are in the middle of. */
+.gate ~ .gnotice, .gnotice{position:fixed;left:12px;right:12px;
+  bottom:calc(12px + env(safe-area-inset-bottom));z-index:50;display:flex;gap:10px;
+  align-items:center;background:#332314;color:#F0B784;border:1px solid #A44B0B;
+  border-radius:12px;padding:11px 13px;font-size:13px;line-height:1.4;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  box-shadow:0 6px 20px rgba(0,0,0,.3)}
+.gnotice span{flex:1;word-break:break-word}
+.gnotice button{background:none;border:0;color:inherit;font-size:17px;padding:0 4px}

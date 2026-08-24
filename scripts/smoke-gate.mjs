@@ -7,13 +7,18 @@
 //
 //   node scripts/smoke-gate.mjs [url]
 
-import { chromium } from "playwright";
+import { chromium, webkit } from "playwright";
 
 const BASE = process.argv[2] ?? "https://auto-reco.vercel.app";
+// WEBKIT MATTERS MORE THAN CHROMIUM HERE. The guards use their own phones and
+// an iPhone runs WebKit whatever the browser badge says. Chromium reported a
+// clean page while a real iPhone showed "Script error" and then nothing —
+// testing only the engine that agrees with you is not testing.
+const ENGINE = (process.argv[3] ?? "webkit") === "chromium" ? chromium : webkit;
 const ok = (m) => console.log(`  \x1b[32m✓\x1b[0m ${m}`);
 const bad = (m) => { console.log(`  \x1b[31m✗\x1b[0m ${m}`); process.exitCode = 1; };
 
-const browser = await chromium.launch();
+const browser = await ENGINE.launch();
 // A real phone, so viewport-dependent layout and touch paths are exercised.
 const ctx = await browser.newContext({
   viewport: { width: 390, height: 844 },
