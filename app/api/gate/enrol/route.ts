@@ -97,7 +97,27 @@ export async function POST(req: NextRequest) {
 
   await ensureBuckets(admin);
 
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? "";
+  // THE ORIGIN THE MANAGER IS ACTUALLY LOOKING AT, not a hand-typed setting.
+  //
+  // NEXT_PUBLIC_APP_URL on production was "http://localhost:3000", so the link
+  // handed to a guard's phone pointed at the manager's own laptop. lib/email
+  // already hit this and wrote isPublicOrigin() to defend against it; the same
+  // discipline belongs here, except a pairing link can do better than a
+  // fallback — the request itself carries the right answer.
+  //
+  // Deriving it also means a preview produces a preview link and production
+  // produces a production link, with nothing to configure and nothing to keep
+  // in step.
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  const proto = req.headers.get("x-forwarded-proto") ?? (host?.startsWith("localhost") ? "http" : "https");
+  const configured = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "");
+  const base =
+    host ? `${proto}://${host}`
+    // Only if the request somehow carries no host: an explicitly public
+    // override, never a localhost one.
+    : configured && /^https:\/\//.test(configured) && !/localhost|127\.|192\.168\./.test(configured)
+      ? configured
+      : "";
 
   // VERCEL DEPLOYMENT PROTECTION. On Hobby, preview deployments sit behind a
   // Vercel login that cannot be switched off -- so a guard's phone, which has

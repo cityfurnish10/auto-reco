@@ -581,7 +581,12 @@ function Devices({ user }: { user: SessionUser }) {
             // than one that fails loudly — there is nothing to act on.
             if (!r.ok) { setErr(j.error ?? `Could not enrol the phone (HTTP ${r.status})`); return; }
             setPairing({ url: j.pairingUrl, label: j.deviceId });
-            setDiag(j.protectionBypass ? null : (j.diagnostics ?? null));
+            // Only worth showing where a bypass is actually needed. Production
+            // has no protection to bypass, so the warning is just noise there.
+            setDiag(
+              j.protectionBypass || j.diagnostics?.vercelEnv !== "preview"
+                ? null : (j.diagnostics ?? null)
+            );
           } catch (e) {
             setErr(e instanceof Error ? e.message : "Could not reach the server.");
           } finally { setBusy(false); }
