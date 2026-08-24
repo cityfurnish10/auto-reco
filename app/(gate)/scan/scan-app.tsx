@@ -128,51 +128,74 @@ export default function GateApp() {
     setPendingItems(all.filter((i) => !i.rejected));
   }, []);
 
-  /* ── boot ──────────────────────────────────────────────────────────── */
+  /* ── boot ──────────────────────────────────────────────────────────
+     WRAPPED, because it was not. Any throw in here -- IndexedDB unavailable in
+     a private window, a storage quota refusal, a malformed cached value -- left
+     the screen on "loading" forever with nothing on it. A blank white page is
+     the worst possible failure: it says neither what went wrong nor what to do,
+     and it is indistinguishable from a dead phone. */
   useEffect(() => {
     (async () => {
-      const saved = localStorage.getItem("gate.lang") as LangId | null;
-      if (saved) setLang(saved);
-      setNight(localStorage.getItem("gate.night") === "1");
-      if (!getToken()) { setScreen("unpaired"); return; }
-      await refreshQueue();
+      try {
+        const saved = localStorage.getItem("gate.lang") as LangId | null;
+        if (saved) setLang(saved);
+        setNight(localStorage.getItem("gate.night") === "1");
+      } catch { /* storage blocked — defaults are fine */ }
+
+      let token: string | null = null;
+      try { token = getToken(); } catch { /* storage blocked */ }
+      if (!token) { setScreen("unpaired"); return; }
+
+      // The queue lives in IndexedDB, which a locked-down browser can refuse
+      // outright. That must not stop the app opening.
+      try { await refreshQueue(); } catch { /* shown as zero until it recovers */ }
+
+      let sawRoster = false;
       try {
         const r = await rosterFor();
         setRoster(r.guards);
-        // A phone remembers the last guard so a shift resumed after a battery
-        // change does not start over; the PIN is still required.
+        sawRoster = true;
         const saved = getGuardId();
-        const known = saved ? r.guards.find((g) => g.guardId === saved) ?? null : null;
-        setMe(known);
-      } catch { /* offline — the roster from the last online start still stands */ }
+        setMe(saved ? r.guards.find((g) => g.guardId === saved) ?? null : null);
+      } catch { /* offline, or the device was revoked — handled below */ }
+
       try {
         const b = await bootstrap();
         setBoot(b);
         if (b.openShift) { setShiftId(b.openShift.client_shift_id); setShiftAt(b.openShift.checked_in_at); }
-        // A phone that died mid-trip comes back to the SAME truck rather than
-        // quietly starting a second one against the same load.
+        // A phone that died mid-trip returns to the SAME truck rather than
+        // quietly opening a second one against the same load.
         if (b.openTrip) {
           setTripId(b.openTrip.client_trip_id);
           setDir(b.openTrip.direction);
           setVeh(b.openTrip.vehicle_no);
         }
         setScreen(getGuardId() ? "pin" : "who");
+        return;
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        // A REVOKED device is not an outage and must not look like one — the
+        // A REVOKED device is not an outage and must not look like one -- the
         // guard would stand there retrying a phone that will never work again.
-        if (/revoked|unknown device|401/i.test(msg)) {
+        if (/revoked|unknown device|401|403/i.test(msg)) {
           setProblem({ titleKey: "deviceRevoked", bodyKey: "deviceRevokedWhy" });
           setScreen("problem");
           return;
         }
-        // Anything else at shift start is normal: the app runs from the outbox
-        // and whatever the last successful bootstrap gave it.
         setOnline(false);
         setErr(msg);
-        setScreen(getGuardId() ? "pin" : "who");
       }
-    })();
+
+      // Offline at shift start is ordinary: the app runs from the outbox and
+      // whatever the last successful start-up gave it. Land on a real screen.
+      setScreen(getGuardId() ? "pin" : sawRoster ? "who" : "problem");
+      if (!sawRoster && !getGuardId()) {
+        setProblem({ titleKey: "somethingWrong", bodyKey: "offline" });
+      }
+    })().catch(() => {
+      // Nothing above should throw now, but a start-up that CAN hang must not.
+      setProblem({ titleKey: "somethingWrong", bodyKey: "offline" });
+      setScreen("problem");
+    });
   }, [refreshQueue]);
 
   /* ── background sync ───────────────────────────────────────────────── */
@@ -476,7 +499,12 @@ export default function GateApp() {
       </div>
 
       {screen === "loading" && (
-        <Center><div className="gspin" /></Center>
+        <Center>
+          <div className="ghero">
+            <div className="gspin" style={{ margin: "0 auto 14px" }} />
+            <p>{t("starting")}</p>
+          </div>
+        </Center>
       )}
 
       {screen === "unpaired" && (

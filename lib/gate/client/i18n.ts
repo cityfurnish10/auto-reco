@@ -30,6 +30,7 @@ export const STRINGS: Record<string, Row> = {
   queueTitle:{en:"Saved on this phone",hi:"भेजना बाकी",mr:"पाठवायचे बाकी",kn:"ಕಳುಹಿಸಲು ಬಾಕಿ",te:"పంపడానికి పెండింగ్"},
   someRefused:{en:"Some entries were refused",hi:"कुछ एंट्री नहीं ली गईं",mr:"काही नोंदी घेतल्या नाहीत",kn:"ಕೆಲವು ನಮೂದುಗಳು ತಿರಸ್ಕೃತವಾಗಿವೆ",te:"కొన్ని నమోదులు తిరస్కరించబడ్డాయి"},
   someRefusedWhy:{en:"They are kept here so nothing is lost. Show this to your manager.",hi:"ये यहीं रखी हैं ताकि कुछ खोए नहीं। मैनेजर को दिखाएं।",mr:"या इथेच ठेवल्या आहेत जेणेकरून काही हरवणार नाही. मॅनेजरला दाखवा.",kn:"ಏನೂ ಕಳೆದುಹೋಗದಂತೆ ಇಲ್ಲಿ ಇಡಲಾಗಿದೆ. ಮ್ಯಾನೇಜರ್‌ಗೆ ತೋರಿಸಿ.",te:"ఏమీ పోకుండా ఇక్కడ ఉంచబడ్డాయి. మేనేజర్‌కు చూపండి."},
+  starting:{en:"Starting…",hi:"शुरू हो रहा है…",mr:"सुरू होत आहे…",kn:"ಪ್ರಾರಂಭವಾಗುತ್ತಿದೆ…",te:"ప్రారంభమవుతోంది…"},
   profile:{en:"Profile",hi:"प्रोफ़ाइल",mr:"प्रोफाइल",kn:"ಪ್ರೊಫೈಲ್",te:"ప్రొఫైల్"},
   employeeCode:{en:"Code",hi:"कोड",mr:"कोड",kn:"ಕೋಡ್",te:"కోడ్"},
   gate:{en:"Gate",hi:"गेट",mr:"गेट",kn:"ಗೇಟ್",te:"గేట్"},
