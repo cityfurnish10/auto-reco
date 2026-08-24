@@ -89,7 +89,18 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    // Diagnostic, and deliberately booleans and a name -- never the secret.
+    // Whether the bypass applies depends on two things Vercel controls and the
+    // app cannot see from outside: which environment this deployment thinks it
+    // is, and whether the secret was injected at all (it is only attached to
+    // deployments created AFTER Protection Bypass is switched on). Reporting
+    // both turns "the link is short" into an answerable question.
     protectionBypass: !!bypass,
+    diagnostics: {
+      vercelEnv: process.env.VERCEL_ENV ?? "(not set)",
+      secretPresent: !!process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
+      systemVarsExposed: !!process.env.VERCEL_URL,
+    },
     deviceRowId: data.id,
     deviceId: data.device_id,
     // SHOWN ONCE.

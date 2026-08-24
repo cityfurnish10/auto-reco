@@ -539,6 +539,7 @@ function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
 
 function Devices({ user }: { user: SessionUser }) {
   const [pairing, setPairing] = useState<{ url: string; label: string } | null>(null);
+  const [diag, setDiag] = useState<Record<string, unknown> | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [label, setLabel] = useState("Gate phone");
@@ -580,6 +581,7 @@ function Devices({ user }: { user: SessionUser }) {
             // than one that fails loudly — there is nothing to act on.
             if (!r.ok) { setErr(j.error ?? `Could not enrol the phone (HTTP ${r.status})`); return; }
             setPairing({ url: j.pairingUrl, label: j.deviceId });
+            setDiag(j.protectionBypass ? null : (j.diagnostics ?? null));
           } catch (e) {
             setErr(e instanceof Error ? e.message : "Could not reach the server.");
           } finally { setBusy(false); }
@@ -597,6 +599,16 @@ function Devices({ user }: { user: SessionUser }) {
             This link appears only once. If you lose it, revoke the device and enrol again.
           </p>
           <code className="block p-3 bg-surface-elevated rounded-control text-xs break-all">{pairing.url}</code>
+          {/* Only when the link came out WITHOUT a bypass on a protected
+              preview — otherwise the phone silently cannot reach the app. */}
+          {diag && (
+            <div className="text-xs text-text-muted border border-border rounded-control p-3 space-y-1">
+              <b className="text-text-secondary">No protection bypass on this link.</b>
+              <div>Environment: <code>{String(diag.vercelEnv)}</code></div>
+              <div>Bypass secret injected: <code>{String(diag.secretPresent)}</code></div>
+              <div>System variables exposed: <code>{String(diag.systemVarsExposed)}</code></div>
+            </div>
+          )}
           <button className="btn btn-secondary"
             onClick={() => navigator.clipboard?.writeText(pairing.url)}>Copy link</button>
         </div>
