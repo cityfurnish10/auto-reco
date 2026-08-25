@@ -35,6 +35,7 @@ function stubDb(opts: { existingTrips?: Record<string, string> } = {}) {
   const perTripBarcodes = new Set<string>();
   const updates: Record<string, unknown>[] = [];
   const voidUpdates: Record<string, unknown>[] = [];
+  const rejections: Record<string, unknown>[] = [];
   let n = 0;
 
   const dup = { error: { code: "23505", message: "duplicate key" }, data: null };
@@ -82,6 +83,16 @@ function stubDb(opts: { existingTrips?: Record<string, string> } = {}) {
           },
         };
       }
+      // The refusal log (0033). Captured so a test can assert that a rejection
+      // was WRITTEN DOWN rather than merely handed back to the phone.
+      if (table === "gate_sync_rejections") {
+        return {
+          insert: async (r: Record<string, unknown>[]) => {
+            rejections.push(...r);
+            return { error: null };
+          },
+        };
+      }
       // gate_scans
       return {
         update(u: Record<string, unknown>) {
@@ -120,7 +131,7 @@ function stubDb(opts: { existingTrips?: Record<string, string> } = {}) {
       };
     },
   };
-  return { db: db as never, scanRows, tripRows, updates, voidUpdates };
+  return { db: db as never, scanRows, tripRows, updates, voidUpdates, rejections };
 }
 
 describe("applyBatch — replay safety", () => {
@@ -446,5 +457,56 @@ describe("applyBatch — recording what the completeness check found", () => {
     const close = updates.find((u) => u.status === "closed")!;
     expect(close.expected_checked_at).toBeUndefined();
     expect(close.expected_total).toBeUndefined();
+  });
+});
+
+// ── Refusals are written down ────────────────────────────────────────────
+// A guard added manual items, they never appeared, and the only record of why
+// lived in IndexedDB on a phone at a gate. Returning the reason to the device
+// is correct and is also a dead end: nobody else can open that device.
+
+describe("applyBatch — a refusal is answerable by somebody else", () => {
+  it("logs the reason, the guard and enough to recognise the item", async () => {
+    const { db, rejections } = stubDb();
+    await applyBatch(db, WHO, { trips: [trip()] });
+    // A manual entry with no photograph — the commonest real refusal.
+    await applyBatch(db, WHO, {
+      scans: [scan({ clientScanId: "cs-9", entryMethod: "manual", barcode: null,
+                     serialNo: "SP-1", itemKind: "spare_part", hasPhoto: false })],
+    });
+
+    expect(rejections).toHaveLength(1);
+    expect(rejections[0]).toMatchObject({
+      client_id: "cs-9", kind: "scan", city: "DELHI", guard_id: "guard-1",
+    });
+    expect(String(rejections[0].reason)).toMatch(/photo/i);
+    // Enough to identify the item, never a shadow copy of a row we declined
+    // to store.
+    expect(rejections[0].summary).toMatchObject({
+      serialNo: "SP-1", itemKind: "spare_part", entryMethod: "manual", hasPhoto: false,
+    });
+  });
+
+  it("says nothing when everything was accepted", async () => {
+    const { db, rejections } = stubDb();
+    await applyBatch(db, WHO, { trips: [trip()], scans: [scan()] });
+    expect(rejections).toEqual([]);
+  });
+
+  it("never fails the batch when the log itself is unwritable", async () => {
+    // The movements are the point; this is the note. A problem writing the note
+    // must not lose a movement that was already accepted.
+    const { db, scanRows } = stubDb();
+    const inner = db as unknown as { from: (x: string) => unknown };
+    const broken = {
+      from(t: string) {
+        if (t === "gate_sync_rejections") throw new Error("table missing");
+        return inner.from(t);
+      },
+    } as never;
+    await applyBatch(broken, WHO, { trips: [trip()] });
+    const r = await applyBatch(broken, WHO, { scans: [scan()] });
+    expect(r.scans[0].status).toBe("stored");
+    expect(scanRows).toHaveLength(1);
   });
 });

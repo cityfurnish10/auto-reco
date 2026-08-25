@@ -48,6 +48,11 @@ const ALLOWED: { file: string; snippet: string; why: string }[] = [
     why: "LABEL, and correct: a retracted gate scan's raw QR payload, shown so a manager can identify what was taken back.",
   },
   {
+    file: "app/(dashboard)/gate/gate-client.tsx",
+    snippet: "label: it.barcode ?? it.serialNo",
+    why: "LABEL, and correct: naming the item in the photo viewer's title with the raw payload the scanner read.",
+  },
+  {
     file: "app/api/gate/history/route.ts",
     snippet: "barcode: (r.barcode as string)",
     why: "Same, for the guard's own history: the raw payload, unfolded, straight through.",

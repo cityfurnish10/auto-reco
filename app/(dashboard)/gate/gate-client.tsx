@@ -289,6 +289,7 @@ function Activity({ user }: { user: SessionUser }) {
 
 /** Everything about one trip, including the items the table only counts. */
 function TripModal({ trip, onClose }: { trip: Trip | null; onClose: () => void }) {
+  const [photo, setPhoto] = useState<{ scanId: string; label: string } | null>(null);
   if (!trip) return null;
   return (
     <Modal open onClose={onClose}
@@ -388,7 +389,16 @@ function TripModal({ trip, onClose }: { trip: Trip | null; onClose: () => void }
                     </span>
                     {it.override && <span className="badge badge-high ml-1" title={it.override}>override</span>}
                     {it.awaitingBarcode && <span className="badge badge-medium ml-1">no barcode</span>}
-                    {it.hasPhoto && <Icon name="camera" size={13} className="inline ml-1 text-text-muted" />}
+                    {/* The photo is the ONLY evidence a manual entry or an
+                        override carries. This drew a camera icon and offered
+                        no way to open it, which is the same as not having
+                        taken one. */}
+                    {it.hasPhoto && (
+                      <button className="btn-icon ml-1 align-middle" title="View photo"
+                              onClick={() => setPhoto({ scanId: it.id, label: it.barcode ?? it.serialNo ?? "item" })}>
+                        <Icon name="camera" size={14} />
+                      </button>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-text-secondary whitespace-nowrap">{clock(it.scannedAt)}</td>
                 </tr>
@@ -396,6 +406,58 @@ function TripModal({ trip, onClose }: { trip: Trip | null; onClose: () => void }
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Keyed by the scan, so opening a second photo MOUNTS a second viewer
+          rather than resetting the first one's state from inside an effect. */}
+      <PhotoViewer key={photo?.scanId ?? "none"} photo={photo} onClose={() => setPhoto(null)} />
+    </Modal>
+  );
+}
+
+/**
+ * One evidence photograph, fetched only when somebody asks to see it.
+ *
+ * NOT SIGNED WITH THE LIST. A day carries hundreds of rows and a manager opens
+ * two of them; signing every photo up front would be hundreds of storage round
+ * trips to render a table. The list says only whether a photo exists.
+ *
+ * It also distinguishes the two ways this can come back empty, because they
+ * mean completely different things: a row with no photograph is normal, and a
+ * row whose photograph is recorded but missing from storage is a hole in the
+ * evidence somebody should know about.
+ */
+function PhotoViewer({ photo, onClose }: {
+  photo: { scanId: string; label: string } | null; onClose: () => void;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!photo) return;
+    let alive = true;
+    fetch(`/api/gate/photo?scanId=${encodeURIComponent(photo.scanId)}`, { credentials: "same-origin" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (!alive) return;
+        if (j.url) setUrl(j.url);
+        else setProblem(j.reason ?? j.error ?? "The photo could not be loaded.");
+      })
+      .catch(() => { if (alive) setProblem("Could not reach the server."); });
+    return () => { alive = false; };
+  }, [photo]);
+
+  if (!photo) return null;
+  return (
+    <Modal open onClose={onClose} title="Photo" subtitle={photo.label}
+           size="md" level="stacked">
+      {problem ? (
+        <p className="text-sm text-text-muted">{problem}</p>
+      ) : url ? (
+        /* eslint-disable-next-line @next/next/no-img-element -- a short-lived signed storage URL; next/image cannot optimise what it cannot refetch */
+        <img src={url} alt={photo.label} className="w-full rounded-control border border-border" />
+      ) : (
+        <p className="text-sm text-text-muted">Loading…</p>
       )}
     </Modal>
   );

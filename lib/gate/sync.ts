@@ -136,6 +136,55 @@ const bad = (clientId: string, reason: string): ItemOutcome =>
   ({ clientId, status: "rejected", reason });
 
 /**
+ * Write a refusal down where somebody other than the guard can read it.
+ *
+ * Every rejection already travels back to the phone, which marks it and keeps
+ * it. That is right, and it is also a dead end: the only record of WHY three
+ * manual items never arrived lived in browser storage on a handset at a gate.
+ * A supervisor asking the question had nowhere to look.
+ *
+ * Best-effort by design. A logging failure must never turn a partially-accepted
+ * batch into a rejected one — the movements are the point, this is the note.
+ */
+async function logRejections(
+  admin: SupabaseClient,
+  who: GateIdentity,
+  kind: "trip" | "scan" | "void" | "shift" | "face",
+  outcomes: ItemOutcome[],
+  summarise: (clientId: string) => Record<string, unknown> | undefined,
+  businessDate: string | null
+): Promise<void> {
+  const rows = outcomes
+    .filter((o): o is Extract<ItemOutcome, { status: "rejected" }> => o.status === "rejected")
+    .map((o) => ({
+      client_id: o.clientId,
+      kind,
+      city: who.city,
+      site_code: who.siteCode,
+      guard_id: who.guardId,
+      device_id: who.deviceRowId,
+      reason: o.reason,
+      summary: summarise(o.clientId) ?? null,
+      business_date: businessDate,
+      rejected_at: new Date().toISOString(),
+    }));
+  if (!rows.length) return;
+
+  // A plain insert. A phone retries, so the same refusal arrives repeatedly —
+  // a BEFORE INSERT trigger (0033) turns a repeat into an attempts++ on the row
+  // it repeats, because PostgREST cannot express that conflict clause and
+  // read-then-write from a serverless function races every other phone.
+  //
+  // try/catch rather than a rejection handler: against a client that does not
+  // know this table, the call throws SYNCHRONOUSLY, which no `.then` can catch.
+  // This is a note ABOUT failures and must never become one — the movements in
+  // this batch are already stored.
+  try {
+    await admin.from("gate_sync_rejections").insert(rows);
+  } catch { /* logging is never worth a batch */ }
+}
+
+/**
  * Should this clean outward scan be photographed?
  *
  * Decided SERVER-SIDE, never by the phone. If the device chose, a guard wanting
@@ -515,6 +564,42 @@ export async function applyBatch(
       ...(selfiePath ? { photoUploadPath: selfiePath } : {}),
     });
   }
+
+  // ── 5. Write down anything we refused ────────────────────────────────────
+  // LAST, and never allowed to fail the batch. The movements that were
+  // accepted are already stored; this is the note that makes the refusals
+  // answerable by somebody who is not holding the phone.
+  //
+  // The business date is taken from whatever the batch carried rather than
+  // recomputed — a row refused BECAUSE its timestamp was unreadable has no
+  // date, and inventing one would file it under a day it has nothing to do
+  // with.
+  const anyDate = resolveBusinessDate(
+    batch.scans?.[0]?.scannedAt ?? batch.trips?.[0]?.openedAt ?? now.toISOString(), now
+  )?.businessDate ?? null;
+
+  const scanById = new Map((batch.scans ?? []).map((x) => [x.clientScanId, x]));
+  const tripById = new Map((batch.trips ?? []).map((x) => [x.clientTripId, x]));
+
+  await Promise.all([
+    logRejections(admin, who, "scan", report.scans, (id) => {
+      const x = scanById.get(id);
+      if (!x) return undefined;
+      // Enough to recognise the item, never the whole payload — we declined to
+      // store this row and should not keep a shadow copy of it either.
+      return { barcode: x.barcode ?? null, serialNo: x.serialNo ?? null,
+               itemKind: x.itemKind ?? "unit", entryMethod: x.entryMethod,
+               quantity: x.quantity ?? 1, hasPhoto: !!x.hasPhoto };
+    }, anyDate),
+    logRejections(admin, who, "trip", report.trips, (id) => {
+      const x = tripById.get(id);
+      return x ? { direction: x.direction, vehicleNo: x.vehicleNo,
+                   driverName: x.driverName ?? null } : undefined;
+    }, anyDate),
+    logRejections(admin, who, "void", report.voids, () => undefined, anyDate),
+    logRejections(admin, who, "shift", report.shifts, () => undefined, anyDate),
+    logRejections(admin, who, "face", report.faceChecks, () => undefined, anyDate),
+  ]);
 
   return report;
 }
