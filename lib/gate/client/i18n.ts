@@ -70,6 +70,23 @@ export const STRINGS: Record<string, Row> = {
   keepIt:{en:"Keep it",hi:"रहने दें",mr:"राहू द्या",kn:"ಇರಲಿ",te:"ఉంచండి"},
   removed:{en:"Removed",hi:"हटा दिया",mr:"काढले",kn:"ತೆಗೆಯಲಾಗಿದೆ",te:"తీసివేయబడింది"},
 
+  // ── Ending the day ────────────────────────────────────────────────────
+  // Reachable in one tap, because the only way to end a shift used to be a
+  // button labelled "switch guard" — so guards pocketed the phone instead and
+  // the attendance record never closed.
+  endShift:{en:"End my shift",hi:"शिफ्ट खत्म करें",mr:"शिफ्ट संपवा",kn:"ಪಾಳಿ ಮುಗಿಸಿ",te:"షిఫ్ట్ ముగించండి"},
+  endShiftQ:{en:"Finished for the day?",hi:"आज का काम खत्म?",mr:"आजचे काम संपले?",kn:"ಇಂದಿನ ಕೆಲಸ ಮುಗಿಯಿತೇ?",te:"ఈరోజు పని పూర్తయిందా?"},
+  endShiftWhy:{en:"Your attendance will be recorded as ending now.",hi:"आपकी हाज़िरी अभी बंद हो जाएगी।",mr:"तुमची हजेरी आता बंद होईल.",kn:"ನಿಮ್ಮ ಹಾಜರಾತಿ ಈಗ ಮುಗಿಯುತ್ತದೆ.",te:"మీ హాజరు ఇప్పుడు ముగుస్తుంది."},
+  tripStillOpen:{en:"A trip is still open",hi:"एक ट्रिप अभी खुली है",mr:"एक ट्रिप अजून सुरू आहे",kn:"ಒಂದು ಟ್ರಿಪ್ ಇನ್ನೂ ತೆರೆದಿದೆ",te:"ఒక ట్రిప్ ఇంకా తెరిచి ఉంది"},
+  tripStillOpenWhy:{en:"Close it first, or it will be marked unfinished.",hi:"पहले उसे बंद करें, वरना अधूरी मानी जाएगी।",mr:"आधी ती बंद करा, नाहीतर अपूर्ण मानली जाईल.",kn:"ಮೊದಲು ಅದನ್ನು ಮುಚ್ಚಿ, ಇಲ್ಲದಿದ್ದರೆ ಅಪೂರ್ಣವೆಂದು ಗುರುತಿಸಲಾಗುತ್ತದೆ.",te:"ముందు దాన్ని మూసివేయండి, లేకపోతే అసంపూర్ణంగా గుర్తించబడుతుంది."},
+
+  // ── A shift where nothing moved ───────────────────────────────────────
+  // The reconciler treats a gate with no scans as a source that FAILED, not as
+  // a quiet day — so a guard needs a way to say the difference out loud.
+  nothingMoved:{en:"Nothing moved this shift",hi:"इस शिफ्ट में कुछ नहीं आया-गया",mr:"या शिफ्टमध्ये काहीही आले-गेले नाही",kn:"ಈ ಪಾಳಿಯಲ್ಲಿ ಏನೂ ಬಂದಿಲ್ಲ-ಹೋಗಿಲ್ಲ",te:"ఈ షిఫ్ట్‌లో ఏమీ రాలేదు-వెళ్లలేదు"},
+  nothingMovedWhy:{en:"Tell us the gate was quiet, so an empty day is not mistaken for a broken phone.",hi:"बताएं कि गेट पर कोई हलचल नहीं थी, ताकि खाली दिन को खराब फोन न समझा जाए।",mr:"गेटवर काही हालचाल नव्हती हे कळवा, म्हणजे रिकामा दिवस बिघडलेला फोन समजला जाणार नाही.",kn:"ಗೇಟ್ ಶಾಂತವಾಗಿತ್ತು ಎಂದು ತಿಳಿಸಿ, ಖಾಲಿ ದಿನವನ್ನು ಕೆಟ್ಟ ಫೋನ್ ಎಂದು ತಪ್ಪಾಗಿ ಭಾವಿಸದಂತೆ.",te:"గేట్ నిశ్శబ్దంగా ఉందని చెప్పండి, ఖాళీ రోజును పాడైన ఫోన్‌గా పొరపాటుగా భావించకుండా."},
+  nothingMovedDone:{en:"Recorded — the gate was quiet",hi:"दर्ज हो गया — गेट शांत था",mr:"नोंदवले — गेट शांत होते",kn:"ದಾಖಲಾಗಿದೆ — ಗೇಟ್ ಶಾಂತವಾಗಿತ್ತು",te:"నమోదైంది — గేట్ నిశ్శబ్దంగా ఉంది"},
+
   // ── The completeness check at trip close ──────────────────────────────
   // Phrased as information, not accusation. The guard is usually not the
   // person who decided what went on the truck, and the commonest cause of a

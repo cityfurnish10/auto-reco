@@ -27,6 +27,24 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 
 export default function GateClient({ user }: { user: SessionUser }) {
   const [tab, setTab] = useState<Tab>("activity");
+  // How many face checks are waiting on somebody.
+  //
+  // WHY IT IS ON THE TAB. Seventeen were sitting unlooked-at, and the queue was
+  // working exactly as built — the page simply never said so. A review queue
+  // nobody opens is the same as no review at all, which is precisely the
+  // criticism the face check earned in the first place: a control that only
+  // records is not a control.
+  const [pending, setPending] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetch("/api/gate/reviews?state=pending&countOnly=1")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (alive && j) setPending(j.count ?? 0); })
+      .catch(() => {});
+    void load();
+    // Re-read when the reviews tab is left, so acting on one updates the badge.
+    return () => { alive = false; };
+  }, [tab]);
   return (
     <section className="p-container-margin space-y-6">
       <header>
@@ -43,6 +61,9 @@ export default function GateClient({ user }: { user: SessionUser }) {
               ? "px-4 py-1.5 text-sm font-medium rounded-control bg-surface-card shadow-card flex items-center gap-2"
               : "px-4 py-1.5 text-sm text-text-secondary rounded-control hover:bg-surface-card transition-colors duration-150 flex items-center gap-2"}>
             <Icon name={x.icon as never} size={16} />{x.label}
+            {x.id === "reviews" && pending !== null && pending > 0 && (
+              <span className="badge badge-high ml-1">{pending}</span>
+            )}
           </button>
         ))}
       </div>

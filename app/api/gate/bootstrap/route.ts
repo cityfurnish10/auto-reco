@@ -44,16 +44,32 @@ export async function GET(req: NextRequest) {
       .select("barcode,barcode_canon,direction,product,so_number,ticket_id,customer,picking_ref,delivery_address")
       .eq("city", device.city)
       .eq("business_date", businessDate),
+    // BOUNDED BY THE BUSINESS DAY, and ordered-then-limited rather than
+    // .maybeSingle() on its own. Both details were bugs:
+    //
+    //   unbounded   a trip left open yesterday was offered this morning as
+    //               "resume trip", on yesterday's truck. One was.
+    //   maybeSingle two matching rows make it an ERROR, and the error was read
+    //               as "no open shift" below — which sent the guard to check
+    //               in, creating a third. One guard reached seventeen.
+    //
+    // 0032 makes a second open shift impossible, but a read that cannot
+    // survive one is a read that will break again on the next thing nobody
+    // thought to constrain.
     who
       ? admin.from("gate_trips")
           .select("id,client_trip_id,direction,vehicle_no,opened_at")
-          .eq("guard_id", who.guardId).eq("status", "open").maybeSingle()
-      : Promise.resolve({ data: null }),
+          .eq("guard_id", who.guardId).eq("status", "open")
+          .eq("business_date", businessDate)
+          .order("opened_at", { ascending: false }).limit(1).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
     who
       ? admin.from("guard_shifts")
           .select("id,client_shift_id,checked_in_at")
-          .eq("guard_id", who.guardId).eq("status", "open").maybeSingle()
-      : Promise.resolve({ data: null }),
+          .eq("guard_id", who.guardId).eq("status", "open")
+          .eq("business_date", businessDate)
+          .order("checked_in_at", { ascending: false }).limit(1).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
   ]);
 
   const site = await loadSite(admin, device.city);
@@ -78,8 +94,13 @@ export async function GET(req: NextRequest) {
     },
     // Resuming state. A phone that died mid-trip comes back to the same truck
     // rather than silently starting a second one.
+    // If either of these errors, SAY SO rather than reporting null. Null means
+    // "you have no open shift", and the app acts on that by starting a new one
+    // — which is precisely how seventeen of them accumulated while the real
+    // cause went unlogged.
     openTrip: openTrip.data ?? null,
     openShift: openShift.data ?? null,
+    resumeError: openTrip.error?.message ?? openShift.error?.message ?? null,
     expected: expected.data ?? [],
     expectedCount: expected.data?.length ?? 0,
   });

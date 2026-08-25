@@ -78,6 +78,10 @@ export default function GateApp() {
   // movement is the one destructive thing this app can do, so it never happens
   // on a single tap next to a live scanner that is firing every two seconds.
   const [confirmRemove, setConfirmRemove] = useState<ScanLine | null>(null);
+  // Ending a shift closes the attendance record, so it asks first — the same
+  // reasoning as removing an item, and for the same reason: it is the other
+  // thing in this app a stray tap should not be able to do.
+  const [confirmEndShift, setConfirmEndShift] = useState(false);
   // Which screen the manual-entry form should return to. It used to always go
   // back to the scanner, which was fine while that was the only way in. The
   // close screen is now the second, and it is the one that matters most: the
@@ -865,7 +869,7 @@ export default function GateApp() {
   }
 
   /* ── attendance ────────────────────────────────────────────────────── */
-  async function checkOut() {
+  async function checkOut(quiet = false) {
     if (!shiftId) return;
     const pos = await position();
     // Same client id as the check-in, so the server updates that shift rather
@@ -880,15 +884,36 @@ export default function GateApp() {
         status: "closed",
         outLat: pos?.coords.latitude ?? null,
         outLng: pos?.coords.longitude ?? null,
+        // The guard's assertion that the gate was quiet. The server checks it
+        // against their own scans before believing it — this is a claim, not a
+        // fact, and it is the one claim that could invent a confident zero.
+        nothingMoved: quiet,
       },
     });
     await refreshQueue(); void sync();
   }
 
-  async function handOver() {
+  /**
+   * The guard is finished for the day.
+   *
+   * Separate from handOver, which is the same machinery under a different
+   * intention — and the intention is why this exists. Ending a shift was only
+   * reachable through a button labelled "switch guard", so a guard finishing
+   * their day put the phone in their pocket and the shift stayed open forever.
+   * One guard accumulated seventeen. A nightly sweep now closes them, but a
+   * swept shift proves attendance and never hours, so the honest record still
+   * depends on somebody being able to say "I am going home" in one tap.
+   */
+  async function endShift(quiet = false) {
+    if (!shiftId) { setScreen("who"); return; }
+    setConfirmEndShift(false);
+    await handOver(quiet);
+  }
+
+  async function handOver(quiet = false) {
     // End the shift properly before the next guard signs in. Without this the
     // attendance record never closes and the previous guard shows as on duty.
-    await checkOut();
+    await checkOut(quiet);
     clearGuardId(); setMe(null); setShiftId(null); setShiftAt(null);
     setTrips(0); setItemsToday(0);
     setScreen("who");
@@ -1074,7 +1099,10 @@ export default function GateApp() {
             </div>
           </div>
           <div className="gfoot">
-            <button className="gbtn ghost" onClick={handOver}>{t("switchGuard")}</button>
+            <button className="gbtn ghost narrow" onClick={() => void handOver()}>{t("switchGuard")}</button>
+            <button className="gbtn warn" onClick={() => setConfirmEndShift(true)}>
+              <Icon name="logout" size={17} />{t("endShift")}
+            </button>
           </div>
         </>
       )}
@@ -1677,6 +1705,40 @@ export default function GateApp() {
           </div>
         </>
       )}
+      {confirmEndShift && (
+        <div className="gsheet" role="dialog" aria-modal="true">
+          <div className="gsheetbox">
+            <h3>{t("endShiftQ")}</h3>
+            <p>{t("endShiftWhy")}</p>
+            {tripId && (
+              <div className="gcard warn col">
+                <h3><Icon name="warning" size={17} /> {t("tripStillOpen")}</h3>
+                <p>{t("tripStillOpenWhy")}</p>
+              </div>
+            )}
+            {/* Offered ONLY on a shift that recorded nothing. On any other
+                shift it is a contradiction, and an option that cannot be true
+                is an option somebody eventually taps by mistake. */}
+            {trips === 0 && lines.length === 0 && !tripId && (
+              <button className="gbtn ghost gquiet" onClick={() => void endShift(true)}>
+                <Icon name="check" size={17} />{t("nothingMoved")}
+              </button>
+            )}
+            {trips === 0 && lines.length === 0 && !tripId && (
+              <p className="gnote">{t("nothingMovedWhy")}</p>
+            )}
+            <div className="grow2">
+              <button className="gbtn ghost" onClick={() => setConfirmEndShift(false)}>
+                {t("cancel")}
+              </button>
+              <button className="gbtn warn" onClick={() => void endShift()}>
+                {t("endShift")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Confirming a removal ─────────────────────────────────────────
           Above every screen, because both the scanning feed and the close
           screen open it. It names the item being removed rather than asking

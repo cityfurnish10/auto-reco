@@ -31,6 +31,18 @@ export async function GET(req: NextRequest) {
   const guardId = req.nextUrl.searchParams.get("guardId");
   const date = req.nextUrl.searchParams.get("date");
 
+  // A count without the rows or the signed photo URLs. The tab badge asks on
+  // every page load and does not need 100 records and 100 storage signatures
+  // to render one number.
+  if (req.nextUrl.searchParams.get("countOnly")) {
+    let cq = admin.from("guard_face_checks").select("id", { count: "exact", head: true });
+    if (state !== "all") cq = cq.eq("review_state", state);
+    if (me.role === "manager") cq = cq.eq("city", me.city ?? "");
+    const { count, error: cErr } = await cq;
+    if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 });
+    return NextResponse.json({ count: count ?? 0 });
+  }
+
   let q = admin
     .from("guard_face_checks")
     .select("id,guard_id,city,trigger,captured_at,selfie_path,match_score,verdict,review_state,geo_ok,app_users!guard_id!inner(name)")

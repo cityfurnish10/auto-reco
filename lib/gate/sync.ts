@@ -95,6 +95,9 @@ export interface InVoid {
 
 export interface InShift {
   clientShiftId: string;
+  /** The guard asserts the gate was quiet. Refused below if their scans say
+   *  otherwise — a confident zero has to be earned, not merely claimed. */
+  nothingMoved?: boolean;
   checkedInAt: string;
   checkedOutAt?: string | null;
   status?: "open" | "closed";
@@ -428,6 +431,7 @@ export async function applyBatch(
       out_lat: sh.outLat ?? null, out_lng: sh.outLng ?? null,
       out_geo_ok: geoOk(site, sh.outLat, sh.outLng),
       status: sh.status ?? "open",
+      nothing_moved: false,   // never trusted on insert; settled at close below
     };
     const ins = await admin.from("guard_shifts").insert(row).select("id").maybeSingle();
     if (ins.error) {
@@ -439,10 +443,27 @@ export async function applyBatch(
           // Check-out reaching us in a later batch than check-in is the normal
           // shape of a shift, not a duplicate.
           if (sh.checkedOutAt) {
+            // "Nothing moved" is settled HERE, at close, and only after
+            // checking. A phone claiming a quiet day on a shift that recorded
+            // movements would turn a busy day into a confident zero in the
+            // reconciliation — the single most damaging thing this flag could
+            // do. Postgres cannot express the rule as a CHECK (it spans two
+            // tables), so it is enforced here and read defensively again by
+            // the connector.
+            let quiet = false;
+            if (sh.nothingMoved) {
+              const { count } = await admin.from("gate_scans")
+                .select("id", { count: "exact", head: true })
+                .eq("guard_id", who.guardId)
+                .eq("business_date", d.businessDate)
+                .eq("status", "recorded");
+              quiet = (count ?? 0) === 0;
+            }
             await admin.from("guard_shifts")
               .update({ status: "closed", checked_out_at: sh.checkedOutAt,
                         out_lat: sh.outLat ?? null, out_lng: sh.outLng ?? null,
-                        out_geo_ok: geoOk(site, sh.outLat, sh.outLng) })
+                        out_geo_ok: geoOk(site, sh.outLat, sh.outLng),
+                        nothing_moved: quiet })
               .eq("id", data.id).eq("status", "open");
           }
         }

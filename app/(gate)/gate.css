@@ -388,3 +388,8 @@
 .gmissrow .gsub { font-size:12.5px; }
 .gwarnfg { color:var(--warn); }
 .gokfg { color:var(--ok); }
+
+/* The quiet-day affirmation. Full width and above the two ordinary buttons,
+ * because on a shift where nothing happened it is the MAIN action — the
+ * reconciler cannot otherwise tell an empty gate from a dead phone. */
+.gquiet { width:100%; margin-bottom:10px; }

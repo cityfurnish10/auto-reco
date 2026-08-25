@@ -80,15 +80,44 @@ export const guardConnector: Connector = {
         });
       }
 
-      // A city on the app that produced nothing is a gate that did not report —
-      // an unmanned shift, a phone that never synced. Saying so demotes the
-      // source for that city instead of letting silence read as "nothing moved",
+      // A city on the app that produced nothing is USUALLY a gate that did not
+      // report — an unmanned shift, a phone that never synced — and saying so
+      // demotes the source rather than letting silence read as "nothing moved",
       // which is what turns an outage into a flood of false absences.
-      for (const c of appCities) {
-        if (!rows.some((r) => r.city === c)) {
-          ctx?.warn(`${c}: no gate scans for ${runDate}`);
-          ctx?.incomplete(c);
+      //
+      // But a genuinely quiet gate looks identical, and used to be recorded as
+      // a failure. A guard can now assert it, and that assertion is what
+      // separates the two.
+      //
+      // BOTH conditions are required: the flag AND no scans. The flag is
+      // already refused at sync time when the guard's own scans contradict it,
+      // so this is the second of two independent checks — a confident zero is
+      // the one verdict here that can invent stock, and it should take more
+      // than one mistake to produce.
+      const quietCities = new Set<City>();
+      if (appCities.size > 0) {
+        const { data: quiet } = await db
+          .from("guard_shifts")
+          .select("city")
+          .eq("business_date", runDate)
+          .eq("nothing_moved", true)
+          .in("city", [...appCities]);
+        for (const q of (quiet ?? []) as { city: string }[]) {
+          quietCities.add(q.city as City);
         }
+      }
+
+      for (const c of appCities) {
+        if (rows.some((r) => r.city === c)) continue;
+        if (quietCities.has(c)) {
+          // A real zero, asserted by somebody who was there. The source stays
+          // trusted, and the ladder reads an empty gate as "nothing moved"
+          // rather than "the gate is down".
+          ctx?.warn(`${c}: gate reported a quiet day for ${runDate}`);
+          continue;
+        }
+        ctx?.warn(`${c}: no gate scans for ${runDate}`);
+        ctx?.incomplete(c);
       }
     }
 
