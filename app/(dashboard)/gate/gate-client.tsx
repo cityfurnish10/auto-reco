@@ -63,16 +63,31 @@ interface TripItem {
   override: string | null; exception: string | null; awaitingBarcode: boolean;
   geoOk: boolean | null; hasPhoto: boolean; scannedAt: string;
 }
+/** What the completeness check found when the trip closed. Null when the trip
+ *  predates the check, or closed with no list to check against — which is a
+ *  different thing from "nothing was missing" and must stay distinguishable. */
+interface TripCompleteness {
+  total: number; scanned: number; missing: string[];
+  unplanned: number;
+  /** Was the guard actually shown this? False through the silent period. */
+  warned: boolean;
+}
+/** A scan the guard took back. Never counted as movement; always visible. */
+interface RemovedItem { barcode: string | null; reason: string | null; at: string }
+
 interface Trip {
   id: string; direction: string; vehicleNo: string; driverName: string | null;
   carrierRef: string | null; city: string; siteCode: string;
   openedAt: string; closedAt: string | null; status: string; durationSec: number | null;
   guardName: string; itemCount: number; overrides: number; manual: number; items: TripItem[];
+  removed: RemovedItem[];
+  completeness: TripCompleteness | null;
 }
 interface ActivityData {
   businessDate: string;
   totals: { trips: number; items: number; scanned: number; manual: number;
-            overrides: number; awaitingBarcode: number; scannedShare: number | null };
+            overrides: number; awaitingBarcode: number; scannedShare: number | null;
+            removed: number; tripsShort: number; tripsChecked: number };
   guards: { id: string; name: string }[];
   trips: Trip[];
 }
@@ -159,6 +174,20 @@ function Activity({ user }: { user: SessionUser }) {
                   tone={d.totals.overrides > 0 ? "warn" : "ok"} />
           </div>
 
+          {/* The pilot's real question, and the reason the warning is still
+              silent: how often would it have fired? Shown as a share of trips
+              CHECKED rather than of all trips — a trip that closed with no list
+              to check against was not a false alarm, it was not an alarm. */}
+          {d.totals.tripsChecked > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Stat label="Checked against plan" value={`${d.totals.tripsChecked}/${d.totals.trips}`} />
+              <Stat label="Left short" value={d.totals.tripsShort}
+                    tone={d.totals.tripsShort > 0 ? "warn" : "ok"} />
+              <Stat label="Items removed" value={d.totals.removed}
+                    tone={d.totals.removed > 0 ? "warn" : "ok"} />
+            </div>
+          )}
+
           {d.totals.awaitingBarcode > 0 && (
             <div className="card p-4 border border-warning/30 text-sm">
               <b>{d.totals.awaitingBarcode}</b> item{d.totals.awaitingBarcode === 1 ? "" : "s"} awaiting a barcode.
@@ -190,6 +219,17 @@ function Activity({ user }: { user: SessionUser }) {
                       <td className="px-4 py-2.5 tabular-nums">
                         {tr.itemCount}
                         {tr.overrides > 0 && <span className="badge badge-high ml-2">{tr.overrides} override</span>}
+                        {/* Two different problems, and a manager scanning this
+                            column needs to tell them apart at a glance: the
+                            truck left short, versus the guard took items back. */}
+                        {tr.completeness && tr.completeness.missing.length > 0 && (
+                          <span className="badge badge-high ml-2">
+                            {tr.completeness.missing.length} short
+                          </span>
+                        )}
+                        {tr.removed.length > 0 && (
+                          <span className="badge badge-medium ml-2">{tr.removed.length} removed</span>
+                        )}
                       </td>
                       <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{clock(tr.openedAt)}</td>
                       <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap tabular-nums">{took(tr.durationSec)}</td>
@@ -225,7 +265,65 @@ function TripModal({ trip, onClose }: { trip: Trip | null; onClose: () => void }
         <Row k="Closed" v={trip.closedAt ? clock(trip.closedAt) : "still open"} mono />
         <Row k="Took" v={took(trip.durationSec)} mono />
         <Row k="Items" v={`${trip.itemCount}${trip.manual ? ` · ${trip.manual} typed` : ""}`} />
+        {trip.completeness && (
+          <Row k="Against the plan"
+               v={`${trip.completeness.scanned} of ${trip.completeness.total}`} />
+        )}
       </div>
+
+      {/* ── What the plan expected and the truck did not carry ───────────
+          The barcodes, not a count. A number tells a manager something went
+          wrong; the list tells them which pallet to go and look at, which is
+          the only version anybody can act on the next morning. */}
+      {trip.completeness && trip.completeness.missing.length > 0 && (
+        <div className="card p-4 mb-5 border border-warning/30">
+          <div className="flex items-center gap-2 mb-2">
+            <Icon name="warning" size={17} />
+            <b>{trip.completeness.missing.length} planned item
+              {trip.completeness.missing.length === 1 ? "" : "s"} not scanned</b>
+            {/* Silent through the pilot. A gap the guard never saw is evidence
+                about the DATA; one they saw and closed anyway is evidence about
+                the process, and the two must not be read as the same thing. */}
+            <span className={`badge ${trip.completeness.warned ? "badge-medium" : "badge-info"} ml-auto`}>
+              {trip.completeness.warned ? "guard was warned" : "recorded silently"}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {trip.completeness.missing.map((b) => (
+              <span key={b} className="font-mono text-xs px-2 py-1 rounded bg-surface-elevated">{b}</span>
+            ))}
+          </div>
+          {trip.completeness.unplanned > 0 && (
+            <p className="text-xs text-text-muted mt-3">
+              {trip.completeness.unplanned} scanned item
+              {trip.completeness.unplanned === 1 ? "" : "s"} matched no planned line.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ── Items the guard took back ────────────────────────────────────
+          Kept out of every count above, because a voided row must never
+          inflate what moved — that is the whole reason it was voided. Shown
+          anyway: a trip with six retractions is a trip worth asking about, and
+          hidden entirely there was no way to notice. */}
+      {trip.removed.length > 0 && (
+        <div className="card p-4 mb-5 border border-border">
+          <div className="flex items-center gap-2 mb-2">
+            <Icon name="delete" size={16} />
+            <b>{trip.removed.length} item{trip.removed.length === 1 ? "" : "s"} removed by the guard</b>
+          </div>
+          <div className="space-y-1">
+            {trip.removed.map((r, i) => (
+              <div key={i} className="flex items-baseline gap-3 text-xs">
+                <span className="font-mono">{r.barcode ?? "—"}</span>
+                <span className="text-text-muted">{r.reason ?? ""}</span>
+                <span className="text-text-muted ml-auto tabular-nums">{clock(r.at)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {trip.items.length === 0 ? <Empty text="No items on this trip." /> : (
         <div className="overflow-x-auto border border-border rounded-control">

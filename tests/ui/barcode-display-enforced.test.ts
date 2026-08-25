@@ -43,6 +43,11 @@ const ALLOWED: { file: string; snippet: string; why: string }[] = [
     why: "Passing the raw scanned payload straight through to the Gate screen.",
   },
   {
+    file: "app/(dashboard)/gate/gate-client.tsx",
+    snippet: "{r.barcode ?? \"—\"}",
+    why: "LABEL, and correct: a retracted gate scan's raw QR payload, shown so a manager can identify what was taken back.",
+  },
+  {
     file: "app/api/gate/history/route.ts",
     snippet: "barcode: (r.barcode as string)",
     why: "Same, for the guard's own history: the raw payload, unfolded, straight through.",
