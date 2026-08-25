@@ -25,9 +25,11 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
+  // The browser chrome and the phone's status bar take the brand violet, so
+  // the app reads as Cityfurnish before a single pixel of it has rendered.
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fcf8fa" },
-    { media: "(prefers-color-scheme: dark)", color: "#14171a" },
+    { media: "(prefers-color-scheme: light)", color: "#4a36b3" },
+    { media: "(prefers-color-scheme: dark)", color: "#231a4d" },
   ],
 };
 

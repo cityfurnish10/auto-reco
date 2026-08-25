@@ -1,17 +1,24 @@
 import type { Metadata, Viewport } from "next";
-import { Hanken_Grotesk, Inter } from "next/font/google";
+import { Poppins, Sora } from "next/font/google";
 import "./globals.css";
 
-const hanken = Hanken_Grotesk({
+// THE ACTUAL CITYFURNISH TYPEFACES, read off cityfurnish.com rather than
+// chosen: Sora carries the headings there and Poppins the body. This project
+// had been running on Hanken Grotesk and Inter — perfectly good faces that
+// belonged to no brand in particular, which is most of why the two surfaces
+// looked like they came from different companies.
+const sora = Sora({
   subsets: ["latin"],
-  weight: ["400", "600", "700", "800", "900"],
-  variable: "--font-hanken",
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-sora",
+  display: "swap",
 });
 
-const inter = Inter({
+const poppins = Poppins({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
-  variable: "--font-inter",
+  variable: "--font-poppins",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -49,7 +56,7 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body className={`${hanken.variable} ${inter.variable} antialiased`}>
+      <body className={`${sora.variable} ${poppins.variable} antialiased`}>
         {children}
       </body>
     </html>

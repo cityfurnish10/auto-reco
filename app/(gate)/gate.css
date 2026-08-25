@@ -12,28 +12,43 @@
  */
 
 .gate {
-  --bg:#ffffff; --card:#ffffff; --card2:#f4f2f3;
-  --fg:#1c1b1d; --fg2:#5d5f5f; --fg3:#8b8a8f;
-  --rule:#e2dee0; --primary:#00000b; --on-primary:#fff;
-  --ok:#15703F; --okbg:#DFF1E7; --okfg:#0E5730;
-  --warn:#A44B0B; --warnbg:#FCEBDD; --warnfg:#7A3707;
-  --brandbg:#00000b; --brandfg:#ffffff; --brandrule:#00000b;
+  /* THE SAME BRAND AS THE DASHBOARD AND THE WEBSITE.
+     Each var() carries the literal as a fallback: these arrive via the ROOT
+     layout's globals.css, which is true today and is not a thing this file
+     should depend on silently — a change in import order would otherwise leave
+     a guard staring at an unstyled page at a gate. The raw values live in
+     globals.css (--cf-*); these names are the app's own vocabulary mapped onto
+     them, so a component still asks for "--warn" and never for a hex.
+     Previously this file carried its own near-black and its own greens, which
+     is how one product came to have two visual identities. */
+  --bg:var(--cf-g100,#f7f7f8); --card:#ffffff; --card2:var(--cf-g200,#ededee);
+  --fg:var(--cf-g800,#302f30); --fg2:#55555d; --fg3:var(--cf-g600,#71717a);
+  --rule:var(--cf-g300,#dddddf); --primary:var(--cf-violet,#4a36b3); --on-primary:#fff;
+  --ok:var(--cf-ok,#166634); --okbg:#d9f0e1; --okfg:#0f4a26;
+  --warn:var(--cf-warn,#7a5800); --warnbg:#f7edd3; --warnfg:#5c4200;
+  --brandbg:var(--cf-violet,#4a36b3); --brandfg:#ffffff; --brandrule:var(--cf-violet-dk,#3a27a0);
+  --sel:var(--cf-wash,#f0eaff);
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 
   position:fixed; inset:0; display:flex; flex-direction:column;
   background:var(--bg); color:var(--fg);
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans",sans-serif;
+  font-family:var(--font-poppins),-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans",sans-serif;
   font-size:16px; line-height:1.5; overscroll-behavior:none;
   -webkit-tap-highlight-color:transparent;
 }
 /* Night is a real working condition here, not a preference. */
+/* Night is a real working condition, not a preference — and the brand has to
+   survive it. The violet is lifted rather than dropped: #4a36b3 on a dark
+   ground measures about 2.4:1, which no guard could read, but the hue is what
+   makes the app recognisable so it is kept and brightened. */
 .gate.night {
-  --bg:#14171a; --card:#1e2227; --card2:#262b31;
+  --bg:#14161c; --card:#1c1f27; --card2:#252932;
   --fg:#ecebe9; --fg2:#a7adb2; --fg3:#7d848a;
-  --rule:#2d333a; --primary:#f2f0ee; --on-primary:#14171a;
+  --rule:#2f333d; --primary:#a99cf5; --on-primary:#14161c;
   --ok:#4CB57B; --okbg:#16301F; --okfg:#8FD9AE;
-  --warn:#E08A46; --warnbg:#332314; --warnfg:#F0B784;
-  --brandbg:#000006; --brandfg:#ecebe9; --brandrule:#2d333a;
+  --warn:#E0A846; --warnbg:#332714; --warnfg:#F0C784;
+  --brandbg:#231a4d; --brandfg:#ecebe9; --brandrule:#2f333d;
+  --sel:#2a2350;
 }
 .gate * { box-sizing:border-box; }
 .gate .mono { font-family:var(--mono); letter-spacing:.04em; }
@@ -76,7 +91,15 @@
 .gbtn { flex:1; min-height:58px; border-radius:14px; border:0; font-size:18px; font-weight:650;
   font-family:inherit; display:flex; align-items:center; justify-content:center; gap:8px; padding:0 16px; }
 .gbtn:active:not(:disabled) { transform:translateY(1px); }
-.gbtn:disabled { opacity:.4; }
+/* DISABLED IS A GREY STATE, NOT A FADED BRAND ONE.
+ *
+ * `opacity:.4` was fine against near-black. Against the brand violet it
+ * produced pale lavender carrying white text — a combination a guard cannot
+ * read in a lit warehouse, let alone in sun. A disabled control still has to
+ * say what it is; it just must not look pressable. */
+.gbtn:disabled { background:var(--card2); color:var(--fg3); opacity:1;
+  box-shadow:none; cursor:default; }
+.gbtn:disabled svg { opacity:.6; }
 .gbtn:focus-visible { outline:3px solid var(--ok); outline-offset:2px; }
 .gbtn.primary { background:var(--primary); color:var(--on-primary); }
 .gbtn.ghost { background:var(--card2); color:var(--fg); }

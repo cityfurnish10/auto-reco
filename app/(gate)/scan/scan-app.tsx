@@ -995,9 +995,17 @@ export default function GateApp() {
           it would eventually drift, and a brand mark that moves is worse than
           none. */}
       <div className="gbrand">
-        {/* eslint-disable-next-line @next/next/no-img-element -- a 26px mark;
-            next/image would add a loader and a layout pass for no benefit. */}
-        <img src="/apple-icon.png" alt="Cityfurnish" width={26} height={26} className="mark" />
+        {/* Drawn rather than fetched. The mark was a black PNG tile, which on
+            the brand violet read as a sticker somebody had stuck on the header
+            rather than as the header's own logo. Inline SVG also removes a
+            request from the critical path of an app that opens at a gate. */}
+        <svg className="mark" viewBox="0 0 512 512" role="img" aria-label="Cityfurnish"
+             width={26} height={26}>
+          <rect width="512" height="512" rx="112" fill="rgba(255,255,255,.16)" />
+          <text x="256" y="272" textAnchor="middle" dominantBaseline="central"
+                fontFamily="inherit" fontWeight="700" fontSize="270"
+                letterSpacing="-10" fill="currentColor">CF</text>
+        </svg>
         <span className="name">Gate Check</span>
         <span className="spacer" />
         {/* Who is signed in, always visible. On a shared phone the single most
