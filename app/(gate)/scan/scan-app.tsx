@@ -1219,7 +1219,7 @@ export default function GateApp() {
             <GeoCard t={t} boot={boot} />
           </div>
           <div className="gfoot">
-            <div style={{ flex: 1 }}>
+            <div className="gfootcol">
               {/* Two different refusals, and they must not read the same. No
                   photo is something the guard can fix in three seconds; a face
                   that is not theirs is not, and sending them round the retake
@@ -1305,7 +1305,7 @@ export default function GateApp() {
             <p className="gnote">{t("vehNote")}</p>
           </div>
           <div className="gfoot">
-            <div style={{ flex: 1 }}>
+            <div className="gfootcol">
               {tripMissing.length > 0 && (
                 <p className="gmiss">{t("needs")} {tripMissing.map((k) => t(k)).join(", ")}</p>
               )}

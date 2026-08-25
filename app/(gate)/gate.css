@@ -393,3 +393,19 @@
  * because on a shift where nothing happened it is the MAIN action — the
  * reconciler cannot otherwise tell an empty gate from a dead phone. */
 .gquiet { width:100%; margin-bottom:10px; }
+
+/* A footer column: a message above a full-width button.
+ *
+ * IT HAS TO BE A FLEX COLUMN, and the reason is a WebKit behaviour that does
+ * not show up in Chrome. `.gbtn` carries `flex:1`, which stretches it while it
+ * is a direct child of `.gfoot`. Wrapping it in a plain <div> to fit a message
+ * above it silently dropped that: a <button> does not fill a block parent in
+ * WebKit even with `display:flex`, so it shrank to fit-content and the label
+ * spilled out of the box.
+ *
+ * The result was a grey stub with "Check in" hanging off the side of it — on
+ * the two most important buttons in the app, on exactly the engine every guard
+ * runs, and invisible in the browser it was built in.
+ */
+.gfootcol { flex:1; display:flex; flex-direction:column; align-items:stretch; }
+.gfootcol .gbtn { width:100%; }
