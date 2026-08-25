@@ -67,7 +67,8 @@ export async function PATCH(req: NextRequest) {
   const me = await supervisor();
   if (!me) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
-  let body: { guardId?: string; descriptor?: number[]; status?: "active" | "inactive"; pin?: string };
+  let body: { guardId?: string; descriptor?: number[]; status?: "active" | "inactive";
+              pin?: string; referencePhotoFailed?: boolean };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: "invalid JSON body" }, { status: 400 }); }
   if (!body.guardId) return NextResponse.json({ error: "guardId is required" }, { status: 400 });
@@ -95,6 +96,12 @@ export async function PATCH(req: NextRequest) {
     update.reference_descriptor = body.descriptor;
     update.consent_at = new Date().toISOString();
   }
+  // The browser telling us its upload did not land. The profile row is written
+  // with reference_photo BEFORE the bytes are sent — the upload happens from
+  // the manager's browser, after this route has already answered — so without
+  // this the row claims a photograph that does not exist, and nothing
+  // downstream can tell the difference.
+  if (body.referencePhotoFailed) update.reference_photo = null;
   if (body.status) update.status = body.status;
   if (body.pin) {
     if (!/^\d{4,6}$/.test(body.pin)) {
@@ -107,11 +114,17 @@ export async function PATCH(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
   // A fresh upload link so the photo behind the descriptor can be replaced too.
+  const bucketProblems = await ensureBuckets(admin);
   const path = `reference/${body.guardId}.jpg`;
-  const { data: up } = await admin.storage.from(ATTENDANCE_BUCKET).createSignedUploadUrl(path);
+  const { data: up, error: upErr } = await admin.storage
+    .from(ATTENDANCE_BUCKET).createSignedUploadUrl(path);
   return NextResponse.json({
     ok: true,
     referencePhotoUpload: up ? { bucket: ATTENDANCE_BUCKET, path, token: up.token } : null,
+    // Handed back so a manager sees the REASON rather than a photo that
+    // quietly never appears.
+    photoProblem: up ? null
+      : [upErr?.message, ...bucketProblems].filter(Boolean).join("; ") || "storage refused an upload link",
   });
 }
 
@@ -210,13 +223,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: friendly }, { status: 400 });
   }
 
-  await ensureBuckets(admin);
+  const bucketProblems = await ensureBuckets(admin);
   const path = `reference/${user.id}.jpg`;
-  const { data: up } = await admin.storage
+  const { data: up, error: upErr } = await admin.storage
     .from(ATTENDANCE_BUCKET).createSignedUploadUrl(path);
-  // Recorded now so the on-device match has something to compare against; the
-  // photo is uploaded straight from the manager's browser.
-  await admin.from("guard_profiles").update({ reference_photo: path }).eq("id", prof.id);
+  // Recorded ONLY when there is a link to upload with. Setting it regardless
+  // made the row claim a photograph that the browser might never manage to
+  // send, and nothing downstream could tell the two apart.
+  if (up) {
+    await admin.from("guard_profiles").update({ reference_photo: path }).eq("id", prof.id);
+  }
 
   return NextResponse.json({
     ok: true,
@@ -224,5 +240,9 @@ export async function POST(req: NextRequest) {
     profileId: prof.id,
     name, city,
     referencePhotoUpload: up ? { bucket: ATTENDANCE_BUCKET, path, token: up.token } : null,
+    // Handed back so a manager sees the REASON rather than a photo that
+    // quietly never appears.
+    photoProblem: up ? null
+      : [upErr?.message, ...bucketProblems].filter(Boolean).join("; ") || "storage refused an upload link",
   });
 }

@@ -584,12 +584,36 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
       }
       if (!res.ok) { setErr(j.error ?? `Could not add the guard (HTTP ${res.status})`); return; }
       // The photo itself goes straight to storage, for human review only.
+      //
+      // THE FAILURE HERE USED TO BE SWALLOWED — `.catch(() => {})` — and the
+      // form then said "added" regardless. So a manager who watched the upload
+      // fail was told it had worked, and the guard's reference photo simply did
+      // not exist. Worse, the profile row already claimed one, so nothing
+      // downstream could tell the difference either.
       if (shot && j.referencePhotoUpload) {
         const { getSupabaseClient } = await import("@/lib/supabase/client");
-        await getSupabaseClient().storage
+        const { error: upErr } = await getSupabaseClient().storage
           .from(j.referencePhotoUpload.bucket)
-          .uploadToSignedUrl(j.referencePhotoUpload.path, j.referencePhotoUpload.token, shot.blob)
-          .catch(() => {});
+          .uploadToSignedUrl(j.referencePhotoUpload.path, j.referencePhotoUpload.token, shot.blob);
+        if (upErr) {
+          // The guard EXISTS by now — the account and PIN were created before
+          // this ran. Saying "could not add" would be a lie and would invite a
+          // second attempt that fails on a duplicate. So: they are added, the
+          // photo is not, and the photo can be attached again from the guard's
+          // own row.
+          await fetch("/api/gate/guards", {
+            method: "PATCH", headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ guardId: j.guardId, referencePhotoFailed: true }),
+          }).catch(() => {});
+          setErr(`${name} was added, but the photo did not upload (${upErr.message}). `
+                 + `Open their row and add it again.`);
+          return;
+        }
+      } else if (shot && !j.referencePhotoUpload) {
+        setErr(`${name} was added, but the photo could not be saved: `
+               + `${j.photoProblem ?? "storage refused an upload link"}.`);
+        return;
       }
       onDone(`${name} added.`);
     } catch (e) {

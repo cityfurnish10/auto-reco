@@ -15,10 +15,28 @@ export const EVIDENCE_BUCKET = "gate-evidence";
 export const ATTENDANCE_BUCKET = "gate-attendance";
 
 /** Idempotent — "already exists" is the normal answer after the first call. */
-export async function ensureBuckets(admin: SupabaseClient): Promise<void> {
+/**
+ * Make sure both buckets exist. Returns what went wrong, if anything.
+ *
+ * THE OLD VERSION SWALLOWED TWO DIFFERENT THINGS AND REPORTED NEITHER.
+ * `createBucket` resolves with `{ data, error }` rather than throwing, so the
+ * `.catch(() => {})` on it caught nothing at all — and the error inside the
+ * result was discarded by not being read. "Already exists" is the expected
+ * case and is fine to ignore; anything else means uploads are about to fail
+ * silently, which is exactly what happened to a guard's reference photo.
+ */
+export async function ensureBuckets(admin: SupabaseClient): Promise<string[]> {
+  const problems: string[] = [];
   for (const b of [EVIDENCE_BUCKET, ATTENDANCE_BUCKET]) {
-    await admin.storage.createBucket(b, { public: false }).catch(() => {});
+    try {
+      const { error } = await admin.storage.createBucket(b, { public: false });
+      // The bucket already being there is the normal path, not a problem.
+      if (error && !/exist/i.test(error.message)) problems.push(`${b}: ${error.message}`);
+    } catch (e) {
+      problems.push(`${b}: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
+  return problems;
 }
 
 export interface PhotoSlot { clientId: string; path: string; token?: string; error?: string }
