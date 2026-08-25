@@ -19,6 +19,12 @@
 // after the first load.
 
 import type * as FaceApi from "@vladmandic/face-api";
+// The rule about what counts as real model output lives in one place, because
+// the enrolment endpoint has to apply the same one — see lib/gate/descriptor.ts
+// for the 128-zeros failure it exists to catch.
+import { isRealDescriptor } from "../descriptor";
+
+export { isRealDescriptor };
 
 const MODEL_URL = "/models/face";
 
@@ -53,7 +59,11 @@ export async function describe(
     .detectSingleFace(input as HTMLCanvasElement, opts)
     .withFaceLandmarks()
     .withFaceDescriptor();
-  return found?.descriptor ?? null;
+  const d = found?.descriptor ?? null;
+  // A frame that had not arrived yet comes back as 128 zeros rather than as a
+  // failure. Reported as "no face", which is what it actually is, and which
+  // routes the guard to a retake instead of to a refusal.
+  return d && isRealDescriptor(d) ? d : null;
 }
 
 export type Verdict = "pass" | "review" | "fail" | "no_face";
@@ -96,6 +106,11 @@ export function compare(live: Float32Array | null, reference: Float32Array | nul
   // flag it for the manager to complete. This is also the state that made every
   // check-in score null while the enrolment was still half-finished.
   if (!reference || reference.length !== live.length) return { verdict: "review", score: null };
+  // A reference that is not real output — an enrolment that captured an empty
+  // frame — must never be compared. It sits ~1.4 from any genuine face, which
+  // would read as a confident mismatch and refuse a guard for a photograph
+  // that was never taken of them. Flag it for the manager instead.
+  if (!isRealDescriptor(reference)) return { verdict: "review", score: null };
 
   let sum = 0;
   for (let i = 0; i < live.length; i++) {

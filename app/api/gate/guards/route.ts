@@ -15,6 +15,7 @@ import { getCurrentAppUser } from "@/lib/db/current-user";
 import { hashPin } from "@/lib/gate/auth";
 import { ATTENDANCE_BUCKET, ensureBuckets, signPhotoRead } from "@/lib/gate/evidence";
 import { CITIES, type City } from "@/lib/sample-data";
+import { isRealDescriptor } from "@/lib/gate/descriptor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -81,6 +82,16 @@ export async function PATCH(req: NextRequest) {
 
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (Array.isArray(body.descriptor) && body.descriptor.length) {
+    // A vector of 128 zeros is what face-api hands back for a frame that never
+    // arrived, and it is indistinguishable from a real one by length alone.
+    // Stored, it becomes a reference no living face can match and the guard is
+    // refused every morning. Refused here, the manager simply retakes.
+    if (!isRealDescriptor(body.descriptor as number[])) {
+      return NextResponse.json(
+        { error: "That photo did not produce a usable face signature. Please retake it." },
+        { status: 400 }
+      );
+    }
     update.reference_descriptor = body.descriptor;
     update.consent_at = new Date().toISOString();
   }
@@ -175,7 +186,10 @@ export async function POST(req: NextRequest) {
       // Computed in the manager's browser from the photo they just took. Null
       // until then, which the roster reports as `enrolled: false` so a guard
       // with no signature is visible rather than silently unverifiable.
-      reference_descriptor: Array.isArray(body.descriptor) && body.descriptor.length
+      // Same rule as the update path above. NULL rather than a bad vector when
+      // it fails: the roster reports that as `enrolled: false`, so a guard with
+      // no signature is visible instead of silently unverifiable.
+      reference_descriptor: isRealDescriptor(body.descriptor as number[])
         ? body.descriptor : null,
       created_by: me.id,
     })

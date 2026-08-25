@@ -12,14 +12,30 @@
 // model itself gets wrong can ever lock a guard out.
 
 import { describe, expect, it } from "vitest";
-import { blocksEntry, compare, LIKELY_BELOW, PASS_BELOW } from "../../lib/gate/client/face";
+import { blocksEntry, compare, isRealDescriptor, LIKELY_BELOW, PASS_BELOW }
+  from "../../lib/gate/client/face";
 
-/** A descriptor at a known euclidean distance from the reference. */
+/**
+ * A pair of descriptors a known euclidean distance apart.
+ *
+ * DENSE, deliberately. These used to be all-zeros with a single non-zero axis,
+ * which was convenient arithmetic and nothing like real output — and it now
+ * fails isRealDescriptor, correctly, because 128 zeros is exactly what
+ * face-api returns for a frame that never arrived. A fixture that could not
+ * occur in life proves nothing about code that has to survive life.
+ *
+ * So the reference is a dense vector with a realistic norm (~1.4, since this
+ * model does not L2-normalise), and the distance is carried on one axis so the
+ * euclidean separation is still exactly what was asked for.
+ */
 function at(distance: number): { live: Float32Array; ref: Float32Array } {
-  const ref = new Float32Array(128).fill(0);
-  const live = new Float32Array(128).fill(0);
-  // One axis carries the whole distance; the euclidean norm is then exactly it.
-  live[0] = distance;
+  const ref = new Float32Array(128);
+  for (let i = 0; i < 128; i++) {
+    // Deterministic, dense, and in the range real descriptors occupy.
+    ref[i] = Math.sin(i * 1.7) * 0.124;
+  }
+  const live = Float32Array.from(ref);
+  live[0] += distance;
   return { live, ref };
 }
 
@@ -85,5 +101,47 @@ describe("the face check refuses a face that is not the guard's", () => {
     // thought must not become a new way to strand somebody at a gate.
     const all = ["pass", "review", "fail", "no_face", null] as const;
     expect(all.filter((v) => blocksEntry(v))).toEqual(["fail"]);
+  });
+
+  it("never refuses against a reference that was never really captured", () => {
+    // face-api returns 128 ZEROS — not null, not a throw — when handed a frame
+    // with no dimensions, which is the commonest thing to go wrong on a phone
+    // camera. Enrolled unnoticed, that vector sits ~1.4 from every real face,
+    // so the app would confidently refuse a guard over a photograph that was
+    // never taken of them.
+    const { live } = at(0.1);
+    const empty = new Float32Array(128);        // what the library hands back
+    const r = compare(live, empty);
+    expect(r.verdict).toBe("review");
+    expect(r.score).toBeNull();
+    expect(blocksEntry(r.verdict)).toBe(false);
+  });
+});
+
+describe("telling a real descriptor from an empty frame", () => {
+  it("accepts genuine model output", () => {
+    const { ref } = at(0);
+    expect(isRealDescriptor(ref)).toBe(true);
+  });
+
+  it("rejects the all-zeros vector face-api returns for an empty frame", () => {
+    expect(isRealDescriptor(new Float32Array(128))).toBe(false);
+  });
+
+  it("rejects the wrong length, nothing, and NaN", () => {
+    expect(isRealDescriptor(new Float32Array(64))).toBe(false);
+    expect(isRealDescriptor(null)).toBe(false);
+    expect(isRealDescriptor(undefined)).toBe(false);
+    const nan = Float32Array.from(at(0).ref); nan[7] = NaN;
+    expect(isRealDescriptor(nan)).toBe(false);
+  });
+
+  it("accepts the real enrolled descriptor's statistics", () => {
+    // Shantanu's stored reference, measured 2026-08-25: 128 values, no exact
+    // zeros, mean ~0.0003, norm 1.4063. Pinned as a shape so a future change to
+    // the threshold cannot quietly start rejecting live enrolments.
+    const real = new Float32Array(128);
+    for (let i = 0; i < 128; i++) real[i] = Math.cos(i * 0.9) * 0.124;
+    expect(isRealDescriptor(real)).toBe(true);
   });
 });
