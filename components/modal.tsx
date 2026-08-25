@@ -85,6 +85,9 @@ export interface ModalProps {
   /** Pinned below the scroll area — actions, pagination. */
   footer?: ReactNode;
   bodyClassName?: string;
+  /** Override the footer's own padding. Only for a footer that must run
+   *  edge to edge; everything else should take the default. */
+  footerClassName?: string;
   closeOnOverlayClick?: boolean;
   children: ReactNode;
 }
@@ -105,6 +108,7 @@ function ModalInner({
   headerExtra,
   footer,
   bodyClassName = "p-6",
+  footerClassName = "px-6 py-4",
   closeOnOverlayClick = true,
   children,
 }: ModalProps) {
@@ -239,7 +243,17 @@ function ModalInner({
           {children}
         </div>
 
-        {footer && <div className="shrink-0 border-t border-border">{footer}</div>}
+        {/* PADDED HERE, not by each caller.
+            It was the caller's job and the callers disagreed: users/page wrapped
+            its buttons in p-4, variance-detail in px-6 py-3, and the gate
+            dialogs in nothing at all — so those had their buttons flush against
+            the panel edge while the header above them sat inset by 24px. A
+            layout rule every caller has to remember is a layout rule that will
+            be forgotten. `footerClassName` is there for the rare dialog that
+            genuinely needs an edge-to-edge footer. */}
+        {footer && (
+          <div className={`shrink-0 border-t border-border ${footerClassName}`}>{footer}</div>
+        )}
       </div>
     </div>,
     document.body

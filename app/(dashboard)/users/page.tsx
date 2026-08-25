@@ -266,7 +266,7 @@ export default function UsersPage() {
         mobile="fullscreen"
         bodyClassName="p-0"
         footer={
-          <div className="p-4 flex gap-3">
+          <div className="flex gap-3">
             <button type="button" onClick={() => setPanelOpen(false)} className="btn btn-secondary flex-1">
               Cancel
             </button>

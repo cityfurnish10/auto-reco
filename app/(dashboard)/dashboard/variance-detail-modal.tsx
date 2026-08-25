@@ -190,7 +190,7 @@ export default function VarianceDetailModal({
   }
 
   const actions = (
-    <div className="px-6 py-3 flex flex-wrap items-center justify-end gap-2">
+    <div className="flex flex-wrap items-center justify-end gap-2">
       {v.status === "closed" ? (
         <span className="text-xs text-text-muted mr-auto">
           Resolved {formatTs(v.closed_at)}

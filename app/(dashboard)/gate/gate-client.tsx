@@ -113,7 +113,22 @@ interface ActivityData {
   trips: Trip[];
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+/**
+ * The business day currently OPEN — not the calendar date.
+ *
+ * THE BUG THIS FIXES. The gate's day runs 15:00 → 15:00 IST, so work done on
+ * the morning of the 25th is filed under the 24th. This defaulted to the UTC
+ * calendar date, which means that from 05:30 to 15:00 IST every day — the
+ * entire morning shift — the page opened on a date the gate had not started
+ * writing to yet, and showed an empty day while guards were scanning.
+ */
+const today = () => {
+  const IST = 5.5 * 3600_000;
+  const ist = new Date(Date.now() + IST);
+  // Before 15:00 IST the open business day is still yesterday's date.
+  if (ist.getUTCHours() < 15) ist.setUTCDate(ist.getUTCDate() - 1);
+  return ist.toISOString().slice(0, 10);
+};
 
 function Activity({ user }: { user: SessionUser }) {
   const [d, setD] = useState<ActivityData | null>(null);
@@ -220,7 +235,7 @@ function Activity({ user }: { user: SessionUser }) {
               <table className="w-full text-sm">
                 <thead>
                   <tr>
-                    {["Guard", "Vehicle", "Direction", "Items", "Opened", "Took", "Status"].map((h) => (
+                    {["Guard", "Vehicle", "Direction", "Items", "Opened", "Time at gate", "Status"].map((h) => (
                       <th key={h} className="text-left px-4 py-2.5 text-xs uppercase tracking-wide text-text-muted whitespace-nowrap">{h}</th>
                     ))}
                     <th className="w-10" />
@@ -284,7 +299,10 @@ function TripModal({ trip, onClose }: { trip: Trip | null; onClose: () => void }
         <Row k="Delivery agent" v={trip.driverName ?? "—"} />
         <Row k="Opened" v={clock(trip.openedAt)} mono />
         <Row k="Closed" v={trip.closedAt ? clock(trip.closedAt) : "still open"} mono />
-        <Row k="Took" v={took(trip.durationSec)} mono />
+        {/* "Took" was a one-word column nobody could interpret. It is the
+            gap between the guard starting the trip and closing it — how long
+            the vehicle was at the gate. */}
+        <Row k="Time at gate" v={took(trip.durationSec)} mono />
         <Row k="Items" v={`${trip.itemCount}${trip.manual ? ` · ${trip.manual} typed` : ""}`} />
         {trip.completeness && (
           <Row k="Against the plan"
@@ -731,7 +749,33 @@ function GuardDetail({ guard, onClose, onChanged }: {
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Enrolling a phone from the guard's own row.
+  //
+  // The Devices tab still does this and is untouched — that is the right place
+  // to enrol a spare handset for a gate. But the common case is a person
+  // standing in front of you needing a phone, and finding their record only to
+  // be sent to another tab to type their city back in is friction for nothing.
+  // A phone still belongs to a GATE rather than to a guard; this only saves
+  // choosing the gate, because the guard's row already knows it.
+  const [pairing, setPairing] = useState<{ url: string; label: string } | null>(null);
+  const [copied, setCopied] = useState(false);
   if (!guard) return null;
+
+  async function enrolPhone() {
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch("/api/gate/enrol", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ city: guard!.city, deviceLabel: `${guard!.name}'s phone` }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setErr(j.error ?? `Could not enrol a phone (HTTP ${r.status})`); return; }
+      setPairing({ url: j.pairingUrl, label: j.deviceId });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not reach the server.");
+    } finally { setBusy(false); }
+  }
 
   async function patch(body: Record<string, unknown>) {
     setBusy(true); setErr(null);
@@ -757,6 +801,9 @@ function GuardDetail({ guard, onClose, onChanged }: {
             onClick={() => patch({ status: guard.status === "active" ? "inactive" : "active" })}>
             {guard.status === "active" ? "Deactivate" : "Reactivate"}
           </button>
+          <button className="btn btn-secondary" disabled={busy} onClick={enrolPhone}>
+            <Icon name="upload_file" size={16} /> Enrol a phone
+          </button>
           <button className="btn btn-secondary" onClick={onClose}>Close</button>
           {err && <span className="text-danger text-sm">{err}</span>}
         </div>
@@ -781,6 +828,33 @@ function GuardDetail({ guard, onClose, onChanged }: {
           <Row k="Consent recorded" v={guard.consentAt ? new Date(guard.consentAt).toLocaleDateString() : "—"} />
         </dl>
       </div>
+
+      {/* Shown ONCE. The token is stored hashed and cannot be retrieved, so a
+          lost phone is revoked and enrolled again rather than recovered. */}
+      {pairing && (
+        <div className="card p-4 mt-5 space-y-2 border border-accent/30">
+          <h3 className="font-headline text-base">Open this link on the phone</h3>
+          <p className="text-xs text-text-muted">
+            It appears once. If it is lost, enrol the phone again and revoke this one.
+          </p>
+          <div className="flex gap-2 items-center flex-wrap">
+            <code className="text-xs bg-surface-elevated rounded-control px-2 py-1.5 break-all flex-1 min-w-[200px]">
+              {pairing.url}
+            </code>
+            <button className="btn btn-secondary" onClick={() => {
+              navigator.clipboard.writeText(pairing.url).then(
+                () => { setCopied(true); setTimeout(() => setCopied(false), 2000); },
+                () => setErr("Could not copy — select the link and copy it by hand."),
+              );
+            }}>
+              <Icon name={copied ? "check" : "content_copy"} size={16} /> {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <p className="text-xs text-text-muted">
+            Enrolled for the {guard.city} gate. Any guard at that gate can sign in on it.
+          </p>
+        </div>
+      )}
     </Modal>
   );
 }

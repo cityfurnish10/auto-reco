@@ -396,6 +396,10 @@ export default function VarianceListModal({
         }
         headerExtra={filters}
         footer={footer}
+        // Edge to edge: this footer is a bulk-action bar and a pager, both of
+        // which are full-width components carrying their own padding. The
+        // dialog's default inset would double it.
+        footerClassName=""
         bodyClassName="p-0"
       >
         {/* Mobile: cards */}

@@ -82,6 +82,9 @@ export default function GateApp() {
   // reasoning as removing an item, and for the same reason: it is the other
   // thing in this app a stray tap should not be able to do.
   const [confirmEndShift, setConfirmEndShift] = useState(false);
+  // Signing out of a shared phone. Distinct from ending a shift: one hands the
+  // handset to a colleague, the other closes the attendance record.
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
   // Which screen the manual-entry form should return to. It used to always go
   // back to the scanner, which was fine while that was the only way in. The
   // close screen is now the second, and it is the one that matters most: the
@@ -1195,7 +1198,12 @@ export default function GateApp() {
         <>
           <Bar t={t} title={me?.name ?? t("enterPin")}
                left={<BackBtn onClick={() => { clearGuardId(); setMe(null); setPin(""); setScreen("who"); }} />}
-               right={<GearBtn onClick={() => setScreen("settings")} />} />
+               right={
+                 <>
+                   <SignOutBtn onClick={() => setConfirmSignOut(true)} />
+                   <GearBtn onClick={() => setScreen("settings")} />
+                 </>
+               } />
           <div className="gbody">
             <div className="ghero"><div className="gglyph"><Icon name="lock" size={46} /></div>
               <h1>{pinBad ? t("wrongPin") : t("enterPin")}</h1>
@@ -1306,7 +1314,12 @@ export default function GateApp() {
 
       {screen === "today" && (
         <>
-          <Bar t={t} title={t("today")} right={<GearBtn onClick={() => setScreen("settings")} />} />
+          <Bar t={t} title={t("today")} right={
+            <>
+              <SignOutBtn onClick={() => setConfirmSignOut(true)} />
+              <GearBtn onClick={() => setScreen("settings")} />
+            </>
+          } />
           <div className="gbody">
             <button className="gplain" onClick={() => setScreen("queue")}>
               <SyncCard t={t} online={online} queue={queue} />
@@ -1783,6 +1796,39 @@ export default function GateApp() {
           </div>
         </>
       )}
+      {/* ── Signing out of a shared phone ───────────────────────────────
+          Deliberately NOT the same thing as ending a shift, and the sheet says
+          so: the attendance record stays open, because the guard is handing
+          the handset over rather than going home. Conflating the two would
+          either close shifts that are still running or leave them open when
+          they are not. */}
+      {confirmSignOut && (
+        <div className="gsheet" role="dialog" aria-modal="true">
+          <div className="gsheetbox">
+            <h3>{t("signOutQ")}</h3>
+            <p>{t("signOutWhy")}</p>
+            {/* Unsent work is the one thing that must not walk out of the gate
+                unnoticed. The queue belongs to the DEVICE, not the guard, so it
+                will still drain — but whoever is holding the phone should know. */}
+            {queue.waiting > 0 && (
+              <div className="gcard warn col">
+                <h3><Icon name="warning" size={17} /> {queue.waiting} {t("stillToSend")}</h3>
+                <p>{t("stillToSendWhy")}</p>
+              </div>
+            )}
+            <div className="grow2">
+              <button className="gbtn ghost" onClick={() => setConfirmSignOut(false)}>
+                {t("cancel")}
+              </button>
+              <button className="gbtn warn" onClick={() => {
+                setConfirmSignOut(false);
+                clearGuardId(); setMe(null); setPin(""); setScreen("who");
+              }}>{t("signOut")}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {confirmEndShift && (
         <div className="gsheet" role="dialog" aria-modal="true">
           <div className="gsheetbox">
@@ -1872,6 +1918,25 @@ function BackBtn({ onClick }: { onClick: () => void }) {
 }
 function GearBtn({ onClick }: { onClick: () => void }) {
   return <button className="gicon" onClick={onClick} aria-label="Settings"><Icon name="settings" size={20} /></button>;
+}
+
+/**
+ * Sign out, next to Settings.
+ *
+ * Signing out already existed, three taps deep inside the profile screen and
+ * labelled "switch guard" — accurate for a handover and no use at all to
+ * somebody who simply wants off a shared phone. On a device three people use
+ * in a day, leaving is a top-level action.
+ *
+ * It asks first: the guard's queue may still be draining, and walking away
+ * from unsent work is the one thing this app must not let happen quietly.
+ */
+function SignOutBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button className="gicon" onClick={onClick} aria-label="Sign out">
+      <Icon name="logout" size={20} />
+    </button>
+  );
 }
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="gfld"><span>{label}</span>{children}</label>;

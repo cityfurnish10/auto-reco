@@ -80,6 +80,14 @@ export const STRINGS: Record<string, Row> = {
   tripStillOpen:{en:"A trip is still open",hi:"एक ट्रिप अभी खुली है",mr:"एक ट्रिप अजून सुरू आहे",kn:"ಒಂದು ಟ್ರಿಪ್ ಇನ್ನೂ ತೆರೆದಿದೆ",te:"ఒక ట్రిప్ ఇంకా తెరిచి ఉంది"},
   tripStillOpenWhy:{en:"Close it first, or it will be marked unfinished.",hi:"पहले उसे बंद करें, वरना अधूरी मानी जाएगी।",mr:"आधी ती बंद करा, नाहीतर अपूर्ण मानली जाईल.",kn:"ಮೊದಲು ಅದನ್ನು ಮುಚ್ಚಿ, ಇಲ್ಲದಿದ್ದರೆ ಅಪೂರ್ಣವೆಂದು ಗುರುತಿಸಲಾಗುತ್ತದೆ.",te:"ముందు దాన్ని మూసివేయండి, లేకపోతే అసంపూర్ణంగా గుర్తించబడుతుంది."},
 
+  // ── Signing out of a shared phone ─────────────────────────────────────
+  // Not the same as ending a shift, and the wording keeps them apart: this
+  // hands the handset to a colleague and leaves the attendance record open.
+  signOut:{en:"Sign out",hi:"साइन आउट",mr:"साइन आउट",kn:"ಸೈನ್ ಔಟ್",te:"సైన్ అవుట్"},
+  signOutQ:{en:"Sign out of this phone?",hi:"इस फोन से साइन आउट करें?",mr:"या फोनवरून साइन आउट करायचे?",kn:"ಈ ಫೋನ್‌ನಿಂದ ಸೈನ್ ಔಟ್ ಮಾಡುವುದೇ?",te:"ఈ ఫోన్ నుండి సైన్ అవుట్ చేయాలా?"},
+  signOutWhy:{en:"Your shift stays open. Use \u201cEnd my shift\u201d if you are finished for the day.",hi:"आपकी शिफ्ट चालू रहेगी। दिन खत्म हो गया हो तो \u201cशिफ्ट खत्म करें\u201d चुनें।",mr:"तुमची शिफ्ट चालू राहील. दिवस संपला असेल तर \u201cशिफ्ट संपवा\u201d निवडा.",kn:"ನಿಮ್ಮ ಪಾಳಿ ತೆರೆದಿರುತ್ತದೆ. ದಿನ ಮುಗಿದಿದ್ದರೆ \u201cಪಾಳಿ ಮುಗಿಸಿ\u201d ಆರಿಸಿ.",te:"మీ షిఫ్ట్ తెరిచే ఉంటుంది. రోజు ముగిస్తే \u201cషిఫ్ట్ ముగించండి\u201d ఎంచుకోండి."},
+  stillToSendWhy:{en:"These stay on the phone and will send by themselves.",hi:"ये फोन में रहेंगे और अपने आप चले जाएँगे।",mr:"हे फोनमध्ये राहतील आणि आपोआप जातील.",kn:"ಇವು ಫೋನ್‌ನಲ್ಲಿ ಉಳಿದು ತಾವಾಗಿಯೇ ಕಳುಹಿಸಲ್ಪಡುತ್ತವೆ.",te:"ఇవి ఫోన్‌లో ఉండి వాటంతట అవే పంపబడతాయి."},
+
   // ── A shift where nothing moved ───────────────────────────────────────
   // The reconciler treats a gate with no scans as a source that FAILED, not as
   // a quiet day — so a guard needs a way to say the difference out loud.
