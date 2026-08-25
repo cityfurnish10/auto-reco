@@ -191,3 +191,60 @@ export async function runNativeSql(
   }
   return toTable(json);
 }
+
+/**
+ * Run a MongoDB aggregation pipeline through Metabase.
+ *
+ * WHY THIS EXISTS ALONGSIDE runNativeSql. Metabase's native-query API takes SQL
+ * for relational engines and a PIPELINE PLUS A COLLECTION NAME for Mongo ones —
+ * a different body shape, not a different string. runNativeSql only ever needed
+ * SQL because Odoo was the only database anyone queried.
+ *
+ * The Delivery Tracker is the second, and reaching it this way is the point:
+ * the project already holds a Metabase credential, so DT can be read without
+ * provisioning a separate MongoDB login and without a production connection
+ * string leaving Vercel.
+ *
+ * READ-ONLY BY CONSTRUCTION. An aggregation pipeline cannot insert, update or
+ * delete. That is a property of the query language rather than a promise made
+ * here, which is the only kind worth relying on against somebody else's
+ * production database.
+ */
+export async function runMongoPipeline(
+  databaseId: number,
+  collection: string,
+  pipeline: unknown[],
+  timeoutMs?: number
+): Promise<MetabaseTable> {
+  const doRequest = async (): Promise<Response> =>
+    fetch(`${baseUrl()}${DATASET_PATH}`, {
+      method: "POST",
+      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      body: JSON.stringify({
+        database: databaseId,
+        type: "native",
+        // Metabase wants the pipeline as a STRING, not as JSON. Passing the
+        // array itself is accepted and then silently returns the whole
+        // collection, which looks like a working query right up until it is a
+        // forty-thousand-row response.
+        native: { collection, query: JSON.stringify(pipeline) },
+        constraints: {
+          "max-results": RESULT_LIMIT,
+          "max-results-bare-rows": RESULT_LIMIT,
+        },
+      }),
+    });
+
+  let res = await doRequest();
+  if (res.status === 401 && !process.env.METABASE_API_KEY) {
+    sessionToken = null;
+    res = await doRequest();
+  }
+  if (!res.ok) {
+    throw new Error(`Metabase mongo query failed: HTTP ${res.status} ${await res.text()}`);
+  }
+  const json = (await res.json()) as MetabaseDatasetResponse;
+  if (json.error) throw new Error(`Metabase mongo query error: ${json.error}`);
+  return toTable(json);
+}

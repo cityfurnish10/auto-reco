@@ -9,24 +9,50 @@
 // scripts/dt-fields.mjs, because a mocked driver would only prove the mock.
 
 import { describe, expect, it } from "vitest";
-import { fleetWindow, normalizeAgent, normalizeVehicle } from "../../lib/gate/fleet";
+import { fleetWindow, normalizeAgent, vehicleFromAdhoc,
+         vehicleFromTransportId } from "../../lib/gate/fleet";
 
-describe("a vehicle registration becomes one spelling", () => {
-  it("folds the four spellings of one truck into one", () => {
-    // The measured problem, exactly: same truck, four keyboards' worth of
-    // spaces, and four distinct strings in the register.
+describe("pulling a registration out of a DT transport reference", () => {
+  // transportId is not a registration. It is a vendor code, a service code and
+  // a plate joined by hyphens, spaced however whoever typed it felt at the
+  // time. Every string below is real, taken from one afternoon's trips.
+  it("handles the shapes DT actually contains", () => {
+    const real: [string, string][] = [
+      ["TC-Intra-MH12TV6748", "MH12TV6748"],
+      ["CT - TA - DL1LAH6369", "DL1LAH6369"],
+      ["Tarun-TA-DL1L2AG3248", "DL1L2AG3248"],
+      ["Pidge -BD- KA03AL5909", "KA03AL5909"],
+      ["S&S-AL-TS15U5789", "TS15U5789"],
+      ["S&S - TIv30 - TS07UL5177", "TS07UL5177"],
+      ["AT-TI-MH14FP2399", "MH14FP2399"],
+    ];
+    for (const [raw, plate] of real) expect(vehicleFromTransportId(raw), raw).toBe(plate);
+  });
+
+  it("refuses anything that is not plate-shaped", () => {
+    // A wrong-looking option is worse than a missing one. A missing one sends
+    // the guard to the text box; a wrong one gets tapped and recorded.
+    expect(vehicleFromTransportId("")).toBeNull();
+    expect(vehicleFromTransportId(null)).toBeNull();
+    expect(vehicleFromTransportId("TC-Intra-")).toBeNull();
+    expect(vehicleFromTransportId("VendorOnly")).toBeNull();
+    expect(vehicleFromTransportId("TC-Intra-NOTAPLATE")).toBeNull();
+    expect(vehicleFromTransportId("TC-Intra-123")).toBeNull();
+  });
+
+  it("accepts a hand-typed adhoc vehicle, spaced any way", () => {
+    // The hired-truck case, and the original problem: one vehicle, four
+    // keyboards' worth of spacing, four different strings in the register.
     const spellings = ["HR26DK8337", "HR 26 DK 8337", "hr26 dk 8337", "HR-26-DK-8337"];
-    const folded = new Set(spellings.map(normalizeVehicle));
+    const folded = new Set(spellings.map(vehicleFromAdhoc));
     expect(folded.size).toBe(1);
     expect([...folded][0]).toBe("HR26DK8337");
   });
 
-  it("rejects what cannot be a registration", () => {
-    expect(normalizeVehicle("")).toBeNull();
-    expect(normalizeVehicle(null)).toBeNull();
-    expect(normalizeVehicle("---")).toBeNull();
-    expect(normalizeVehicle("AB1")).toBeNull();                  // too short
-    expect(normalizeVehicle("A".repeat(20))).toBeNull();         // too long
+  it("treats an empty adhoc field as nothing", () => {
+    // It is empty on almost every trip — the vendor code carries the plate.
+    expect(vehicleFromAdhoc("")).toBeNull();
+    expect(vehicleFromAdhoc(null)).toBeNull();
   });
 });
 
@@ -47,6 +73,19 @@ describe("an agent's name is tidied, not mangled", () => {
     expect(normalizeAgent(" ")).toBeNull();
     expect(normalizeAgent("R")).toBeNull();
     expect(normalizeAgent("x".repeat(80))).toBeNull();
+  });
+
+  it("keeps placeholders out of a list a guard is meant to trust", () => {
+    for (const junk of ["NA", "n/a", "test", "none", "null", "---"]) {
+      expect(normalizeAgent(junk), junk).toBeNull();
+    }
+  });
+
+  it("tidies the trailing spaces DT stores", () => {
+    // Real values: "Jitendra ", "Nirbhay Kushwaha ". Left alone they would show
+    // as two different agents from one person.
+    expect(normalizeAgent("Jitendra ")).toBe("Jitendra");
+    expect(normalizeAgent("Nirbhay Kushwaha ")).toBe("Nirbhay Kushwaha");
   });
 });
 
