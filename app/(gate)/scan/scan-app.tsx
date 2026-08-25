@@ -15,9 +15,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "@/components/icon";
 import { LANGS, makeT, type LangId } from "@/lib/gate/client/i18n";
 import * as outbox from "@/lib/gate/client/outbox";
-import { bootstrap, clearGuardId, drain, fleet as fetchFleet, getGuardId, getToken, history,
-         rosterFor, signIn, type Bootstrap, type Fleet, type GuardOption,
-         type HistoryTrip } from "@/lib/gate/client/api";
+import { bootstrap, clearGuardId, drain, expectedNow, fleet as fetchFleet, getGuardId, getToken,
+         history, rosterFor, signIn, type Bootstrap, type ExpectedItem, type Fleet,
+         type GuardOption, type HistoryTrip } from "@/lib/gate/client/api";
 import { click, compress, feedback, position } from "@/lib/gate/client/media";
 import { decodeFrame, initScanner, openCamera, stopCamera } from "@/lib/gate/client/scanner";
 import { canonicalize } from "@/lib/engine/barcode";
@@ -87,6 +87,21 @@ export default function GateApp() {
   // asked for yet, which is a different state from "asked and found nothing" —
   // the first shows a spinner, the second shows a text box.
   const [fleet, setFleet] = useState<Fleet | null>(null);
+
+  // The expected list the scanner checks against. Seeded from bootstrap and
+  // then REPLACED by a fresh read at trip start, because Odoo pickings here are
+  // created during the day: a list from when the app opened this morning is
+  // most of a shift out of date by the afternoon.
+  const [expected, setExpected] = useState<ExpectedItem[] | null>(null);
+  const [expectedStale, setExpectedStale] = useState(false);
+
+  /** Pull a current list. Never blocks; keeps the old one if it cannot. */
+  const loadExpected = useCallback(async () => {
+    const r = await expectedNow();
+    if (!r) { setExpectedStale(true); return; }
+    setExpected(r.items);
+    setExpectedStale(r.stale);
+  }, []);
   // Whether the guard has chosen to type instead of pick, per field. Sticky
   // for the trip: someone who has just typed a truck number that is not on the
   // list should not be dropped back into that list for the agent as well.
@@ -432,7 +447,11 @@ export default function GateApp() {
         feedback(false); setFlash("warn"); setHint(`${t("alreadyScanned")} · ${barcode}`);
         await pause(900); return;
       }
-      const match = boot?.expected.find(
+      // The freshly-read list when there is one, the copy bootstrap brought
+      // otherwise. Never nothing: an item is only "not on the list" if there
+      // is a list, and treating an absent one as an empty one would make every
+      // scan an exception.
+      const match = (expected ?? boot?.expected ?? []).find(
         (e) => e.barcode === barcode || e.barcode_canon === canonicalize(barcode)
       );
       // The check runs even when it is not shown. Recording what it WOULD have
@@ -677,6 +696,10 @@ export default function GateApp() {
       },
     });
     setTripId(clientId); setLines([]); seenRef.current = new Set();
+    // Not awaited: the scanner opens now. The first scan of a trip is seconds
+    // away and the list will be there for it; blocking the camera on Metabase
+    // would be the wrong trade every time.
+    void loadExpected();
     const started = Date.now();
     setT0(started);
     try { localStorage.setItem("gate.t0", String(started)); } catch { /* storage blocked */ }
@@ -1219,7 +1242,7 @@ export default function GateApp() {
       {screen === "scan" && (
         <>
           <Bar t={t} title={dir === "IN" ? t("inward") : t("outward")}
-               left={<BackBtn onClick={() => { stampElapsed(); setScreen("closetrip"); }} />}
+               left={<BackBtn onClick={() => { stampElapsed(); void loadExpected(); setScreen("closetrip"); }} />}
                right={<span className="gsub mono">{veh}</span>} />
           <div className="gscan">
             <div className="gview">
@@ -1253,7 +1276,9 @@ export default function GateApp() {
                 setCat(null); setNoSticker(false); setMId(""); setMQty(1);
                 setMNote(""); clearItemPhoto(); setManualFrom("scan"); setScreen("manual");
               }}><Icon name="add" size={20} /></button>
-              <button className="gbtn sm ok" onClick={() => { stampElapsed(); setScreen("closetrip"); }}>{t("doneScanning")}</button>
+              <button className="gbtn sm ok" onClick={() => {
+                stampElapsed(); void loadExpected(); setScreen("closetrip");
+              }}>{t("doneScanning")}</button>
             </div>
           </div>
         </>

@@ -105,6 +105,20 @@ await ctx.route("**/api/gate/sync", async (route) => {
 
 await ctx.route("**/api/gate/history*", (route) => json(route, { trips: [] }));
 
+// The on-demand expected list. Counted, because the point of the change is
+// WHEN it is asked for: at trip start and on the way into the close screen,
+// never on the scanning path.
+let expectedCalls = 0;
+await ctx.route("**/api/gate/expected", (route) => {
+  expectedCalls++;
+  return json(route, {
+    items: [{ barcode: "FUMYHA23030062", barcode_canon: "FUMYHA23030062",
+              direction: "OUT", product: "Chair", so_number: "ON-1",
+              ticket_id: null, customer: null }],
+    businessDate: "2026-08-25", refreshed: true, stale: false, reason: null,
+  });
+});
+
 // A paired device, so the app opens on the roster rather than the pairing screen.
 await ctx.addInitScript(() => {
   localStorage.setItem("gate.deviceToken", "smoke-token");
@@ -423,6 +437,8 @@ if (uniq.length) {
 } else ok("no unexpected console errors");
 
 console.log(`\n  ${posted.length} sync call(s) reached the server`);
+if (expectedCalls > 0) ok(`the expected list was re-read ${expectedCalls}× (trip start / close)`);
+else bad("the expected list was never re-read — the scanner is using a stale copy");
 console.log(failures ? `\n\x1b[31m${failures} problem(s)\x1b[0m\n` : "\n\x1b[32mall good\x1b[0m\n");
 await browser.close();
 process.exit(failures ? 1 : 0);

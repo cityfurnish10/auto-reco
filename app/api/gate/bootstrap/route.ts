@@ -14,6 +14,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { identifyDevice, withGuard } from "@/lib/gate/auth";
 import { EXPECTED_CHECK_LIVE, OUTWARD_PHOTO_SAMPLE_RATE, loadSite } from "@/lib/gate/config";
 import { currentBusinessDate } from "@/lib/reconcile/cron-dates";
+import { ensureExpectedFresh } from "@/lib/gate/expected";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,12 @@ export async function GET(req: NextRequest) {
   // The business day currently OPEN — what the guard is working inside right
   // now — not the day the reconcile is closing, which is two days behind.
   const businessDate = currentBusinessDate();
+
+  // Kick the expected list into shape, but do NOT wait for it. Odoo goes
+  // through Metabase and takes seconds; the app opening must not. Whatever is
+  // cached is served below, and the refresh lands in time for the trip close
+  // that actually consults it.
+  void ensureExpectedFresh(admin, businessDate).catch(() => {});
 
   const [expected, openTrip, openShift] = await Promise.all([
     admin

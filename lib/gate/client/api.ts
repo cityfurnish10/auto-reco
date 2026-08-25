@@ -66,6 +66,32 @@ export async function fleet(): Promise<Fleet> {
   }
 }
 
+export type ExpectedItem = Bootstrap["expected"][number];
+
+/**
+ * The day's planned movements, refreshed server-side if the cache has gone
+ * stale.
+ *
+ * Called when a trip STARTS — the list is consulted on every scan, so it has to
+ * be current before scanning begins, not after — and again on the way into the
+ * close screen. Both are moments the guard has already stopped; neither is on
+ * the scanning path, which cannot afford a Metabase round trip.
+ *
+ * Returns null rather than throwing, and the caller keeps whatever it had. A
+ * gate with no signal still records movements; it simply checks them against
+ * an older list and says so.
+ */
+export async function expectedNow(): Promise<{ items: ExpectedItem[]; stale: boolean } | null> {
+  try {
+    const r = await fetch("/api/gate/expected", { headers: headers(), cache: "no-store" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    return { items: (j.items ?? []) as ExpectedItem[], stale: !!j.stale };
+  } catch {
+    return null;
+  }
+}
+
 export interface Bootstrap {
   guard: { id: string; name: string } | null;
   businessDate: string;

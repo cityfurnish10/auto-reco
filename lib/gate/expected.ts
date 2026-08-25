@@ -23,8 +23,27 @@
 // operational question, not a data one, and silent mode is how it gets answered
 // before a guard is taught to dismiss warnings.
 //
-// Refreshed each morning into gate_expected_items so three phones at shift
-// change do not each pay a multi-second Metabase round trip.
+// REFRESHED ON DEMAND, NOT AT DAWN — changed 2026-08-25 after measuring it.
+//
+// It used to be a 07:00 snapshot. That produced 17 rows for a day in which Odoo
+// records roughly 1,451 movements, and — the telling part — ZERO rows for
+// tomorrow, every day, even though the job explicitly asks for tomorrow too.
+//
+// Odoo pickings here are not planned in advance. They are created during the
+// day and pass through 'assigned'/'confirmed' to 'done' quickly, so a snapshot
+// taken at 07:00 can only ever catch the handful that happen to be pending at
+// 07:00. That is not a bug in the query; it is the wrong mechanism for how the
+// business actually uses Odoo. A completeness check built on it would have told
+// a guard that almost everything they scanned was "not on the list".
+//
+// So the list is refreshed when it is ASKED FOR and found stale, which is the
+// same conclusion the DT pull reached for the same reason. The overnight job
+// stays as a warm start; it is no longer the only writer.
+//
+// Odoo goes through Metabase and takes seconds, so this can never sit on the
+// scanning path. It runs in the background when the app opens, and again at
+// trip close — the moment the answer is actually used, and a moment the guard
+// has already stopped moving.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { metabaseConfigured, runNativeSql } from "../connectors/metabase";
@@ -143,8 +162,30 @@ export async function fetchExpected(businessDate: string): Promise<ExpectedPull>
 export async function refreshExpected(
   admin: SupabaseClient,
   businessDate: string
-): Promise<{ written: number; withoutSerial: number; total: number }> {
+): Promise<{ written: number; withoutSerial: number; total: number; kept?: true }> {
   const pull = await fetchExpected(businessDate);
+
+  // AN EMPTY PULL NEVER WIPES A GOOD LIST.
+  //
+  // The delete below is what lets a cancelled picking disappear. It was also
+  // unconditional, which meant one bad Metabase minute — a timeout, a session
+  // expiry, Odoo mid-restart — would blank the day's expectations and the gate
+  // would check every scan against nothing. Silent, and indistinguishable from
+  // a quiet day.
+  //
+  // Zero rows is not proof of zero movements; it is equally the shape of a
+  // failed query. Keeping the previous list is wrong for at most one refresh
+  // cycle; deleting it is wrong until somebody notices.
+  if (pull.rows.length === 0) {
+    const { count } = await admin
+      .from("gate_expected_items")
+      .select("id", { count: "exact", head: true })
+      .eq("business_date", businessDate);
+    if ((count ?? 0) > 0) {
+      return { written: 0, withoutSerial: pull.withoutSerial, total: pull.total, kept: true };
+    }
+  }
+
   await admin.from("gate_expected_items").delete().eq("business_date", businessDate);
 
   const payload = pull.rows.map((r) => ({
@@ -196,4 +237,104 @@ export async function probeExpectedCoverage(businessDate: string) {
       ])
     ),
   };
+}
+
+/* ── Keeping it fresh ──────────────────────────────────────────────────── */
+
+/**
+ * How old the cached list may be before it is worth paying for a new one.
+ *
+ * Ten minutes is a compromise between two real costs. Shorter and a busy gate
+ * pays a multi-second Metabase query every few scans for a list that has
+ * barely changed. Longer and a picking created twenty minutes ago — routine
+ * here, since Odoo rows are made during the day — is still invisible at the
+ * moment a guard closes the trip it belongs to.
+ */
+export const EXPECTED_MAX_AGE_MS = 10 * 60_000;
+
+/**
+ * One refresh at a time per running instance.
+ *
+ * Three phones at shift change hit the app within seconds of each other. Each
+ * would otherwise start its own Metabase query against a list they are all
+ * going to share, tripling the load on the slowest dependency in the system to
+ * produce three identical answers. Whoever asks first does the work; the rest
+ * wait on the same promise.
+ *
+ * Per-instance rather than global. A distributed lock would need another round
+ * trip to take, and the failure it prevents — two instances refreshing the same
+ * day at once — costs one duplicated query and leaves the data correct either
+ * way. Not worth the machinery.
+ */
+const inFlight = new Map<string, Promise<void>>();
+
+/** When was this day's list last written? Null if there is no list at all. */
+async function cacheAge(admin: SupabaseClient, businessDate: string): Promise<number | null> {
+  const { data } = await admin
+    .from("gate_expected_items")
+    .select("refreshed_at")
+    .eq("business_date", businessDate)
+    .order("refreshed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const at = data?.refreshed_at as string | undefined;
+  if (!at) return null;
+  const ms = Date.now() - Date.parse(at);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+export interface FreshResult {
+  refreshed: boolean;
+  /** Why not, when it did not — so a caller can log something more useful
+   *  than silence, and a stale list is never mistaken for a current one. */
+  reason?: "fresh" | "unconfigured" | "failed" | "in-progress";
+  ageMs?: number | null;
+}
+
+/**
+ * Make sure the day's expected list is current enough to check a trip against.
+ *
+ * NEVER THROWS, and never blocks anything a guard is waiting on. The list is an
+ * aid to a check that is still silent; Odoo being slow or unreachable must cost
+ * at most the freshness of a warning, never the ability to record a movement.
+ * Callers that are on a guard's path should not await it at all.
+ */
+export async function ensureExpectedFresh(
+  admin: SupabaseClient,
+  businessDate: string,
+  maxAgeMs: number = EXPECTED_MAX_AGE_MS
+): Promise<FreshResult> {
+  if (!metabaseConfigured()) return { refreshed: false, reason: "unconfigured" };
+
+  const existing = inFlight.get(businessDate);
+  if (existing) { await existing.catch(() => {}); return { refreshed: false, reason: "in-progress" }; }
+
+  // THE AGE CHECK LIVES INSIDE THE CLAIMED JOB, and that is not a stylistic
+  // choice. Reading the age first meant an `await` sat between asking whether
+  // anyone was already refreshing and saying that we were — so three phones
+  // arriving together all read "nobody is", all claimed, and all queried
+  // Metabase. Creating the promise and registering it happen with no await
+  // between them, which is what actually makes this single-flight.
+  let outcome: FreshResult = { refreshed: false, reason: "failed" };
+  const job = (async () => {
+    const age = await cacheAge(admin, businessDate).catch(() => null);
+    // A day with no list at all is always worth fetching, however recently we
+    // may have tried — that is the state a new business day starts in.
+    if (age !== null && age < maxAgeMs) {
+      outcome = { refreshed: false, reason: "fresh", ageMs: age };
+      return;
+    }
+    await refreshExpected(admin, businessDate);
+    outcome = { refreshed: true, ageMs: age };
+  })();
+
+  inFlight.set(businessDate, job);
+  try {
+    await job;
+    return outcome;
+  } catch {
+    return { refreshed: false, reason: "failed" };
+  } finally {
+    inFlight.delete(businessDate);
+  }
 }
