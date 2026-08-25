@@ -4,7 +4,8 @@
 // building and is indistinguishable from a real second dispatch afterwards.
 
 import { describe, expect, it } from "vitest";
-import { applyBatch, type InScan, type InTrip, type InVoid } from "../../lib/gate/sync";
+import { applyBatch, type InCompleteness, type InScan, type InTrip,
+         type InVoid } from "../../lib/gate/sync";
 import type { GateIdentity } from "../../lib/gate/auth";
 
 const WHO: GateIdentity = {
@@ -371,5 +372,79 @@ describe("applyBatch — retracting a scan", () => {
     const { db } = stubDb();
     const r = await applyBatch(db, WHO, { voids: [voidOf({ clientScanId: "never-existed" })] });
     expect(r.voids[0].status).toBe("duplicate");
+  });
+});
+
+
+// ── The completeness result ──────────────────────────────────────────────
+// A gap the phone found and the server dropped is worse than no check at all:
+// the guard was told, believed it was recorded, and nothing was. The path that
+// matters is the UPDATE, not the insert — a trip is opened in one batch and
+// closed in a later one, so a close that forgot these columns would have
+// recorded the gap precisely never.
+
+const gap = (o: Partial<InCompleteness> = {}): InCompleteness => ({
+  expectedTotal: 9, expectedScanned: 3,
+  missing: ["B3", "B4", "B5", "B6", "B7", "B8"],
+  unplannedCount: 1, warned: false, listAgeS: 42, ...o,
+});
+
+describe("applyBatch — recording what the completeness check found", () => {
+  it("writes the gap when the trip is CLOSED in a later batch", async () => {
+    const { db, updates } = stubDb();
+    await applyBatch(db, WHO, { trips: [trip()] });          // opened
+    await applyBatch(db, WHO, {                                // ...closed later
+      trips: [trip({ status: "closed", closedAt: "2026-08-21T11:00:00Z", completeness: gap() })],
+    });
+
+    const close = updates.find((u) => u.status === "closed");
+    expect(close, "the close never happened").toBeTruthy();
+    expect(close!.expected_total).toBe(9);
+    expect(close!.expected_scanned).toBe(3);
+    expect(close!.expected_missing).toHaveLength(6);
+    expect(close!.unplanned_count).toBe(1);
+    expect(close!.expected_checked_at).toBeTruthy();
+  });
+
+  it("keeps 'was the guard warned' as sent, not inferred", async () => {
+    // Through the silent period this is false on every trip. If the server
+    // guessed it from the presence of a gap, the false-alarm rate would be
+    // measured against guards who were shown nothing.
+    const { db, updates } = stubDb();
+    await applyBatch(db, WHO, { trips: [trip()] });
+    await applyBatch(db, WHO, {
+      trips: [trip({ status: "closed", closedAt: "2026-08-21T11:00:00Z",
+                     completeness: gap({ warned: false }) })],
+    });
+    expect(updates.find((u) => u.status === "closed")!.expected_warned).toBe(false);
+  });
+
+  it("clamps a scanned count above the planned total", async () => {
+    // The phone computes this and a phone is the least trustworthy thing in
+    // the system. Left alone it would violate the CHECK constraint and reject
+    // an otherwise good trip close — far worse than a slightly wrong statistic.
+    const { db, updates } = stubDb();
+    await applyBatch(db, WHO, { trips: [trip()] });
+    await applyBatch(db, WHO, {
+      trips: [trip({ status: "closed", closedAt: "2026-08-21T11:00:00Z",
+                     completeness: gap({ expectedTotal: 2, expectedScanned: 99 }) })],
+    });
+    const close = updates.find((u) => u.status === "closed")!;
+    expect(close.expected_scanned).toBe(2);
+    expect(close.expected_total).toBe(2);
+  });
+
+  it("leaves the columns alone when the phone sent no result", async () => {
+    // An older app version, or a trip closed offline before the list arrived.
+    // Writing zeroes would look like "nothing was planned" rather than
+    // "nobody checked", and the weekly view counts on telling those apart.
+    const { db, updates } = stubDb();
+    await applyBatch(db, WHO, { trips: [trip()] });
+    await applyBatch(db, WHO, {
+      trips: [trip({ status: "closed", closedAt: "2026-08-21T11:00:00Z" })],
+    });
+    const close = updates.find((u) => u.status === "closed")!;
+    expect(close.expected_checked_at).toBeUndefined();
+    expect(close.expected_total).toBeUndefined();
   });
 });
