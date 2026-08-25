@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await admin
     .from("gate_expected_items")
-    .select("barcode,barcode_canon,direction,product,so_number,ticket_id,customer")
+    .select("barcode,barcode_canon,direction,product,so_number,ticket_id,customer,picking_ref,delivery_address")
     .eq("city", device.city)
     .eq("business_date", businessDate);
 

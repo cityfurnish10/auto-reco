@@ -70,6 +70,16 @@ export const STRINGS: Record<string, Row> = {
   keepIt:{en:"Keep it",hi:"रहने दें",mr:"राहू द्या",kn:"ಇರಲಿ",te:"ఉంచండి"},
   removed:{en:"Removed",hi:"हटा दिया",mr:"काढले",kn:"ತೆಗೆಯಲಾಗಿದೆ",te:"తీసివేయబడింది"},
 
+  // ── The completeness check at trip close ──────────────────────────────
+  // Phrased as information, not accusation. The guard is usually not the
+  // person who decided what went on the truck, and the commonest cause of a
+  // gap is a plan that changed — so it says what the plan expected, and lets
+  // them get on with it.
+  stillMissing:{en:"Still on the plan",hi:"प्लान में अभी बाकी",mr:"प्लॅनमध्ये अजून बाकी",kn:"ಯೋಜನೆಯಲ್ಲಿ ಇನ್ನೂ ಬಾಕಿ",te:"ప్లాన్‌లో ఇంకా మిగిలింది"},
+  missingWhy:{en:"These were planned but not scanned. Add them if they are on the truck, or close anyway.",hi:"ये प्लान में थे पर स्कैन नहीं हुए। गाड़ी में हैं तो जोड़ें, वरना ऐसे ही बंद करें।",mr:"हे प्लॅनमध्ये होते पण स्कॅन झाले नाहीत. गाडीत असतील तर जोडा, नाहीतर तसेच बंद करा.",kn:"ಇವು ಯೋಜನೆಯಲ್ಲಿದ್ದವು ಆದರೆ ಸ್ಕ್ಯಾನ್ ಆಗಿಲ್ಲ. ಲಾರಿಯಲ್ಲಿದ್ದರೆ ಸೇರಿಸಿ, ಇಲ್ಲದಿದ್ದರೆ ಹಾಗೆಯೇ ಮುಚ್ಚಿ.",te:"ఇవి ప్లాన్‌లో ఉన్నాయి కానీ స్కాన్ కాలేదు. ట్రక్‌లో ఉంటే జోడించండి, లేకపోతే అలాగే మూసివేయండి."},
+  againstPlan:{en:"Against the plan",hi:"प्लान के मुक़ाबले",mr:"प्लॅनच्या तुलनेत",kn:"ಯೋಜನೆಗೆ ಹೋಲಿಸಿದರೆ",te:"ప్లాన్‌తో పోలిస్తే"},
+  more:{en:"more",hi:"और",mr:"आणखी",kn:"ಇನ್ನಷ್ಟು",te:"మరిన్ని"},
+
   // ── Last-minute additions on the close screen ─────────────────────────
   lastMinute:{en:"Something loaded at the last minute?",hi:"आख़िरी वक़्त पर कुछ और चढ़ा?",mr:"शेवटच्या क्षणी काही चढवले?",kn:"ಕೊನೆಯ ಕ್ಷಣದಲ್ಲಿ ಏನಾದರೂ ಹತ್ತಿಸಿದ್ದೀರಾ?",te:"చివరి నిమిషంలో ఏదైనా ఎక్కించారా?"},
 

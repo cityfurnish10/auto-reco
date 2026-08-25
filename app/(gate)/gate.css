@@ -370,3 +370,21 @@
 .gpickopt.on { border-color:var(--ok); background:var(--okbg); color:var(--okfg); }
 .gpickopt:active { background:var(--card2); }
 .gpicklist + .gbtn, .gpickload + .gbtn { width:100%; }
+
+/* ══ What is still on the plan ══════════════════════════════════════════
+ * Sits between the trip summary and the last-minute add, because those three
+ * are one thought: here is what you loaded, here is what the plan still
+ * expects, here is the button to record it if it turns out to be on board.
+ *
+ * Scrolls rather than growing. A picking with forty lines must not push Close
+ * trip off the bottom of the screen — a guard who cannot find the close button
+ * is a guard who stops using the app, which costs more than any warning gains.
+ */
+.gmissbox { flex:none; max-height:34vh; overflow-y:auto; padding-top:0;
+  padding-bottom:0; -webkit-overflow-scrolling:touch; }
+.gmissrow { display:flex; flex-direction:column; gap:1px; padding:8px 0;
+  border-bottom:1px solid var(--rule); font-size:14px; }
+.gmissrow:last-child { border-bottom:none; }
+.gmissrow .gsub { font-size:12.5px; }
+.gwarnfg { color:var(--warn); }
+.gokfg { color:var(--ok); }

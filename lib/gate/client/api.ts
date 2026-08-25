@@ -96,10 +96,21 @@ export interface Bootstrap {
   guard: { id: string; name: string } | null;
   businessDate: string;
   site: { code: string; label: string; lat: number; lng: number; radiusM: number } | null;
-  config: { outwardPhotoSampleRate: number; expectedCheckLive: boolean };
+  config: { outwardPhotoSampleRate: number; expectedCheckLive: boolean;
+            completenessShown: boolean };
   openTrip: { id: string; client_trip_id: string; direction: "IN" | "OUT"; vehicle_no: string; opened_at: string } | null;
   openShift: { id: string; client_shift_id: string; checked_in_at: string } | null;
-  expected: { barcode: string; barcode_canon: string; direction: "IN" | "OUT"; product: string | null; so_number: string | null; ticket_id: string | null; customer: string | null }[];
+  expected: {
+    barcode: string; barcode_canon: string; direction: "IN" | "OUT";
+    product: string | null; so_number: string | null; ticket_id: string | null;
+    customer: string | null;
+    /** The job this line belongs to. What lets a trip work out its own scope
+     *  from the scans, instead of a guard picking an order off a list. */
+    picking_ref: string | null;
+    /** Where it is going. Null until the DT pull carries it — Odoo does not
+     *  know a delivery address. */
+    delivery_address: string | null;
+  }[];
   expectedCount: number;
 }
 

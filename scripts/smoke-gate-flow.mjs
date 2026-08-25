@@ -66,7 +66,7 @@ await ctx.route("**/api/gate/bootstrap*", (route) => json(route, {
   guard: { id: GUARD_ID, name: "Test Guard" },
   businessDate: "2026-08-24",
   site: { code: "DEL-1", label: "Delhi", lat: 28.6, lng: 77.2, radiusM: 300 },
-  config: { outwardPhotoSampleRate: 0.1, expectedCheckLive: false },
+  config: { outwardPhotoSampleRate: 0.1, expectedCheckLive: false, completenessShown: true },
   openTrip: withTrip
     ? { id: "t1", client_trip_id: "ct1", direction: "OUT",
         vehicle_no: "HR26DK8337", opened_at: "2026-08-24T10:00:00.000Z" }
@@ -112,9 +112,20 @@ let expectedCalls = 0;
 await ctx.route("**/api/gate/expected", (route) => {
   expectedCalls++;
   return json(route, {
-    items: [{ barcode: "FUMYHA23030062", barcode_canon: "FUMYHA23030062",
-              direction: "OUT", product: "Chair", so_number: "ON-1",
-              ticket_id: null, customer: null }],
+    items: [
+      { barcode: "FUMYHA23030062", barcode_canon: "FUMYHA23030062", direction: "OUT",
+        product: "Chair", so_number: "ON-1", ticket_id: null, customer: null,
+        picking_ref: "GUR/OUT/3957", delivery_address: null },
+      { barcode: "AP815719030952", barcode_canon: "AP815719030952", direction: "OUT",
+        product: "Desk", so_number: "ON-1", ticket_id: null, customer: null,
+        picking_ref: "GUR/OUT/3957", delivery_address: null },
+      // The third line of the same picking, never scanned. This is the one the
+      // close screen has to notice.
+      { barcode: "FUMY5U23080048", barcode_canon: "FUMY5U23080048", direction: "OUT",
+        product: "Ergonomic Chair", so_number: "ON-RET-GUR-76196", ticket_id: null,
+        customer: "K S Gudi", picking_ref: "GUR/OUT/3957",
+        delivery_address: "12 MG Road" },
+    ],
     businessDate: "2026-08-25", refreshed: true, stale: false, reason: null,
   });
 });
@@ -238,7 +249,8 @@ await page.evaluate(() => new Promise((res, rej) => {
     const db = rq.result;
     const tx = db.transaction("items", "readwrite");
     const store = tx.objectStore("items");
-    for (const [id, bc] of [["sc-1", "FUMYHA23030062"], ["sc-2", "AP815719030952"]]) {
+    for (const [id, bc] of [["sc-1", "FUMYHA23030062"], ["sc-2", "AP815719030952"],
+                            ["sc-3", "FUMY5U23080048"]]) {
       store.put({ clientId: id, kind: "scan", createdAt: Date.now(), attempts: 0,
         payload: { clientScanId: id, clientTripId: "ct1", barcode: bc,
                    entryMethod: "scan", itemKind: "unit", quantity: 1,
@@ -261,8 +273,8 @@ await page.waitForTimeout(1200);
 
 const rows = page.locator(".gfeed .grow");
 const before = await rows.count();
-if (before === 2) ok(`the trip's ${before} items came back after a reload`);
-else bad(`expected 2 restored items, found ${before}`);
+if (before === 3) ok(`the trip's ${before} items came back after a reload`);
+else bad(`expected 3 restored items, found ${before}`);
 
 const xBtn = page.locator(".gfeed .grow .gx").first();
 if (!(await xBtn.count())) {
@@ -321,14 +333,14 @@ if (!(await xBtn.count())) {
   const live = new Set([
     ...state.filter((i) => i.kind === "scan").map((i) => i.id),
     ...posted.flatMap((b) => (b.scans ?? []).map((x) => x.clientScanId)),
-  ].filter((id) => ["sc-1", "sc-2"].includes(id) && !voided.has(id)));
+  ].filter((id) => ["sc-1", "sc-2", "sc-3"].includes(id) && !voided.has(id)));
 
-  if (live.size === 1) {
+  if (live.size === 2) {
     ok(voided.size
       ? `the removed scan had already been sent, so a void was queued (${[...voided]})`
       : "the removed scan left the queue and never reached the server");
   } else {
-    bad(`${live.size} scans still count as live movements, expected 1 — ` +
+    bad(`${live.size} scans still count as live movements, expected 2 — ` +
         `queued/posted minus voided = [${[...live]}]`);
   }
 
@@ -354,7 +366,7 @@ if (!(await xBtn.count())) {
     await page.locator(".gsheetbox").getByRole("button", { name: /^Remove$/i }).first().click();
     await page.waitForTimeout(1500);
 
-    if ((await rows.count()) === 0) ok("the second item came off the list too");
+    if ((await rows.count()) === 1) ok("the second item came off the list too");
     else bad("the second removal did not take effect");
 
     const after2 = await page.evaluate(() => new Promise((res) => {
@@ -388,6 +400,42 @@ else bad("the close screen did not render");
 
 if (await seen("last minute")) ok("offers a last-minute addition");
 else bad("no last-minute add on the close screen — the reported gap");
+
+/* ── the completeness check ───────────────────────────────────────────── */
+// The stubbed plan holds three lines of ONE picking; the seeded outbox scanned
+// two of them and one was then removed. Whatever the arithmetic, the guard
+// must be told the truck is short and told WHICH item — a bare count sends
+// them to a supervisor, the order and the customer send them to a pallet.
+step("The completeness check");
+if (await seen("Still on the plan")) {
+  ok("warns that something planned was not scanned");
+  // Two of the picking's three lines were removed, so two are short. Asserted
+  // by count rather than by name: which row the tap landed on depends on feed
+  // ordering, and a test that pins that is testing the wrong thing.
+  const missRows = page.locator(".gmissrow");
+  const n = await missRows.count();
+  if (n === 2) ok(`names both missing items (${n})`);
+  else bad(`expected 2 missing items listed, found ${n}`);
+
+  const firstDetail = await missRows.first().innerText().catch(() => "");
+  if (/[A-Z0-9]{10,}/.test(firstDetail)) ok("each row carries the barcode");
+  else bad("a missing row shows no barcode");
+  if (/Chair|Desk/.test(firstDetail)) ok("shows the product, not just a serial");
+  else bad(`no product name — a bare serial is not actionable at a gate (${firstDetail.replace(/\n/g, " ")})`);
+
+  if (await seen("Against the plan")) ok("shows the scanned-against-planned tally");
+  else bad("no tally on the summary card");
+} else {
+  bad("the close screen did NOT warn, though a planned item was never scanned");
+}
+
+// And it must never stand between a guard and closing the trip.
+const closeBtn = page.getByRole("button", { name: /^Close trip$/i }).first();
+if (await closeBtn.count()) {
+  const blocked = await closeBtn.isDisabled().catch(() => false);
+  blocked ? bad("Close trip is DISABLED by the warning — a guard who cannot close stops using the app")
+          : ok("the trip can still be closed — warn, let it go, record the gap");
+} else bad("no Close trip button");
 
 const addManually = page.getByRole("button", { name: /Add manually/i }).first();
 if (await addManually.count()) {

@@ -102,6 +102,35 @@ const ALLOWED: { file: string; snippet: string; why: string }[] = [
     snippet: "{it.barcode ?? t(\"kindScan\")}",
     why: "LABEL, and correct: the raw payload in the guard's own history list.",
   },
+  // ── The trip-close completeness check. Every one of these is a gate
+  // barcode: the raw QR payload on one side, and Odoo's own spelling of the
+  // planned line on the other. The fold is applied INSIDE assessTrip solely to
+  // compare the two, and is never what gets shown or stored.
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "barcode: l.rawBarcode ?? null",
+    why: "KEY — the raw QR payload handed to the completeness comparison.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "barcode: e.barcode, barcodeCanon:",
+    why: "KEY — a planned line's own spelling, passed alongside its fold to be matched on.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "completeness.missing.map((m) => m.barcode)",
+    why: "KEY — the missing barcodes recorded with the trip close as evidence.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "key={m.barcode}",
+    why: "KEY — a React list key.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "className=\"mono\">{m.barcode}",
+    why: "LABEL, and correct: Odoo's own spelling of a planned line, so the guard can find the item.",
+  },
   {
     file: "app/(gate)/scan/scan-app.tsx",
     snippet: "{confirmRemove.barcode}",

@@ -95,6 +95,29 @@ export const OUTWARD_PHOTO_SAMPLE_RATE = 0.1;
  */
 export const EXPECTED_CHECK_LIVE = false;
 
+/**
+ * Does the CLOSE screen tell the guard what the plan still expects?
+ *
+ * Separate from EXPECTED_CHECK_LIVE above, and the two are not the same
+ * decision. That one interrupts a SCAN: the guard is stopped mid-flow, made to
+ * pick a reason and take a photograph, with a driver waiting. This one is a
+ * list at the end of a trip the guard has already finished, next to a button
+ * that adds anything they find. One costs seconds per item and a lot of
+ * goodwill; the other costs a glance.
+ *
+ * TRUE, because operations asked for the guard to be told before ending a trip,
+ * and because a gap they can still fix in the next thirty seconds is worth far
+ * more than the same gap discovered at midnight by reconciliation.
+ *
+ * THE RISK, stated plainly: the expected list is built from Odoo planned
+ * pickings and its quality is not yet proven. If it turns out thin, this panel
+ * will cry wolf on every trip and guards will learn to scroll past it. That is
+ * why it is one constant and not woven through the app — if the first days are
+ * noisy, set it false, keep collecting silently, and turn it back on when the
+ * data earns it. gate_completeness_daily is the view that answers whether it has.
+ */
+export const COMPLETENESS_SHOWN = true;
+
 /** Metres between two coordinates. Haversine; good to a few cm at this scale. */
 export function distanceM(
   aLat: number, aLng: number, bLat: number, bLng: number

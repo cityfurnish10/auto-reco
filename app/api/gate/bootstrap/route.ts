@@ -12,7 +12,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { identifyDevice, withGuard } from "@/lib/gate/auth";
-import { EXPECTED_CHECK_LIVE, OUTWARD_PHOTO_SAMPLE_RATE, loadSite } from "@/lib/gate/config";
+import { EXPECTED_CHECK_LIVE, COMPLETENESS_SHOWN, OUTWARD_PHOTO_SAMPLE_RATE, loadSite } from "@/lib/gate/config";
 import { currentBusinessDate } from "@/lib/reconcile/cron-dates";
 import { ensureExpectedFresh } from "@/lib/gate/expected";
 
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
   const [expected, openTrip, openShift] = await Promise.all([
     admin
       .from("gate_expected_items")
-      .select("barcode,barcode_canon,direction,product,so_number,ticket_id,customer")
+      .select("barcode,barcode_canon,direction,product,so_number,ticket_id,customer,picking_ref,delivery_address")
       .eq("city", device.city)
       .eq("business_date", businessDate),
     who
@@ -74,6 +74,7 @@ export async function GET(req: NextRequest) {
       // just not shown, so the false-alarm rate can be measured before any
       // guard is taught to dismiss a warning.
       expectedCheckLive: EXPECTED_CHECK_LIVE,
+      completenessShown: COMPLETENESS_SHOWN,
     },
     // Resuming state. A phone that died mid-trip comes back to the same truck
     // rather than silently starting a second one.

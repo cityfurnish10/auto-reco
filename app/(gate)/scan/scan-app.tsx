@@ -11,7 +11,7 @@
 // never waits on the server — a guard at a gate cannot stand still while a
 // request times out.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/components/icon";
 import { LANGS, makeT, type LangId } from "@/lib/gate/client/i18n";
 import * as outbox from "@/lib/gate/client/outbox";
@@ -22,6 +22,7 @@ import { click, compress, feedback, position } from "@/lib/gate/client/media";
 import { decodeFrame, initScanner, openCamera, stopCamera } from "@/lib/gate/client/scanner";
 import { canonicalize } from "@/lib/engine/barcode";
 import { blocksEntry, compare, describe as describeFace, fromArray, initFace } from "@/lib/gate/client/face";
+import { assessTrip, type Completeness } from "@/lib/gate/completeness";
 
 type Screen =
   | "loading" | "unpaired" | "who" | "pin" | "checkin" | "today"
@@ -683,6 +684,32 @@ export default function GateApp() {
   /** The face the phone compared is confidently not this guard's. */
   const faceBlocked = blocksEntry(faceVerdict);
 
+  /**
+   * Is anything planned for this trip still unscanned?
+   *
+   * Derived rather than stored: it is a pure function of the scans and the
+   * list, both already in state, and a copy kept in a third place is a copy
+   * that eventually disagrees with them.
+   *
+   * The guard never chose a job. The jobs in scope were worked out from what
+   * they scanned — see lib/gate/completeness.ts for why that distinction is
+   * the difference between an independent record and an echo of Odoo.
+   */
+  const completeness: Completeness | null = useMemo(() => {
+    if (!dir) return null;
+    const list = expected ?? boot?.expected ?? null;
+    if (!list) return null;
+    return assessTrip(
+      lines.map((l) => ({ barcode: l.rawBarcode ?? null, serialNo: l.rawBarcode ? null : l.barcode })),
+      list.map((e) => ({
+        barcode: e.barcode, barcodeCanon: e.barcode_canon, direction: e.direction,
+        pickingRef: e.picking_ref, product: e.product, soNumber: e.so_number,
+        customer: e.customer, deliveryAddress: e.delivery_address,
+      })),
+      dir
+    );
+  }, [lines, expected, boot, dir]);
+
   async function startTrip() {
     if (tripMissing.length > 0) return;
     const clientId = uid();
@@ -715,6 +742,28 @@ export default function GateApp() {
         clientTripId: tripId, direction: dir, vehicleNo: veh.trim().toUpperCase(),
         openedAt: new Date(t0 || Date.now()).toISOString(),
         closedAt: new Date().toISOString(), status: "closed",
+        // THE GAP TRAVELS WITH THE CLOSE, whether or not the guard was shown
+        // it. Recording only the warnings a guard saw would measure the
+        // false-alarm rate against people who were never warned — which is the
+        // one number the silent week exists to produce.
+        ...(completeness ? {
+          completeness: {
+            expectedTotal: completeness.expectedTotal,
+            expectedScanned: completeness.expectedScanned,
+            missing: completeness.missing.map((m) => m.barcode),
+            unplannedCount: completeness.unplannedCount,
+            // Whether the panel above was actually on screen. False for the
+            // whole pilot, and it must stay distinguishable from true.
+            // Whether the panel was actually ON SCREEN — not whether the
+            // per-scan interruption is live, which is a different switch. Get
+            // this wrong and the false-alarm rate is measured against guards
+            // who were shown nothing, which is the one number the silent
+            // period exists to produce.
+            warned: boot?.config.completenessShown !== false
+                    && completeness.missing.length > 0,
+            listAgeS: expectedStale ? null : 0,
+          },
+        } : {}),
       },
     });
     setTrips((n) => { const v = n + 1; saveDay(v, itemsToday + lines.length); return v; });
@@ -1414,6 +1463,14 @@ export default function GateApp() {
               <div className="gkv"><span>{t("itemsScanned")}</span><b>{lines.length}</b></div>
               <div className="gkv"><span>{t("flagged")}</span><b>{lines.filter((l) => l.flagged).length}</b></div>
               <div className="gkv"><span>{t("timeTaken")}</span><b className="mono">{elapsed}</b></div>
+              {completeness && completeness.expectedTotal > 0 && (
+                <div className="gkv">
+                  <span>{t("againstPlan")}</span>
+                  <b className={completeness.missing.length ? "gwarnfg" : "gokfg"}>
+                    {completeness.expectedScanned} / {completeness.expectedTotal}
+                  </b>
+                </div>
+              )}
             </div>
             {lines.map((l) => (
               <div key={l.clientId} className="gkv">
@@ -1429,6 +1486,39 @@ export default function GateApp() {
               </div>
             ))}
           </div>
+          {/* ── What is still missing ────────────────────────────────────
+              Placed directly above the last-minute add, because the two are
+              one thought: here is what the plan says is not on the truck, and
+              here is the button to record it if it turns out that it is.
+
+              It NEVER blocks the close. Agreed with operations: a guard who
+              cannot close a trip is a guard who stops using the app, and the
+              truck leaves either way. What changes is whether anyone can see
+              afterwards that it left short. */}
+          {completeness && completeness.missing.length > 0
+            && boot?.config.completenessShown !== false && (
+            <div className="gbody gmissbox">
+              <div className="gcard warn col">
+                <h3><Icon name="warning" size={18} /> {t("stillMissing")}</h3>
+                <p>{t("missingWhy")}</p>
+                {completeness.missing.slice(0, 8).map((m) => (
+                  <div key={m.barcode} className="gmissrow">
+                    <span className="mono">{m.barcode}</span>
+                    <span className="gsub">
+                      {[m.product, m.customer, m.soNumber].filter(Boolean).join(" · ")}
+                    </span>
+                    {m.deliveryAddress && <span className="gsub">{m.deliveryAddress}</span>}
+                  </div>
+                ))}
+                {completeness.missing.length > 8 && (
+                  <p className="gnote">
+                    + {completeness.missing.length - 8} {t("more")}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ── The last-minute box ──────────────────────────────────────
               Directly above Close trip, because this is where the guard
               already is when the loader shouts that one more went on. The

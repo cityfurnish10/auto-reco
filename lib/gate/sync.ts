@@ -28,6 +28,19 @@ import { geoOk, isCounted, loadSite, INWARD_ONLY_KINDS, OUTWARD_PHOTO_SAMPLE_RAT
 import type { Direction } from "../engine/types";
 import type { GateItemKind } from "../db/schema";
 
+/** What the completeness check found, sent with the trip's close. */
+export interface InCompleteness {
+  expectedTotal: number;
+  expectedScanned: number;
+  /** The barcodes themselves — a count cannot be investigated the next
+   *  morning, and this is evidence rather than a metric. */
+  missing: string[];
+  unplannedCount: number;
+  /** Was the guard actually SHOWN this? False through the silent pilot. */
+  warned: boolean;
+  listAgeS?: number | null;
+}
+
 export interface InTrip {
   clientTripId: string;
   direction: Direction;
@@ -38,6 +51,7 @@ export interface InTrip {
   closedAt?: string | null;
   status?: "open" | "closed" | "abandoned";
   notes?: string | null;
+  completeness?: InCompleteness | null;
 }
 
 export interface InScan {
@@ -131,6 +145,39 @@ function drawPhotoSample(direction: Direction, entryMethod: string): boolean {
   return Math.random() < OUTWARD_PHOTO_SAMPLE_RATE;
 }
 
+/**
+ * The completeness columns, from what the phone reported.
+ *
+ * Clamped rather than trusted. The phone computes this and a phone is the least
+ * trustworthy thing in the system; a scanned count above the planned total
+ * would violate the CHECK constraint and reject an otherwise good trip close,
+ * which is a far worse outcome than a slightly wrong statistic.
+ */
+interface CompletenessColumns {
+  expected_checked_at?: string;
+  expected_total?: number;
+  expected_scanned?: number;
+  expected_missing?: string[];
+  unplanned_count?: number;
+  expected_warned?: boolean;
+  expected_list_age_s?: number | null;
+}
+
+function completenessColumns(c: InCompleteness | null | undefined): CompletenessColumns {
+  if (!c) return {};
+  const total = Math.max(0, Math.trunc(c.expectedTotal ?? 0));
+  const scanned = Math.min(total, Math.max(0, Math.trunc(c.expectedScanned ?? 0)));
+  return {
+    expected_checked_at: new Date().toISOString(),
+    expected_total: total,
+    expected_scanned: scanned,
+    expected_missing: Array.isArray(c.missing) ? c.missing.slice(0, 500) : [],
+    unplanned_count: Math.max(0, Math.trunc(c.unplannedCount ?? 0)),
+    expected_warned: !!c.warned,
+    expected_list_age_s: c.listAgeS == null ? null : Math.max(0, Math.trunc(c.listAgeS)),
+  };
+}
+
 export async function applyBatch(
   admin: SupabaseClient,
   who: GateIdentity,
@@ -175,6 +222,7 @@ export async function applyBatch(
       device_id: who.deviceId,
       status: t.status ?? "open",
       notes: t.notes?.trim() || null,
+      ...completenessColumns(t.completeness),
     };
 
     const ins = await admin.from("gate_trips").insert(row).select("id").maybeSingle();
@@ -191,8 +239,13 @@ export async function applyBatch(
           // duplicate: the phone opened it in one batch and closed it in a
           // later one, which is the normal shape of a real trip.
           if (t.status === "closed" && t.closedAt) {
+            // The completeness result arrives HERE in practice, not on the
+            // insert: a trip is opened in one batch and closed in a later one,
+            // so an update that dropped these columns would have recorded the
+            // gap precisely never.
             await admin.from("gate_trips")
-              .update({ status: "closed", closed_at: t.closedAt })
+              .update({ status: "closed", closed_at: t.closedAt,
+                        ...completenessColumns(t.completeness) })
               .eq("id", data.id).eq("status", "open");
           }
         }
