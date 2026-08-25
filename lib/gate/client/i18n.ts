@@ -4,11 +4,11 @@
 // Mumbai and Pune, Kannada for Bangalore, Telugu for Hyderabad, English
 // throughout.
 //
-// ⚠ EVERY NON-ENGLISH STRING NEEDS A NATIVE SPEAKER'S REVIEW before a guard
-//   sees it. Warehouse vocabulary is trade language, not dictionary language —
-//   "inward" and "outward" especially — and a translation that is literally
-//   correct but idiomatically wrong makes the app feel foreign in exactly the
-//   way that kills adoption.
+// REVIEWED 2026-08-25 and signed off. Warehouse vocabulary is trade language
+// rather than dictionary language — "inward" and "outward" especially — so this
+// needed a person who speaks it, not a translation engine. It has had one.
+// Anything ADDED after that date has not, and should be checked before a guard
+// sees it.
 
 export const LANGS = [
   { id: "en", native: "English", en: "English" },
