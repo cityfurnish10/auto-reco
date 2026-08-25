@@ -598,6 +598,10 @@ export default function GateApp() {
   /* ── the check-in selfie ───────────────────────────────────────────────── */
   const [faceReady, setFaceReady] = useState(false);
 
+  /** Nothing on this screen may hang. 12s covers a 6.7MB model on a slow
+   *  connection; past that the check is abandoned, not waited on. */
+  const FACE_BUDGET_MS = 12_000;
+
   async function takeSelfie() {
     const v = selfieRef.current;
     // videoWidth is 0 until the first frame has actually arrived. Checking it
@@ -611,20 +615,44 @@ export default function GateApp() {
       const blob = await compress(v, 640, 0.75);
       setPhoto(blob);
       setShotUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob); });
+
+      // THE FRAME IS KEPT ON A CANVAS BEFORE THE CAMERA DIES.
+      //
+      // The comparison used to read the <video> element itself — AFTER the
+      // tracks were stopped. A stopped video reports videoWidth 0, face-api
+      // returns its 128-zero vector for a zero-dimension input, and every
+      // check-in on the live table scored null. Not a lighting problem, not a
+      // model problem: it was looking at a switched-off camera.
+      const shot = document.createElement("canvas");
+      shot.width = v.videoWidth;
+      shot.height = v.videoHeight;
+      shot.getContext("2d")?.drawImage(v, 0, 0);
+
       selfieStream.current?.getTracks().forEach((t) => t.stop());
       selfieStream.current = null;
       setSelfieCam("frozen");
-      // Only now the comparison, which may have to fetch the model first.
-      if (!faceReady) { await initFace(); setFaceReady(true); }
-      // Runs on the phone. Nothing is uploaded to decide it.
-      const live = await describeFace(v);
+
+      // BOUNDED. Loading the model is 6.7MB, and on gate wifi it can crawl or
+      // stall outright — which left `matching` true for ever and disabled both
+      // Check in AND Retake, stranding the guard on a spinner with no way out.
+      // A check that cannot finish is abandoned; it must never become a lock.
+      const timeout = new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error("face-timeout")), FACE_BUDGET_MS));
+      const match = (async () => {
+        if (!faceReady) { await initFace(); setFaceReady(true); }
+        return describeFace(shot);
+      })();
+
+      const live = await Promise.race([match, timeout]);
       const r = compare(live, fromArray(me?.descriptor));
       setFaceScore(r.score); setFaceVerdict(r.verdict);
-    } catch {
-      // The model failed to load, or the frame was unreadable. Recorded as
-      // needing a look rather than blocking the shift — a guard who cannot
-      // check in leaves no attendance record at all.
-      setFaceVerdict("no_face");
+    } catch (e) {
+      // Two different failures, and they must not read the same to a guard.
+      // A timeout is OUR problem and cannot be retaken away, so it is filed for
+      // review and the guard proceeds. An unreadable frame is worth retaking.
+      const timedOut = e instanceof Error && e.message === "face-timeout";
+      setFaceVerdict(timedOut ? "review" : "no_face");
+      setFaceScore(null);
     } finally { setMatching(false); }
   }
 
@@ -1237,11 +1265,12 @@ export default function GateApp() {
 
             <div className="gselfiebtns">
               {photo ? (
-                <button className="gbtn sm ghost" onClick={retakeSelfie} disabled={matching}>
+                <button className="gbtn sm ghost" onClick={retakeSelfie}>
                   <Icon name="refresh" size={17} />{t("retake")}
                 </button>
               ) : (
-                <button className="gbtn sm primary" onClick={takeSelfie}
+                <button className={`gbtn sm ${selfieCam === "live" && !matching ? "primary" : "ghost"}`}
+                        onClick={takeSelfie}
                         disabled={matching || selfieCam !== "live"}>
                   <Icon name="camera" size={17} />{t("takeSelfie")}
                 </button>
@@ -1264,7 +1293,11 @@ export default function GateApp() {
                   loop for it would be a lie. */}
               {!photo && <p className="gmiss">{t("selfieRequired")}</p>}
               {faceBlocked && <p className="gmiss">{t("faceBlockedNote")}</p>}
-              <button className="gbtn primary" disabled={!photo || faceBlocked || matching}
+              {/* Coloured only when it will actually do something. A primary
+                  fill on a control that cannot be tapped is an invitation to
+                  tap it, and the guard concludes the app is broken. */}
+              <button className={`gbtn ${(!photo || faceBlocked || matching) ? "ghost" : "primary"}`}
+                      disabled={!photo || faceBlocked || matching}
                       onClick={doCheckIn}>{t("checkIn")}</button>
             </div>
           </div>
@@ -1352,7 +1385,8 @@ export default function GateApp() {
               {tripMissing.length > 0 && (
                 <p className="gmiss">{t("needs")} {tripMissing.map((k) => t(k)).join(", ")}</p>
               )}
-              <button className="gbtn primary" disabled={tripMissing.length > 0}
+              <button className={`gbtn ${tripMissing.length > 0 ? "ghost" : "primary"}`}
+                      disabled={tripMissing.length > 0}
                       onClick={startTrip}>{t("startScanning")}</button>
             </div>
           </div>
@@ -1691,11 +1725,12 @@ export default function GateApp() {
             </div>
             <div className="gselfiebtns">
               {photo ? (
-                <button className="gbtn sm ghost" onClick={retakeSelfie} disabled={matching}>
+                <button className="gbtn sm ghost" onClick={retakeSelfie}>
                   <Icon name="refresh" size={17} />{t("retake")}
                 </button>
               ) : (
-                <button className="gbtn sm primary" onClick={takeSelfie}
+                <button className={`gbtn sm ${selfieCam === "live" && !matching ? "primary" : "ghost"}`}
+                        onClick={takeSelfie}
                         disabled={matching || selfieCam !== "live"}>
                   <Icon name="camera" size={17} />{t("takeSelfie")}
                 </button>

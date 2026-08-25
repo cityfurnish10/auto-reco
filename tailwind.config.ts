@@ -17,14 +17,25 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        primary: "#00000b",
-        "primary-container": "#1a1a2e",
+        // ── Carried over from the original Stitch palette ────────────────
+        // These were hardcoded hexes and therefore did NOT follow the move to
+        // the Cityfurnish brand — which left the SIDEBAR, the most visible
+        // chrome on the platform, still wearing the old near-black while
+        // everything around it had turned violet.
+        //
+        // Pointed at the brand here rather than fixed at each of the thirteen
+        // call sites, so anything reaching for one of these names later lands
+        // on the brand too instead of quietly reintroducing the old theme.
+        primary: "var(--cf-violet, #4a36b3)",
+        "primary-container": "var(--cf-violet, #4a36b3)",
         "on-primary": "#ffffff",
-        "on-primary-container": "#83829b",
-        "on-primary-fixed": "#1a1a2e",
-        "on-primary-fixed-variant": "#45455b",
-        "primary-fixed": "#e2e0fc",
-        "primary-fixed-dim": "#c6c4df",
+        // On the violet sidebar. #83829b was a grey-lavender chosen for a
+        // near-black ground and measures poorly on violet.
+        "on-primary-container": "#d6cffa",
+        "on-primary-fixed": "var(--cf-violet, #4a36b3)",
+        "on-primary-fixed-variant": "var(--cf-violet-dk, #3a27a0)",
+        "primary-fixed": "var(--cf-wash, #f0eaff)",
+        "primary-fixed-dim": "#c6bff0",
         secondary: "#5d5f5f",
         "secondary-container": "#dfe0e0",
         "on-secondary-container": "#616363",
@@ -44,11 +55,13 @@ const config: Config = {
         "surface-container-highest": "#e5e1e3",
         outline: "#78767d",
         "outline-variant": "#c8c5cd",
-        error: "#ba1a1a",
-        "error-container": "#ffdad6",
+        error: "var(--cf-err, #c0392b)",
+        "error-container": "#fae3e0",
         "on-error": "#ffffff",
-        "on-error-container": "#93000a",
-        warning: "#f59e0b",
+        "on-error-container": "#7d2419",
+        // The brand's warn is a deep amber-brown, not the bright #f59e0b that
+        // was here — which read as a different product's alert colour.
+        warning: "var(--cf-warn, #7a5800)",
         "inverse-surface": "#313032",
         "inverse-on-surface": "#f4f0f2",
         "inverse-primary": "#c6c4df",
