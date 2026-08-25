@@ -204,8 +204,11 @@ await page.waitForTimeout(1200);
 if (await seen("HR26DK8337")) ok("the vehicle list arrived from DT and rendered");
 else bad("no vehicle list — the picker fell back to a text box");
 
-if (await seen("Ramesh Kumar")) ok("the delivery agent list rendered");
-else bad("no agent list");
+// The agent picker starts COLLAPSED. Two open lists plus a footer do not fit on
+// a 390px screen — the second was rendering sliced through the middle of a
+// name — so the form opens one at a time and walks forward.
+if (await seen("Choose the delivery agent")) ok("the agent picker waits its turn, collapsed");
+else bad("both pickers are open at once — the second will be sliced by the footer");
 
 if (await seen("Not listed")) ok("'type it in' escape is offered");
 else bad("no way to type a vehicle that is not on the list");
@@ -219,8 +222,19 @@ if (await startScan.count()) {
 
 await tap("Outward");
 await tap("HR26DK8337");
+await page.waitForTimeout(500);
+
+// Choosing a vehicle should hand the screen to the agent picker by itself.
+if (await seen("Ramesh Kumar")) ok("choosing a vehicle opens the agent list automatically");
+else bad("the agent list did not open after a vehicle was chosen");
+
 await tap("Ramesh Kumar");
 await page.waitForTimeout(400);
+
+// And both should now read as decided rather than as open lists.
+const chosen = await page.locator(".gpickchosen.on").count();
+if (chosen === 2) ok("both pickers collapsed to a chosen row");
+else bad(`expected 2 collapsed 'chosen' rows, found ${chosen}`);
 
 if (await startScan.isEnabled().catch(() => false)) ok("enabled once all three are chosen");
 else bad("still disabled after choosing direction, vehicle and agent");

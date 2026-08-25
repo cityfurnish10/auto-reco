@@ -112,6 +112,36 @@ export default function GateApp() {
   // list should not be dropped back into that list for the agent as well.
   const [vehTyped, setVehTyped] = useState(false);
   const [drvTyped, setDrvTyped] = useState(false);
+  // Which picker on the trip form is expanded. Starts on the vehicle, moves to
+  // the agent when one is chosen, and closes when both are done — so the form
+  // walks the guard forward instead of showing three decisions at once on a
+  // screen that cannot hold them.
+  const [openPicker, setOpenPicker] = useState<string | null>("veh");
+
+  /**
+   * Open a picker — unless the tap is the ghost of the one that just closed it.
+   *
+   * THE BUG THIS EXISTS FOR, because it is not obvious and it bit for real:
+   * choosing an option collapses that list to a single row, and the row lands
+   * almost exactly where the option was. The same tap then arrives at the
+   * collapsed row and reopens the list, so choosing a vehicle appeared to do
+   * nothing at all — the value was set, the screen just sprang back.
+   *
+   * Classic shifting-target: never remove an element from under a finger and
+   * put a different control in its place. A guard would hit this as surely as
+   * an automated tap did, and more confusingly, because they would be looking
+   * at their own thumb.
+   *
+   * The window is short enough to be invisible and long enough to cover the
+   * re-render, and it only ever suppresses an OPEN — nothing a guard does can
+   * be lost by it.
+   */
+  const pickerSettling = useRef(0);
+  const openPickerSafely = useCallback((id: string | null, fromChoice = false) => {
+    if (!fromChoice && Date.now() < pickerSettling.current) return;
+    if (fromChoice) pickerSettling.current = Date.now() + 450;
+    setOpenPicker(id);
+  }, []);
 
   /**
    * Refresh the fleet.
@@ -1266,6 +1296,7 @@ export default function GateApp() {
               // opened may be hours old by now, and this is the one screen
               // where being out of date costs the guard a typed truck number.
               setVehTyped(false); setDrvTyped(false);
+              pickerSettling.current = 0; setOpenPicker("veh");
               void loadFleet();
               setScreen("newtrip");
             }}>
@@ -1293,14 +1324,18 @@ export default function GateApp() {
                     mono uppercase placeholder="HR26 DK 8337"
                     options={fleet?.vehicles ?? null}
                     unavailable={fleet?.source === "unavailable"}
-                    value={veh} onChange={setVeh}
-                    typing={vehTyped} onTyping={setVehTyped} />
+                    value={veh}
+                    onChange={(v) => { setVeh(v); openPickerSafely(v && !drv ? "drv" : null, true); }}
+                    typing={vehTyped} onTyping={setVehTyped}
+                    id="veh" openId={openPicker} onOpen={openPickerSafely} />
 
             <Picker t={t} label={t("deliveryAgent")} hint={t("pickAgent")}
                     options={fleet?.agents ?? null}
                     unavailable={fleet?.source === "unavailable"}
-                    value={drv} onChange={setDrv}
-                    typing={drvTyped} onTyping={setDrvTyped} />
+                    value={drv}
+                    onChange={(v) => { setDrv(v); openPickerSafely(v && !veh ? "veh" : null, true); }}
+                    typing={drvTyped} onTyping={setDrvTyped}
+                    id="drv" openId={openPicker} onOpen={openPickerSafely} />
 
             <p className="gnote">{t("vehNote")}</p>
           </div>
@@ -1815,7 +1850,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
  *   options === []      DT answered, nothing is scheduled; typing
  */
 function Picker({ t, label, hint, options, unavailable, value, onChange,
-                  typing, onTyping, mono, uppercase, placeholder }: {
+                  typing, onTyping, mono, uppercase, placeholder,
+                  id, openId, onOpen }: {
   t: (k: string) => string;
   label: string; hint: string;
   options: string[] | null;
@@ -1825,6 +1861,12 @@ function Picker({ t, label, hint, options, unavailable, value, onChange,
   typing: boolean;
   onTyping: (v: boolean) => void;
   mono?: boolean; uppercase?: boolean; placeholder?: string;
+  /** ONE LIST OPEN AT A TIME. Two full lists plus a footer do not fit on a
+   *  390px screen — the second was being sliced through the middle of a name,
+   *  which reads as a broken screen rather than a scrollable one. */
+  id: string;
+  openId: string | null;
+  onOpen: (id: string | null) => void;
 }) {
   const [filter, setFilter] = useState("");
   const loading = options === null;
@@ -1846,7 +1888,24 @@ function Picker({ t, label, hint, options, unavailable, value, onChange,
         </div>
       )}
 
-      {listMode && (
+      {/* CHOSEN: collapse to a single row.
+          Two open lists plus a footer did not fit on a phone — the agent list
+          was sliced through the middle of a name, which reads as a broken
+          screen rather than a scrollable one. Collapsing what is already
+          decided gives the undecided field the room, which is the only field
+          the guard is still looking at. */}
+      {/* CLOSED — either already chosen, or waiting its turn. */}
+      {listMode && openId !== id && (
+        <button type="button"
+                className={`gpickchosen${value ? " on" : ""}${mono && value ? " mono" : ""}`}
+                onClick={() => onOpen(id)}>
+          {value ? <Icon name="check_circle" size={18} /> : <Icon name="expand_more" size={18} />}
+          <span>{value || hint}</span>
+          {value && <span className="gsub">{t("change")}</span>}
+        </button>
+      )}
+
+      {listMode && openId === id && (
         <>
           {/* Only worth showing once the list is long enough to scroll past
               what a thumb can reach. Below that it is a box in the way. */}
