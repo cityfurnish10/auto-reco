@@ -246,19 +246,23 @@ const chosen = await page.locator(".gpickchosen.on").count();
 if (chosen === 2) ok("both pickers collapsed to a chosen row");
 else bad(`expected 2 collapsed 'chosen' rows, found ${chosen}`);
 
-// What DT says is ON this truck. The point of picking a vehicle rather than
-// two independent lists: the guard sees the load before they start.
-if (await seen("Planned on this vehicle")) {
-  ok("shows what DT has planned for the chosen truck");
-  if (await seen("A Sharma")) ok("names the customer");
-  else bad("no customer on the planned load");
-  if (await seen("44 Golf Course Road")) ok("shows the delivery address");
-  else bad("no delivery address on the planned load");
-  if (await seen("FUMY5U23080048")) ok("lists the planned units");
-  else bad("no units listed");
-} else {
-  bad("the truck's planned load is not shown");
+// THE GUARD IS NEVER SHOWN WHAT IS EXPECTED, and the stub deliberately
+// supplies a full planned load — customer, address, units — so this proves the
+// app declines to render data it genuinely has. The gate is only worth having
+// because it is an independent witness; show a guard the list and they scan
+// against the list, and the record becomes a confirmation of what the other
+// systems already believed.
+const leaked = [];
+for (const secret of ["Planned on this vehicle", "A Sharma", "44 Golf Course Road",
+                      "FUMY5U23080048", "Queen Bed"]) {
+  if (await seen(secret)) leaked.push(secret);
 }
+if (leaked.length === 0) ok("the truck's planned load is NOT shown to the guard");
+else bad(`the app leaked expectation data to the guard: ${leaked.join(", ")}`);
+
+// And the agent is chosen, never filled in from the truck.
+const agentRow = await page.locator(".gpickchosen.on").allInnerTexts();
+if (agentRow.some((t) => /Ramesh Kumar/.test(t))) ok("the agent is the one the guard picked");
 
 if (await startScan.isEnabled().catch(() => false)) ok("enabled once all three are chosen");
 else bad("still disabled after choosing direction, vehicle and agent");
@@ -439,33 +443,23 @@ else bad("the close screen did not render");
 if (await seen("last minute")) ok("offers a last-minute addition");
 else bad("no last-minute add on the close screen — the reported gap");
 
-/* ── the completeness check ───────────────────────────────────────────── */
-// The stubbed plan holds three lines of ONE picking; the seeded outbox scanned
-// two of them and one was then removed. Whatever the arithmetic, the guard
-// must be told the truck is short and told WHICH item — a bare count sends
-// them to a supervisor, the order and the customer send them to a pallet.
-step("The completeness check");
-if (await seen("Still on the plan")) {
-  ok("warns that something planned was not scanned");
-  // Two of the picking's three lines were removed, so two are short. Asserted
-  // by count rather than by name: which row the tap landed on depends on feed
-  // ordering, and a test that pins that is testing the wrong thing.
-  const missRows = page.locator(".gmissrow");
-  const n = await missRows.count();
-  if (n === 2) ok(`names both missing items (${n})`);
-  else bad(`expected 2 missing items listed, found ${n}`);
-
-  const firstDetail = await missRows.first().innerText().catch(() => "");
-  if (/[A-Z0-9]{10,}/.test(firstDetail)) ok("each row carries the barcode");
-  else bad("a missing row shows no barcode");
-  if (/Chair|Desk/.test(firstDetail)) ok("shows the product, not just a serial");
-  else bad(`no product name — a bare serial is not actionable at a gate (${firstDetail.replace(/\n/g, " ")})`);
-
-  if (await seen("Against the plan")) ok("shows the scanned-against-planned tally");
-  else bad("no tally on the summary card");
-} else {
-  bad("the close screen did NOT warn, though a planned item was never scanned");
+// THE CHECK RUNS, AND THE GUARD NEVER SEES IT.
+//
+// The stub supplies a three-line picking of which only one survives, so the app
+// genuinely HAS a gap to report — which is what makes this worth asserting. It
+// still records the gap for a manager; it must simply not put it on the phone.
+// Show a guard what is missing and they will go and find it, which sounds
+// helpful and means the gate record is no longer an independent observation.
+step("The completeness check stays off the phone");
+const onPhone = [];
+for (const secret of ["Still on the plan", "Against the plan", "Ergonomic Chair",
+                      "12 MG Road", "planned item"]) {
+  if (await seen(secret)) onPhone.push(secret);
 }
+if (onPhone.length === 0) ok("nothing about the plan is shown at trip close");
+else bad(`the close screen leaked expectation data: ${onPhone.join(", ")}`);
+if ((await page.locator(".gmissrow").count()) === 0) ok("no missing-items list is rendered");
+else bad("a missing-items list is on the close screen");
 
 // And it must never stand between a guard and closing the trip.
 const closeBtn = page.getByRole("button", { name: /^Close trip$/i }).first();

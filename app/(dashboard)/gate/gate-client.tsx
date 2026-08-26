@@ -210,10 +210,14 @@ function Activity({ user }: { user: SessionUser }) {
                   tone={d.totals.overrides > 0 ? "warn" : "ok"} />
           </div>
 
-          {/* The pilot's real question, and the reason the warning is still
-              silent: how often would it have fired? Shown as a share of trips
-              CHECKED rather than of all trips — a trip that closed with no list
-              to check against was not a false alarm, it was not an alarm. */}
+          {/* THIS IS THE ONLY PLACE THE MATCH APPEARS. The guard is never shown
+              what was expected — see tests/gate/independence.test.ts for why —
+              so the check runs in the background and surfaces here, after the
+              fact, for somebody who is not the person being checked.
+
+              Shown as a share of trips CHECKED rather than of all trips: a trip
+              that closed with no list to check against was not a false alarm,
+              it was not an alarm. */}
           {d.totals.tripsChecked > 0 && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <Stat label="Checked against plan" value={`${d.totals.tripsChecked}/${d.totals.trips}`} />
@@ -221,6 +225,8 @@ function Activity({ user }: { user: SessionUser }) {
                     tone={d.totals.tripsShort > 0 ? "warn" : "ok"} />
               <Stat label="Items removed" value={d.totals.removed}
                     tone={d.totals.removed > 0 ? "warn" : "ok"} />
+              <Stat label="Typed, not scanned" value={d.totals.manual}
+                    tone={d.totals.manual > 0 ? "warn" : "ok"} />
             </div>
           )}
 
@@ -265,6 +271,13 @@ function Activity({ user }: { user: SessionUser }) {
                         )}
                         {tr.removed.length > 0 && (
                           <span className="badge badge-medium ml-2">{tr.removed.length} removed</span>
+                        )}
+                        {/* Typed rather than scanned. No barcode was read, so
+                            the row rests entirely on the guard and the photo
+                            they took — which is precisely what a manager is
+                            here to look at. */}
+                        {tr.manual > 0 && (
+                          <span className="badge badge-medium ml-2">{tr.manual} typed</span>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{clock(tr.openedAt)}</td>

@@ -94,29 +94,29 @@ export const OUTWARD_PHOTO_SAMPLE_RATE = 0.1;
  * launching the warning late.
  */
 export const EXPECTED_CHECK_LIVE = false;
+// Same rule as COMPLETENESS_SHOWN below, at the scan rather than the trip: a
+// guard told mid-scan that an item is "not on the list" has been handed the
+// list. It stays false.
 
 /**
- * Does the CLOSE screen tell the guard what the plan still expects?
+ * THE GUARD IS NEVER SHOWN WHAT IS EXPECTED. This constant is false and is
+ * meant to stay false; it exists so the intent is written down rather than
+ * merely absent.
  *
- * Separate from EXPECTED_CHECK_LIVE above, and the two are not the same
- * decision. That one interrupts a SCAN: the guard is stopped mid-flow, made to
- * pick a reason and take a photograph, with a driver waiting. This one is a
- * list at the end of a trip the guard has already finished, next to a button
- * that adds anything they find. One costs seconds per item and a lot of
- * goodwill; the other costs a glance.
+ * WHY, because it is the whole design and it has been re-litigated twice.
+ * The gate is worth building because it is an INDEPENDENT witness — the one
+ * source where a human physically saw the item cross the threshold. Show a
+ * guard the list of what should be on the truck and they will scan against
+ * the list: the record stops being what was seen and becomes a confirmation
+ * of what Odoo and DT already believed. Four sources collapse into three,
+ * and the one that was supposed to catch the others agrees with them by
+ * construction.
  *
- * TRUE, because operations asked for the guard to be told before ending a trip,
- * and because a gap they can still fix in the next thirty seconds is worth far
- * more than the same gap discovered at midnight by reconciliation.
- *
- * THE RISK, stated plainly: the expected list is built from Odoo planned
- * pickings and its quality is not yet proven. If it turns out thin, this panel
- * will cry wolf on every trip and guards will learn to scroll past it. That is
- * why it is one constant and not woven through the app — if the first days are
- * noisy, set it false, keep collecting silently, and turn it back on when the
- * data earns it. gate_completeness_daily is the view that answers whether it has.
+ * The check still RUNS and is still recorded — see gate_trips.expected_*.
+ * It is read by a manager in the portal, after the fact, which is exactly
+ * where a discrepancy belongs. Nothing about it reaches the phone.
  */
-export const COMPLETENESS_SHOWN = true;
+export const COMPLETENESS_SHOWN = false;
 
 /** Metres between two coordinates. Haversine; good to a few cm at this scale. */
 export function distanceM(

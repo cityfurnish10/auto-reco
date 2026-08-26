@@ -746,11 +746,6 @@ export default function GateApp() {
     drv.trim().length < 2 && "deliveryAgent",
   ].filter(Boolean) as string[];
 
-  /** What DT has planned for the truck the guard has chosen, if anything. */
-  const plannedForVehicle = veh
-    ? fleet?.trips?.find((x) => x.vehicle === veh) ?? null
-    : null;
-
   /** The face the phone compared is confidently not this guard's. */
   const faceBlocked = blocksEntry(faceVerdict);
 
@@ -1384,22 +1379,11 @@ export default function GateApp() {
                     options={fleet?.vehicles ?? null}
                     unavailable={fleet?.source === "unavailable"}
                     value={veh}
-                    onChange={(v) => {
-                      setVeh(v);
-                      // DT knows who is on this truck. Filling it in saves the
-                      // guard a decision they were only making because the two
-                      // lists did not know about each other — and it is only
-                      // done when there is exactly ONE candidate, because
-                      // guessing between two would be worse than asking.
-                      const t = fleet?.trips?.find((x) => x.vehicle === v);
-                      const only = t?.agents.length === 1 ? t.agents[0] : null;
-                      if (only && !drv) {
-                        setDrv(only);
-                        openPickerSafely(null, true);
-                      } else {
-                        openPickerSafely(v && !drv ? "drv" : null, true);
-                      }
-                    }}
+                    // The agent is CHOSEN, never filled in from the truck.
+                    // DT knows who is supposed to be on it, and telling the
+                    // guard would be the app asserting a fact the guard is
+                    // there to establish independently.
+                    onChange={(v) => { setVeh(v); openPickerSafely(v && !drv ? "drv" : null, true); }}
                     typing={vehTyped} onTyping={setVehTyped}
                     id="veh" openId={openPicker} onOpen={openPickerSafely} />
 
@@ -1410,30 +1394,6 @@ export default function GateApp() {
                     onChange={(v) => { setDrv(v); openPickerSafely(v && !veh ? "veh" : null, true); }}
                     typing={drvTyped} onTyping={setDrvTyped}
                     id="drv" openId={openPicker} onOpen={openPickerSafely} />
-
-            {/* WHAT THIS TRUCK IS CARRYING, when DT knows. Usually it does
-                not: 543 tasks were scheduled on the day this was measured and
-                only 22 had a truck assigned, so this is context when it exists
-                rather than something the screen depends on. Silent when
-                absent — an empty "nothing planned" box on every trip would
-                train the guard to ignore the one time it matters. */}
-            {plannedForVehicle && plannedForVehicle.unitCount > 0 && (
-              <div className="gcard col gplanned">
-                <h3><Icon name="local_shipping" size={17} /> {t("plannedOnThis")}</h3>
-                {plannedForVehicle.tasks.map((k, i) => (
-                  <div key={i} className="gplantask">
-                    <b>{[k.customer, k.jobType].filter(Boolean).join(" · ") || t("plannedTask")}</b>
-                    {k.address && <span className="gsub">{k.address}</span>}
-                    {k.units.map((u) => (
-                      <div key={u.barcode} className="gkv">
-                        <span className="mono">{u.barcode}</span>
-                        <span className="gsub">{u.product ?? ""}</span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
 
             <p className="gnote">{t("vehNote")}</p>
           </div>
@@ -1625,14 +1585,7 @@ export default function GateApp() {
               <div className="gkv"><span>{t("itemsScanned")}</span><b>{lines.length}</b></div>
               <div className="gkv"><span>{t("flagged")}</span><b>{lines.filter((l) => l.flagged).length}</b></div>
               <div className="gkv"><span>{t("timeTaken")}</span><b className="mono">{elapsed}</b></div>
-              {completeness && completeness.expectedTotal > 0 && (
-                <div className="gkv">
-                  <span>{t("againstPlan")}</span>
-                  <b className={completeness.missing.length ? "gwarnfg" : "gokfg"}>
-                    {completeness.expectedScanned} / {completeness.expectedTotal}
-                  </b>
-                </div>
-              )}
+
             </div>
             {lines.map((l) => (
               <div key={l.clientId} className="gkv">
@@ -1648,39 +1601,6 @@ export default function GateApp() {
               </div>
             ))}
           </div>
-          {/* ── What is still missing ────────────────────────────────────
-              Placed directly above the last-minute add, because the two are
-              one thought: here is what the plan says is not on the truck, and
-              here is the button to record it if it turns out that it is.
-
-              It NEVER blocks the close. Agreed with operations: a guard who
-              cannot close a trip is a guard who stops using the app, and the
-              truck leaves either way. What changes is whether anyone can see
-              afterwards that it left short. */}
-          {completeness && completeness.missing.length > 0
-            && boot?.config.completenessShown !== false && (
-            <div className="gbody gmissbox">
-              <div className="gcard warn col">
-                <h3><Icon name="warning" size={18} /> {t("stillMissing")}</h3>
-                <p>{t("missingWhy")}</p>
-                {completeness.missing.slice(0, 8).map((m) => (
-                  <div key={m.barcode} className="gmissrow">
-                    <span className="mono">{m.barcode}</span>
-                    <span className="gsub">
-                      {[m.product, m.customer, m.soNumber].filter(Boolean).join(" · ")}
-                    </span>
-                    {m.deliveryAddress && <span className="gsub">{m.deliveryAddress}</span>}
-                  </div>
-                ))}
-                {completeness.missing.length > 8 && (
-                  <p className="gnote">
-                    + {completeness.missing.length - 8} {t("more")}
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
           {/* ── The last-minute box ──────────────────────────────────────
               Directly above Close trip, because this is where the guard
               already is when the loader shouts that one more went on. The
