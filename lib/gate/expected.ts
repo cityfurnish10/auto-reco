@@ -50,6 +50,7 @@ import { metabaseConfigured, runNativeSql } from "../connectors/metabase";
 import { normalizeOdooWarehouse } from "../connectors/odoo-mapping";
 import { businessDayToUtcWindow } from "../connectors/ist-window";
 import { canonicalize } from "../engine/barcode";
+import { fetchDtExpected, toExpectedRow } from "./expected-dt";
 import type { City } from "../sample-data";
 import type { Direction } from "../engine/types";
 
@@ -162,7 +163,8 @@ export async function fetchExpected(businessDate: string): Promise<ExpectedPull>
 export async function refreshExpected(
   admin: SupabaseClient,
   businessDate: string
-): Promise<{ written: number; withoutSerial: number; total: number; kept?: true }> {
+): Promise<{ written: number; withoutSerial: number; total: number; kept?: true;
+             dtWritten?: number; dtSkipped?: { unknownCity: number; ambiguousDirection: number } }> {
   const pull = await fetchExpected(businessDate);
 
   // AN EMPTY PULL NEVER WIPES A GOOD LIST.
@@ -202,6 +204,7 @@ export async function refreshExpected(
     customer: r.customer,
     picking_ref: r.pickingRef,
     job_type: r.jobType,
+    planned_by: "ODOO" as const,
   }));
 
   let written = 0;
@@ -213,7 +216,58 @@ export async function refreshExpected(
     if (error) throw new Error(`refreshExpected: ${error.message}`);
     written += chunk.length;
   }
-  return { written, withoutSerial: pull.withoutSerial, total: pull.total };
+  // ── DT, merged on top ────────────────────────────────────────────────
+  // Odoo knows what the item IS; DT knows who it is FOR and where it is going.
+  // Both usually name the same barcode on the same day, so this MERGES rather
+  // than letting one overwrite the other: an item only DT predicted is a gap in
+  // Odoo, one only Odoo predicted is a gap in DT, and one both agreed on is
+  // neither. Flattened into a single list, all three look the same.
+  //
+  // Never allowed to fail the refresh. The list worked from Odoo alone before
+  // this existed, and a bad minute at DT must cost the enrichment rather than
+  // the list.
+  const dt = await fetchDtExpected(businessDate).catch(
+    () => ({ rows: [], skipped: { unknownCity: 0, ambiguousDirection: 0 } })
+  );
+
+  let dtWritten = 0;
+  if (dt.rows.length) {
+    // What Odoo already claimed, so a line both systems know can be marked
+    // BOTH rather than being quietly relabelled DT by arriving second.
+    const odooKeys = new Set(payload.map(
+      (p) => `${p.city}|${p.direction}|${p.barcode}`
+    ));
+
+    const dtPayload = dt.rows.map((r) => {
+      const row = toExpectedRow(r, businessDate);
+      const agreed = odooKeys.has(`${row.city}|${row.direction}|${row.barcode}`);
+      return {
+        ...row,
+        planned_by: agreed ? ("BOTH" as const) : ("DT" as const),
+        // On a line Odoo also has, DT contributes ONLY what Odoo cannot know.
+        // Overwriting the picking reference or the product with DT's version
+        // would lose the identity half of the record to gain nothing.
+        ...(agreed ? { product: undefined, so_number: undefined, picking_ref: undefined } : {}),
+      };
+    });
+
+    for (let i = 0; i < dtPayload.length; i += 500) {
+      const chunk = dtPayload.slice(i, i + 500).map((r) =>
+        Object.fromEntries(Object.entries(r).filter(([, v]) => v !== undefined))
+      );
+      const { error } = await admin
+        .from("gate_expected_items")
+        .upsert(chunk, { onConflict: "city,business_date,direction,barcode" });
+      // A DT failure is reported, never thrown: Odoo's half is already stored.
+      if (error) break;
+      dtWritten += chunk.length;
+    }
+  }
+
+  return {
+    written, withoutSerial: pull.withoutSerial, total: pull.total,
+    dtWritten, dtSkipped: dt.skipped,
+  };
 }
 
 /**

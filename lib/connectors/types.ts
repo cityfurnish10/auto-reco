@@ -64,22 +64,43 @@ export interface ConnectorResult {
 // Map arbitrary source city strings to the engine's City union.
 // Per DB MODEL.md §20/§23c — the canonical cross-source city map. Keep this
 // the single source of truth; when a source's spelling changes, update here.
-const CITY_ALIASES: Record<string, City> = {
-  delhi: "DELHI",
-  "new delhi": "DELHI",
-  ncr: "DELHI",
-  gurgaon: "DELHI",
-  gurugram: "DELHI",
-  noida: "DELHI",
-  mumbai: "MUMBAI",
-  bombay: "MUMBAI",
-  pune: "PUNE",
-  hyderabad: "HYDERABAD",
-  hydrabad: "HYDERABAD",
-  hyd: "HYDERABAD",
-  bangalore: "BANGALORE",
-  bengaluru: "BANGALORE",
+//
+// A CITY HERE IS A WAREHOUSE, NOT A PLACE. There are five physical buildings,
+// and each serves a catchment of smaller cities around it — a Chennai delivery
+// physically leaves through the Bangalore gate, so for reconciliation it IS
+// Bangalore. gate_sites.serves has recorded these catchments since 0026; this
+// table did not, and the difference was silently expensive:
+//
+//   MEASURED 2026-08-26. DT carried 50 Chennai deliveries and one Hosur in a
+//   single week. normalizeCity returned null for every one, and the DT
+//   connector skips a row with no city — so fifty real movements through the
+//   Bangalore gate were dropped before reconciliation ever saw them. The same
+//   held for Ghaziabad, Faridabad, Navi Mumbai and Thane.
+//
+// The catchments below mirror gate_sites.serves exactly. If a warehouse starts
+// serving somewhere new, both need updating — a mismatch is invisible and
+// costs whole cities.
+const CATCHMENTS: Record<City, string[]> = {
+  DELHI:     ["delhi", "new delhi", "ncr", "gurgaon", "gurugram", "noida",
+              "ghaziabad", "faridabad"],
+  MUMBAI:    ["mumbai", "bombay", "navi mumbai", "thane", "bhiwandi"],
+  PUNE:      ["pune"],
+  HYDERABAD: ["hyderabad", "hydrabad", "hyd", "secunderabad"],
+  BANGALORE: ["bangalore", "bengaluru", "hosur", "chennai"],
 };
+
+const CITY_ALIASES: Record<string, City> = Object.fromEntries(
+  Object.entries(CATCHMENTS).flatMap(([city, names]) =>
+    names.map((n) => [n, city as City])
+  )
+);
+
+/**
+ * Which places a warehouse serves. Exported so the gate screens can say
+ * "Bangalore (also Hosur, Chennai)" rather than implying a Chennai delivery
+ * has wandered through the wrong gate.
+ */
+export const catchmentFor = (city: City): string[] => CATCHMENTS[city] ?? [];
 
 export function normalizeCity(raw: unknown): City | null {
   if (!raw) return null;
