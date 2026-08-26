@@ -1221,7 +1221,38 @@ interface Check {
  * but never that the checks were happening at all, which is most of what you
  * want from a spot check.
  */
+/**
+ * Three different questions, three sections.
+ *
+ * The tab used to be one list of face checks called "Reviews", which quietly
+ * implied that a face check was the only thing worth reviewing. It is not:
+ * a guard checking in from the wrong place and a row the gate refused outright
+ * are both things somebody should see, and neither had anywhere to appear.
+ *
+ * They are separated rather than merged because they are answered differently.
+ * A face check is a DECISION — a human says yes or no. The other two are
+ * READINGS: the useful response to a refused manual entry is to go and add it
+ * properly, and to an out-of-range check-in is usually to go and confirm where
+ * the gate actually is.
+ */
+type ReviewSection = "face" | "location" | "scanning";
+
+interface LocationFlag {
+  shift_id: string; guard_name: string; city: string; business_date: string;
+  checked_in_at: string; metres_from_gate: number; radius_m: number;
+  pin_unconfirmed: boolean;
+}
+interface Rejection {
+  id: string; client_id: string; kind: string; city: string; reason: string;
+  summary: Record<string, unknown> | null; attempts: number;
+  business_date: string | null; rejected_at: string;
+  app_users?: { name?: string } | null;
+}
+
 function Reviews() {
+  const [section, setSection] = useState<ReviewSection>("face");
+  const [flags, setFlags] = useState<{ location: LocationFlag[]; scanning: Rejection[] } | null>(null);
+  const [flagErr, setFlagErr] = useState<string | null>(null);
   const [rows, setRows] = useState<Check[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -1245,6 +1276,20 @@ function Reviews() {
   }, [state, trigger, date]);
   useEffect(() => { load(); }, [load]);
 
+  // The other two sections come from one call — they are read together and
+  // never acted on individually, so two round trips would buy nothing.
+  useEffect(() => {
+    const q = new URLSearchParams();
+    if (date) q.set("date", date);
+    fetch(`/api/gate/flags?${q}`, { credentials: "same-origin" })
+      .then((r) => r.json())
+      .then((j) => {
+        setFlags({ location: j.location ?? [], scanning: j.scanning ?? [] });
+        setFlagErr(j.locationError ?? j.scanningError ?? null);
+      })
+      .catch((e) => setFlagErr(e instanceof Error ? e.message : String(e)));
+  }, [date]);
+
   async function decide(id: string, decision: "accepted" | "rejected") {
     await fetch("/api/gate/reviews", {
       method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -1253,8 +1298,127 @@ function Reviews() {
     load();
   }
 
+  const counts = {
+    face: rows.length,
+    location: flags?.location.length ?? 0,
+    scanning: flags?.scanning.length ?? 0,
+  };
+
   return (
     <div className="space-y-4">
+      {/* Three sections, because they are three different questions. The counts
+          sit on the buttons so a section with something waiting is visible
+          without opening it — a queue nobody knows to open is not a queue. */}
+      <div className="bg-surface-elevated rounded-control p-1 flex flex-wrap gap-1">
+        {([["face", "Face checks"], ["location", "Location"], ["scanning", "Refused items"]] as const)
+          .map(([v, label]) => (
+            <button key={v} onClick={() => setSection(v)}
+              className={section === v
+                ? "px-4 py-1.5 text-sm font-medium rounded-control bg-surface-card shadow-card flex items-center gap-2"
+                : "px-4 py-1.5 text-sm text-text-secondary rounded-control flex items-center gap-2"}>
+              {label}
+              {counts[v] > 0 && (
+                <span className={`badge ${v === "face" ? "badge-medium" : "badge-high"}`}>{counts[v]}</span>
+              )}
+            </button>
+          ))}
+      </div>
+
+      {flagErr && section !== "face" && (
+        <div className="card p-3 text-sm text-danger border border-danger/30">{flagErr}</div>
+      )}
+
+      {/* ── Location ────────────────────────────────────────────────────── */}
+      {section === "location" && (
+        <>
+          <p className="text-text-muted text-sm">
+            Check-ins whose GPS fell outside the gate. A question rather than a verdict:
+            a phone inside a metal warehouse drifts, and none of the gate pins has been
+            confirmed on site yet.
+          </p>
+          {counts.location === 0 ? (
+            <Empty text="No check-ins outside a gate." />
+          ) : (
+            <div className="card overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr>{["Guard", "Gate", "Distance", "Allowed", "Checked in", ""].map((h) => (
+                    <th key={h} className="text-left px-4 py-2.5 text-xs uppercase tracking-wide text-text-muted whitespace-nowrap">{h}</th>
+                  ))}</tr>
+                </thead>
+                <tbody>
+                  {flags!.location.map((f) => (
+                    <tr key={f.shift_id} className="border-t border-border">
+                      <td className="px-4 py-2.5 font-medium text-text-primary">{f.guard_name}</td>
+                      <td className="px-4 py-2.5">{f.city}</td>
+                      <td className="px-4 py-2.5 tabular-nums">
+                        <span className="badge badge-high">{Math.round(f.metres_from_gate)} m</span>
+                      </td>
+                      <td className="px-4 py-2.5 tabular-nums text-text-muted">{f.radius_m} m</td>
+                      <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{time(f.checked_in_at)}</td>
+                      <td className="px-4 py-2.5">
+                        {/* The caveat travels with the row. Reading a flag as
+                            damning when the pin behind it was decoded from a
+                            Plus Code and never checked would blame a guard for
+                            our own missing homework. */}
+                        {f.pin_unconfirmed && (
+                          <span className="badge badge-medium" title="This gate's coordinates came from a Plus Code and nobody has confirmed them on site.">
+                            gate pin unconfirmed
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Refused items ───────────────────────────────────────────────── */}
+      {section === "scanning" && (
+        <>
+          <p className="text-text-muted text-sm">
+            Rows the gate would not accept, and why. These never reached the record —
+            the item still needs adding properly.
+          </p>
+          {counts.scanning === 0 ? (
+            <Empty text="Nothing was refused." />
+          ) : (
+            <div className="space-y-2">
+              {flags!.scanning.map((r) => (
+                <div key={r.id} className="card p-4">
+                  <div className="flex items-start gap-3 flex-wrap">
+                    <span className="badge badge-high">{r.kind}</span>
+                    <b className="text-text-primary">{r.reason}</b>
+                    {/* A climbing count is the signal that a phone is stuck
+                        retrying something it can never get accepted. */}
+                    {r.attempts > 1 && (
+                      <span className="badge badge-medium" title="The phone has re-sent this and it keeps being refused.">
+                        tried {r.attempts}×
+                      </span>
+                    )}
+                    <span className="ml-auto text-xs text-text-muted whitespace-nowrap">
+                      {r.app_users?.name ?? "—"} · {r.city} · {time(r.rejected_at)}
+                    </span>
+                  </div>
+                  {r.summary && (
+                    <div className="mt-2 text-xs text-text-muted font-mono break-all">
+                      {Object.entries(r.summary)
+                        .filter(([, v]) => v !== null && v !== "")
+                        .map(([k, v]) => `${k}: ${String(v)}`).join("  ·  ")}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {section === "face" && (
+      <>
       <div className="card p-3 flex flex-wrap gap-2 items-center">
         <div className="bg-surface-elevated rounded-control p-1 flex">
           {([["pending", "Needs a look"], ["all", "Everything"]] as const).map(([v, label]) => (
@@ -1337,6 +1501,8 @@ function Reviews() {
             </div>
           ))}
         </div>
+      )}
+      </>
       )}
     </div>
   );
