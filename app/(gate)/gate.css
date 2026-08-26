@@ -479,3 +479,8 @@
  * trip button off the screen — a guard who cannot find the close button is a
  * guard who force-quits, which loses nothing but teaches them not to trust it. */
 .gofflinebox { flex:none; max-height:30vh; overflow-y:auto; padding-bottom:0; }
+
+/* The sync card, which now carries its own actions rather than being a button
+ * that opens a page saying the same thing again. */
+.gsyncbox { gap:10px; }
+.gsyncbox .gbtn { width:100%; }

@@ -133,6 +133,15 @@ export interface SyncReport {
   clockWarnings: string[];
 }
 
+/**
+ * What goes in `driver_name` when a trip arrives without one.
+ *
+ * Deliberately not a name and deliberately not blank: blank is refused by the
+ * constraint, and anything name-shaped would be read as a person. This says
+ * what happened, survives the constraint, and is greppable.
+ */
+export const NO_AGENT_RECORDED = "(not recorded)";
+
 const bad = (clientId: string, reason: string): ItemOutcome =>
   ({ clientId, status: "rejected", reason });
 
@@ -306,13 +315,27 @@ export async function applyBatch(
     if (!d) { report.trips.push(bad(t.clientTripId, "openedAt is not a valid instant")); continue; }
     if (d.suspectClock) report.clockWarnings.push(`trip ${t.clientTripId}: device clock off by ${Math.round(d.skewMs/60000)} min`);
 
+    // A TRIP WITH NO AGENT IS STILL A REAL MOVEMENT.
+    //
+    // The app has required an agent since 26 Aug and the database enforces it
+    // (0030). But a phone can hold trips queued BEFORE that, and those arrive
+    // now as new inserts — so the constraint refused them, forever, 31 retries
+    // deep. Worse, a refused trip orphans every scan that belongs to it: three
+    // real scans and a photographed manual entry were stuck behind four legacy
+    // trips that could never be accepted.
+    //
+    // Refusing a movement to protect a data-quality rule is the wrong trade,
+    // and it is the same mistake as treating silence as zero. The trip is
+    // recorded with the gap named in the field itself, so nobody mistakes it
+    // for a real agent and nothing is lost.
+    const agent = t.driverName?.trim() || null;
     const row = {
       client_trip_id: t.clientTripId,
       city: who.city,
       site_code: who.siteCode,
       direction: t.direction,
       vehicle_no: t.vehicleNo.trim().toUpperCase(),
-      driver_name: t.driverName?.trim() || null,
+      driver_name: agent ?? NO_AGENT_RECORDED,
       carrier_ref: t.carrierRef?.trim() || null,
       opened_at: t.openedAt,
       closed_at: t.closedAt ?? null,

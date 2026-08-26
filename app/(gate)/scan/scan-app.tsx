@@ -331,6 +331,26 @@ export default function GateApp() {
             if (i.payload.barcode) seenRef.current.add(String(i.payload.barcode));
           }
         }
+        // WHERE A RELOAD LANDS.
+        //
+        // This asked for the PIN on EVERY reload, which is intolerable: a
+        // phone that reloads mid-trip — a browser reclaiming memory, a dropped
+        // connection, a stray swipe — sent the guard back to a keypad with a
+        // truck in front of them, over and over.
+        //
+        // The PIN exists to say WHO is using a shared phone. Once they have
+        // checked in and the shift is open, that question is already answered
+        // and the server agrees; asking again proves nothing and costs the
+        // guard their place. So: an open shift means go straight back to work.
+        // No shift means the phone is genuinely idle, and the PIN is right.
+        if (getGuardId() && b.openShift) {
+          let resume: Screen | null = null;
+          try { resume = localStorage.getItem("gate.screen") as Screen | null; } catch { /* blocked */ }
+          const safe = ["today", "scan", "newtrip", "closetrip", "queue", "profile", "history"];
+          setScreen(b.openTrip ? "scan"
+            : resume && safe.includes(resume) ? resume : "today");
+          return;
+        }
         setScreen(getGuardId() ? "pin" : "who");
         return;
       } catch (e) {
@@ -1307,9 +1327,27 @@ export default function GateApp() {
             </>
           } />
           <div className="gbody">
-            <button className="gplain" onClick={() => setScreen("queue")}>
+            {/* THE CARD DOES THE JOB ITSELF.
+                It used to be a button that opened a separate screen — so a
+                guard seeing "not sent yet" had to tap through to a page that
+                mostly repeated the same sentence and offered a Send button.
+                The action belongs where the problem is stated. The detail
+                screen is still there, but only offered when something has been
+                REFUSED, which is the one case with anything worth reading. */}
+            <div className="gcard col gsyncbox">
               <SyncCard t={t} online={online} queue={queue} />
-            </button>
+              {queue.waiting > 0 && (
+                <button className="gbtn sm ghost" onClick={() => void sync()}>
+                  <Icon name="refresh" size={16} />{t("sendNow")}
+                </button>
+              )}
+              {queue.rejected > 0 && (
+                <button className="gbtn sm warn" onClick={() => setScreen("queue")}>
+                  <Icon name="warning" size={16} />
+                  {queue.rejected} {t("needsAttention")}
+                </button>
+              )}
+            </div>
             {shiftAt && (
               <div className="gcard ok">
                 <Icon name="check_circle" size={22} className="gbig" />

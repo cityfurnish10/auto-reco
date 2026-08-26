@@ -510,3 +510,44 @@ describe("applyBatch — a refusal is answerable by somebody else", () => {
     expect(scanRows).toHaveLength(1);
   });
 });
+
+// ── A queue that cannot drain ────────────────────────────────────────────
+// REPORTED FROM A REAL PHONE, 26 Aug: "it is not sending the data". Four trips
+// queued BEFORE the delivery agent became mandatory arrived after migration
+// 0030 added the constraint. Each was refused, 31 times. And a refused trip
+// orphans everything belonging to it — three scans and a photographed manual
+// entry were stuck behind trips that could never be accepted.
+//
+// Refusing a movement to protect a data-quality rule is the wrong trade. It is
+// the same error as reading silence as zero: the rule is preserved and the
+// thing the rule exists to describe is lost.
+
+describe("applyBatch — a trip with no agent still records", () => {
+  it("accepts it rather than refusing it forever", async () => {
+    const { db, tripRows } = stubDb();
+    const r = await applyBatch(db, WHO, { trips: [trip({ driverName: null })] });
+    expect(r.trips[0].status).toBe("stored");
+    // Named in the field itself, so nobody reads it as a person and the gap is
+    // greppable.
+    const row = [...tripRows.values()][0];
+    expect(row.driver_name).toBe("(not recorded)");
+  });
+
+  it("does not orphan the scans that belong to it", async () => {
+    // The expensive half of the bug: the trip was one refusal, the scans were
+    // silent casualties of it.
+    const { db, scanRows } = stubDb();
+    const r = await applyBatch(db, WHO, {
+      trips: [trip({ driverName: null })],
+      scans: [scan(), scan({ clientScanId: "cs-2", barcode: "FUMYHA23030062" })],
+    });
+    expect(r.scans.every((s) => s.status === "stored")).toBe(true);
+    expect(scanRows).toHaveLength(2);
+  });
+
+  it("still prefers a real agent when one was given", async () => {
+    const { db, tripRows } = stubDb();
+    await applyBatch(db, WHO, { trips: [trip({ driverName: "  Sudhir Kumar " })] });
+    expect([...tripRows.values()][0].driver_name).toBe("Sudhir Kumar");
+  });
+});
