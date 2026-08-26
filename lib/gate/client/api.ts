@@ -43,9 +43,22 @@ export async function rosterFor(): Promise<{ site: { city: string; code: string 
 /** Today's scheduled trucks and agents, read live from DT at the moment it is
  *  asked for. `source: "unavailable"` means DT could not be reached — which is
  *  a different thing from a genuinely empty day, and the app says so. */
+export interface PlannedUnit { barcode: string; product: string | null }
+export interface PlannedTask {
+  ticket: string | null; customer: string | null; address: string | null;
+  jobType: string | null; units: PlannedUnit[];
+}
+/** A truck and what DT has planned for it. Often empty: 543 tasks were
+ *  scheduled on the day this was measured and only 22 had a truck assigned,
+ *  so a load is context when DT has it rather than something to rely on. */
+export interface PlannedTrip {
+  vehicle: string; agents: string[]; tasks: PlannedTask[]; unitCount: number;
+}
+
 export interface Fleet {
   vehicles: string[];
   agents: string[];
+  trips: PlannedTrip[];
   source: "dt" | "unavailable";
 }
 
@@ -62,7 +75,7 @@ export async function fleet(): Promise<Fleet> {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json();
   } catch {
-    return { vehicles: [], agents: [], source: "unavailable" };
+    return { vehicles: [], agents: [], trips: [], source: "unavailable" };
   }
 }
 

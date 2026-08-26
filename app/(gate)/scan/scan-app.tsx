@@ -746,6 +746,11 @@ export default function GateApp() {
     drv.trim().length < 2 && "deliveryAgent",
   ].filter(Boolean) as string[];
 
+  /** What DT has planned for the truck the guard has chosen, if anything. */
+  const plannedForVehicle = veh
+    ? fleet?.trips?.find((x) => x.vehicle === veh) ?? null
+    : null;
+
   /** The face the phone compared is confidently not this guard's. */
   const faceBlocked = blocksEntry(faceVerdict);
 
@@ -1379,7 +1384,22 @@ export default function GateApp() {
                     options={fleet?.vehicles ?? null}
                     unavailable={fleet?.source === "unavailable"}
                     value={veh}
-                    onChange={(v) => { setVeh(v); openPickerSafely(v && !drv ? "drv" : null, true); }}
+                    onChange={(v) => {
+                      setVeh(v);
+                      // DT knows who is on this truck. Filling it in saves the
+                      // guard a decision they were only making because the two
+                      // lists did not know about each other — and it is only
+                      // done when there is exactly ONE candidate, because
+                      // guessing between two would be worse than asking.
+                      const t = fleet?.trips?.find((x) => x.vehicle === v);
+                      const only = t?.agents.length === 1 ? t.agents[0] : null;
+                      if (only && !drv) {
+                        setDrv(only);
+                        openPickerSafely(null, true);
+                      } else {
+                        openPickerSafely(v && !drv ? "drv" : null, true);
+                      }
+                    }}
                     typing={vehTyped} onTyping={setVehTyped}
                     id="veh" openId={openPicker} onOpen={openPickerSafely} />
 
@@ -1390,6 +1410,30 @@ export default function GateApp() {
                     onChange={(v) => { setDrv(v); openPickerSafely(v && !veh ? "veh" : null, true); }}
                     typing={drvTyped} onTyping={setDrvTyped}
                     id="drv" openId={openPicker} onOpen={openPickerSafely} />
+
+            {/* WHAT THIS TRUCK IS CARRYING, when DT knows. Usually it does
+                not: 543 tasks were scheduled on the day this was measured and
+                only 22 had a truck assigned, so this is context when it exists
+                rather than something the screen depends on. Silent when
+                absent — an empty "nothing planned" box on every trip would
+                train the guard to ignore the one time it matters. */}
+            {plannedForVehicle && plannedForVehicle.unitCount > 0 && (
+              <div className="gcard col gplanned">
+                <h3><Icon name="local_shipping" size={17} /> {t("plannedOnThis")}</h3>
+                {plannedForVehicle.tasks.map((k, i) => (
+                  <div key={i} className="gplantask">
+                    <b>{[k.customer, k.jobType].filter(Boolean).join(" · ") || t("plannedTask")}</b>
+                    {k.address && <span className="gsub">{k.address}</span>}
+                    {k.units.map((u) => (
+                      <div key={u.barcode} className="gkv">
+                        <span className="mono">{u.barcode}</span>
+                        <span className="gsub">{u.product ?? ""}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <p className="gnote">{t("vehNote")}</p>
           </div>

@@ -84,6 +84,16 @@ await ctx.route("**/api/gate/bootstrap*", (route) => json(route, {
 await ctx.route("**/api/gate/fleet", (route) => json(route, {
   vehicles: ["HR26DK8337", "DL01AB1234"],
   agents: ["Ramesh Kumar", "Suresh Yadav"],
+  // HR26DK8337 has TWO agents on purpose, so the agent picker still has to be
+  // answered — the auto-fill only fires when DT names exactly one, and a
+  // walkthrough that never exercised the picker would stop testing it.
+  trips: [
+    { vehicle: "HR26DK8337", agents: ["Ramesh Kumar", "Suresh Yadav"], unitCount: 1,
+      tasks: [{ ticket: "1174052", customer: "A Sharma", jobType: "Replace",
+                address: "44 Golf Course Road, Gurgaon, 122002",
+                units: [{ barcode: "FUMY5U23080048", product: "Queen Bed" }] }] },
+    { vehicle: "DL01AB1234", agents: ["Ramesh Kumar"], unitCount: 0, tasks: [] },
+  ],
   source: "dt",
 }));
 
@@ -235,6 +245,20 @@ await page.waitForTimeout(400);
 const chosen = await page.locator(".gpickchosen.on").count();
 if (chosen === 2) ok("both pickers collapsed to a chosen row");
 else bad(`expected 2 collapsed 'chosen' rows, found ${chosen}`);
+
+// What DT says is ON this truck. The point of picking a vehicle rather than
+// two independent lists: the guard sees the load before they start.
+if (await seen("Planned on this vehicle")) {
+  ok("shows what DT has planned for the chosen truck");
+  if (await seen("A Sharma")) ok("names the customer");
+  else bad("no customer on the planned load");
+  if (await seen("44 Golf Course Road")) ok("shows the delivery address");
+  else bad("no delivery address on the planned load");
+  if (await seen("FUMY5U23080048")) ok("lists the planned units");
+  else bad("no units listed");
+} else {
+  bad("the truck's planned load is not shown");
+}
 
 if (await startScan.isEnabled().catch(() => false)) ok("enabled once all three are chosen");
 else bad("still disabled after choosing direction, vehicle and agent");

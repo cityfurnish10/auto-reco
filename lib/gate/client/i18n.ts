@@ -70,6 +70,10 @@ export const STRINGS: Record<string, Row> = {
   keepIt:{en:"Keep it",hi:"रहने दें",mr:"राहू द्या",kn:"ಇರಲಿ",te:"ఉంచండి"},
   removed:{en:"Removed",hi:"हटा दिया",mr:"काढले",kn:"ತೆಗೆಯಲಾಗಿದೆ",te:"తీసివేయబడింది"},
 
+  // ── What the plan says is on this truck ───────────────────────────────
+  plannedOnThis:{en:"Planned on this vehicle",hi:"इस गाड़ी में तय है",mr:"या गाडीत नियोजित",kn:"ಈ ವಾಹನದಲ್ಲಿ ನಿಗದಿ",te:"ఈ వాహనంలో ప్లాన్"},
+  plannedTask:{en:"Delivery task",hi:"डिलीवरी टास्क",mr:"डिलिव्हरी टास्क",kn:"ಡೆಲಿವರಿ ಕೆಲಸ",te:"డెలివరీ టాస్క్"},
+
   // ── Ending the day ────────────────────────────────────────────────────
   // Reachable in one tap, because the only way to end a shift used to be a
   // button labelled "switch guard" — so guards pocketed the phone instead and

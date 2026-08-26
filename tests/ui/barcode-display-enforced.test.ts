@@ -143,6 +143,16 @@ const ALLOWED: { file: string; snippet: string; why: string }[] = [
   },
   {
     file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "key={u.barcode}",
+    why: "KEY — a React list key for a unit DT has planned on this truck.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "className=\"mono\">{u.barcode}",
+    why: "LABEL, and correct: DT's own spelling of a planned unit, shown so a guard can match it against the sticker in front of them.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
     snippet: "{confirmRemove.barcode}",
     why: "LABEL, and correct: naming the raw payload of the item about to be removed.",
   },
