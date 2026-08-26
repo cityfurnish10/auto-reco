@@ -25,6 +25,17 @@ describe("pulling a registration out of a DT transport reference", () => {
       ["S&S-AL-TS15U5789", "TS15U5789"],
       ["S&S - TIv30 - TS07UL5177", "TS07UL5177"],
       ["AT-TI-MH14FP2399", "MH14FP2399"],
+      // The ten that the first parser dropped — 22% of the fleet. Every one
+      // puts a separator somewhere a boundary-based rule cannot survive.
+      ["MT - T - DL-1L-AN9769", "DL1LAN9769"],   // hyphens INSIDE the plate
+      ["Vayutransport KA14C5943 ", "KA14C5943"], // no separator before the plate
+      ["Pidge KA 08A 3734", "KA08A3734"],        // spaces inside the plate
+      ["KT - B - HR-55-AQ 8878", "HR55AQ8878"],  // both, plus a vendor prefix
+      ["Pidge KA 08 A 2871", "KA08A2871"],
+      ["Vayu Transport KA53AB3631", "KA53AB3631"],
+      ["TORIX 407 KA03AB7069", "KA03AB7069"],    // a number before the plate
+      ["DL- KA-53-AC-2317 ", "KA53AC2317"],      // a state code before the plate
+      ["NT - TA - MH12FD9355\n", "MH12FD9355"],  // a trailing newline, stored
     ];
     for (const [raw, plate] of real) expect(vehicleFromTransportId(raw), raw).toBe(plate);
   });

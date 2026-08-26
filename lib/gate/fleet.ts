@@ -48,47 +48,58 @@ export interface Fleet {
 export const EMPTY_FLEET: Fleet = { vehicles: [], agents: [], source: "unavailable" };
 
 /**
- * An Indian registration, or nothing.
+ * An Indian registration found anywhere in a string, or nothing.
  *
  *   state code   two letters          DL, MH, KA, TS, HR
  *   RTO          one or two digits    1, 12, 03
- *   series       up to four, MIXED    LAH, TV, U, and — the case that broke
- *                                     the first attempt — L2AG, where a digit
- *                                     sits inside the letters
+ *   series       up to four, MIXED    LAH, TV, U, and L2AG — a digit inside
+ *                                     the letters is real
  *   number       exactly four digits
  *
- * The series was originally written as letters only, which silently dropped
- * DL1L2AG3248 from a Delhi guard's list. Real plates, not the format anyone
- * describes from memory.
+ * SEPARATORS ARE STRIPPED BEFORE MATCHING, and that is the whole trick. The
+ * first version split on hyphens and took the last piece, which silently lost
+ * 10 of 46 real transport references — 22% of the fleet simply absent from the
+ * guard's list. The plate itself carries separators in some of them:
+ *
+ *   MT - T - DL-1L-AN9769      the plate is hyphenated internally
+ *   Pidge KA 08A 3734          spaces inside the plate
+ *   KT - B - HR-55-AQ 8878     both, and a vendor prefix
+ *   Vayutransport KA14C5943    no separator between vendor and plate at all
+ *
+ * Any rule that treats a separator as a boundary loses these. Stripping first
+ * and then searching finds the plate wherever it sits, and the LAST match is
+ * taken because a vendor code sometimes looks plate-ish and always comes first.
  */
+const PLATE_ANYWHERE = /[A-Z]{2}\d{1,2}[A-Z0-9]{0,4}\d{4}/g;
 export const PLATE_RE = /^[A-Z]{2}\d{1,2}[A-Z0-9]{0,4}\d{4}$/;
 
 function plateOrNull(raw: string): string | null {
-  const plate = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  return PLATE_RE.test(plate) ? plate : null;
+  const s = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  let last: string | null = null;
+  let m: RegExpExecArray | null;
+  PLATE_ANYWHERE.lastIndex = 0;
+  while ((m = PLATE_ANYWHERE.exec(s)) !== null) {
+    last = m[0];
+    // Advance by one rather than by the whole match, so an overlapping later
+    // plate is still found.
+    PLATE_ANYWHERE.lastIndex = m.index + 1;
+  }
+  return last;
 }
 
 /**
  * Pull the registration out of a DT transport reference.
  *
  * `transportId` is not a registration — it is a vendor code, a service code and
- * a registration joined by hyphens, spaced however whoever typed it felt at the
- * time. Real values, all from one afternoon:
+ * a plate run together, spaced however whoever typed it felt at the time. Real
+ * values, all from one week:
  *
- *   TC-Intra-MH12TV6748        CT - TA - DL1LAH6369
- *   Tarun-TA-DL1L2AG3248       Pidge -BD- KA03AL5909
- *   S&S-AL-TS15U5789           S&S - TIv30 - TS07UL5177
- *
- * The registration is always the last segment. It is validated rather than
- * merely trimmed, because a malformed vendor code would otherwise put nonsense
- * in a dropdown a guard is meant to trust — and a wrong-looking option is worse
- * than a missing one, which at least sends them to the text box.
+ *   TC-Intra-MH12TV6748        MT - T - DL-1L-AN9769
+ *   Pidge KA 08A 3734          KT - B - HR-55-AQ 8878
+ *   Vayutransport KA14C5943    TORIX 407 KA03AB7069
  */
 export function vehicleFromTransportId(raw: unknown): string | null {
-  const s = String(raw ?? "").trim();
-  if (!s) return null;
-  const last = s.split("-").pop() ?? "";
-  return plateOrNull(last);
+  return plateOrNull(String(raw ?? ""));
 }
 
 /** A one-off hired vehicle, typed by hand into DT. Same validation. */
