@@ -37,15 +37,50 @@ export const dtDatabaseId = (): number => Number(process.env.METABASE_DT_DB_ID ?
 /** This sits on a path a guard waits on, so it is bounded. */
 const TIMEOUT_MS = 8_000;
 
+/** One item DT expects on a truck. */
+export interface PlannedUnit {
+  barcode: string;
+  product: string | null;
+}
+
+/** One customer task assigned to a truck today. */
+export interface PlannedTask {
+  ticket: string | null;
+  customer: string | null;
+  address: string | null;
+  jobType: string | null;
+  units: PlannedUnit[];
+}
+
+/**
+ * A truck, and what DT has planned for it.
+ *
+ * THE SHAPE THAT MATTERS. The first version returned two flat lists — every
+ * vehicle in the city and every agent in the city — which made the guard pick
+ * both independently and told them nothing about the vehicle in front of them.
+ * DT already knows which agent is on which truck and which units it is meant
+ * to carry, so a guard should pick the truck and have the rest follow.
+ */
+export interface PlannedTrip {
+  vehicle: string;
+  /** Usually one. More than one means DT has the truck shared across tasks
+   *  with different people, which the app offers rather than guesses between. */
+  agents: string[];
+  tasks: PlannedTask[];
+  unitCount: number;
+}
+
 export interface Fleet {
   vehicles: string[];
   agents: string[];
+  /** Per truck: who is on it and what it is meant to carry. */
+  trips: PlannedTrip[];
   /** Where the list came from, so a silent empty is distinguishable from a
    *  genuine "nothing is scheduled". The app shows one and not the other. */
   source: "dt" | "unavailable";
 }
 
-export const EMPTY_FLEET: Fleet = { vehicles: [], agents: [], source: "unavailable" };
+export const EMPTY_FLEET: Fleet = { vehicles: [], agents: [], trips: [], source: "unavailable" };
 
 /**
  * An Indian registration found anywhere in a string, or nothing.
@@ -152,24 +187,59 @@ export function fleetPipeline(from: Date, to: Date): unknown[] {
       },
     },
     {
+      // The customer, the address and the city live on the DELIVERY, not the
+      // trip. The join is by $toObjectId because DT stores the reference as a
+      // string while the target _id is an ObjectId — a plain
+      // localField/foreignField lookup silently matches nothing, which reads
+      // exactly like a quiet day.
       $lookup: {
         from: "deliveries",
         let: { d: { $toObjectId: "$deliveryId" } },
-        pipeline: [{ $match: { $expr: { $eq: ["$_id", "$$d"] } } }, { $project: { city: 1 } }],
+        pipeline: [
+          { $match: { $expr: { $eq: ["$_id", "$$d"] } } },
+          { $project: { city: 1, ticketNumber: 1, firstName: 1, lastName: 1,
+                        jobType: 1, address: 1 } },
+        ],
         as: "dv",
       },
     },
     { $unwind: { path: "$dv", preserveNullAndEmptyArrays: true } },
+    {
+      // And the units the task is meant to move. Still-to-move only: status
+      // "2" is done, and a unit already completed is not expected at the gate.
+      $lookup: {
+        from: "orderfromcityfurnishes",
+        let: { d: { $toObjectId: "$deliveryId" } },
+        pipeline: [
+          { $match: { $expr: { $or: [
+            { $eq: ["$pickup_deliveryId", "$$d"] },
+            { $eq: ["$deliveryId", "$$d"] },
+          ] } } },
+          { $match: { status: { $ne: "2" }, barcode: { $nin: [null, ""] } } },
+          { $project: { _id: 0, barcode: 1, Product_name: 1 } },
+        ],
+        as: "units",
+      },
+    },
     // `doneBy` carries the ASSIGNED agent, not only a completed one — verified
     // against trips still sitting at "Pickup Pending". The `agents` collection
     // looked like the obvious source and is not: it holds a single stale row.
-    { $project: { _id: 0, city: "$dv.city", transportId: 1, adhoc_vehicle: 1, doneBy: 1 } },
+    {
+      $project: {
+        _id: 0, city: "$dv.city", transportId: 1, adhoc_vehicle: 1, doneBy: 1,
+        ticket: "$dv.ticketNumber", jobType: "$dv.jobType", address: "$dv.address",
+        customer: { $trim: { input: { $concat: [
+          { $ifNull: ["$dv.firstName", ""] }, " ", { $ifNull: ["$dv.lastName", ""] },
+        ] } } },
+        units: 1,
+      },
+    },
     { $limit: 5000 },
   ];
 }
 
 /**
- * Read today's and tomorrow's scheduled vehicles and agents for one city.
+ * Read what is planned at one gate today, grouped by truck.
  *
  * Never throws. If DT is having a bad minute the app gets an empty list and a
  * text box, which is an inconvenience; a spinner at a gate with a truck waiting
@@ -184,23 +254,54 @@ export async function fleetForCity(city: City, now: Date = new Date()): Promise<
       dtDatabaseId(), "trips", fleetPipeline(from, to), TIMEOUT_MS
     );
 
-    const vehicles = new Set<string>();
+    const byVehicle = new Map<string, PlannedTrip>();
     const agents = new Set<string>();
+
     for (const r of table.rows) {
       // City is filtered HERE rather than in the pipeline because DT's
-      // spellings are not the engine's — Gurgaon and Noida are both DELHI, and
-      // normalizeCity is the one place that knows it. Duplicating those rules
-      // into a Mongo query is how the two quietly drift apart.
+      // spellings are not the engine's — Chennai is served from the Bangalore
+      // building, and normalizeCity is the one place that knows it.
       if (normalizeCity(r.city) !== city) continue;
-      const v = vehicleFromTransportId(r.transportId) ?? vehicleFromAdhoc(r.adhoc_vehicle);
-      const a = normalizeAgent(r.doneBy);
-      if (v) vehicles.add(v);
-      if (a) agents.add(a);
+
+      const vehicle = vehicleFromTransportId(r.transportId) ?? vehicleFromAdhoc(r.adhoc_vehicle);
+      const agent = normalizeAgent(r.doneBy);
+      if (agent) agents.add(agent);
+      // A task with no readable plate cannot be attached to a truck. The agent
+      // still counts — they are working today whatever they are driving.
+      if (!vehicle) continue;
+
+      const trip = byVehicle.get(vehicle) ?? { vehicle, agents: [], tasks: [], unitCount: 0 };
+      if (agent && !trip.agents.includes(agent)) trip.agents.push(agent);
+
+      const units = ((r.units as { barcode?: string; Product_name?: string }[]) ?? [])
+        .map((u) => ({ barcode: String(u.barcode ?? "").trim(), product: u.Product_name ?? null }))
+        .filter((u) => u.barcode);
+
+      // A task with no units left is not shown — it has already moved, or it
+      // has no barcoded items. Either way there is nothing for a guard to scan.
+      if (units.length) {
+        const customer = String(r.customer ?? "").replace(/\s+/g, " ").trim();
+        trip.tasks.push({
+          ticket: (r.ticket as string) || null,
+          customer: customer || null,
+          address: formatDtAddress(r.address),
+          jobType: (r.jobType as string) || null,
+          units,
+        });
+        trip.unitCount += units.length;
+      }
+      byVehicle.set(vehicle, trip);
     }
 
+    const trips = [...byVehicle.values()]
+      // Most loaded first: the truck with the most to check is the one a guard
+      // is most likely to be looking at.
+      .sort((a, b) => b.unitCount - a.unitCount || a.vehicle.localeCompare(b.vehicle));
+
     return {
-      vehicles: [...vehicles].sort(),
+      vehicles: trips.map((t) => t.vehicle),
       agents: [...agents].sort((x, y) => x.localeCompare(y)),
+      trips,
       source: "dt",
     };
   } catch {
@@ -208,4 +309,36 @@ export async function fleetForCity(city: City, now: Date = new Date()): Promise<
     // box and never learns any of that happened.
     return EMPTY_FLEET;
   }
+}
+
+/**
+ * DT nests an address and repeats itself inside it.
+ *
+ * cf_address_1 usually already ends with the city and pincode, so appending
+ * cf_city and cf_pincode produced "…Mumbai, Maharashtra 400063, Mumbai,
+ * 400063". "Near " with nothing after it is also a real stored value, and left
+ * in it reads as though the app truncated the address.
+ */
+export function formatDtAddress(a: unknown): string | null {
+  if (!a || typeof a !== "object") return null;
+  const o = a as Record<string, unknown>;
+  const clean = (v: unknown) => {
+    const t = String(v ?? "").trim();
+    return !t || t.toLowerCase() === "null" ? "" : t;
+  };
+  const DANGLING = /^(near|opp|opposite|behind|beside|next to|besides|in ?front of)\.?$/i;
+  const kept: string[] = [];
+  const push = (raw: string) => {
+    const v = raw.trim().replace(/[,\s]+$/, "");
+    if (v.length < 3 || DANGLING.test(v)) return;
+    if (kept.join(", ").toLowerCase().includes(v.toLowerCase())) return;
+    kept.push(v);
+  };
+  push(clean(o.cf_address_1));
+  push(clean(o.cf_address_2));
+  push(clean(o.cf_area));
+  push(clean(o.cf_city));
+  push(clean(o.cf_pincode));
+  const line = kept.join(", ").replace(/\s+/g, " ").trim();
+  return line.length >= 6 ? line.slice(0, 300) : null;
 }

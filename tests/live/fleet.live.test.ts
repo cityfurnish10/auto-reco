@@ -57,4 +57,46 @@ describe.skipIf(!live)("the fleet, read live from the Delivery Tracker", () => {
     console.table(found);
     expect(anyVehicles, "no city returned a single truck — the query found nothing").toBeGreaterThan(0);
   }, 60_000);
+
+  it("each truck carries its own agent and planned load", async () => {
+    // The shape that matters: a guard picks the vehicle in front of them and
+    // the agent and the units follow, rather than picking both from two flat
+    // city-wide lists that say nothing about each other.
+    for (const city of CITIES) {
+      const f = await fleetForCity(city);
+      if (!f.trips.length) continue;
+      console.log(`\n  ${city}`);
+      for (const t of f.trips.slice(0, 3)) {
+        console.log(`    ${t.vehicle}  ${t.agents.join(", ") || "(no agent)"}  ` +
+                    `${t.tasks.length} task(s), ${t.unitCount} unit(s)`);
+        for (const k of t.tasks.slice(0, 2)) {
+          console.log(`       ${k.jobType ?? "—"} · ${k.customer ?? "—"} · ${k.ticket ?? "—"}`);
+          console.log(`       ${k.address ?? "(no address)"}`);
+          for (const u of k.units.slice(0, 3)) console.log(`         ${u.barcode}  ${u.product ?? ""}`);
+        }
+      }
+      for (const t of f.trips) {
+        expect(t.vehicle).toMatch(/^[A-Z]{2}\d{1,2}[A-Z0-9]{0,4}\d{4}$/);
+        // Every vehicle offered must appear in the flat list the picker uses.
+        expect(f.vehicles).toContain(t.vehicle);
+        // unitCount may legitimately be ZERO — see below.
+        expect(t.unitCount).toBeGreaterThanOrEqual(0);
+        expect(t.unitCount).toBe(t.tasks.reduce((n, k) => n + k.units.length, 0));
+      }
+
+      // A TRUCK WITH NOTHING PLANNED IS STILL OFFERED, and that is deliberate.
+      // It is physically at the gate; its units may all be marked done already,
+      // or it may be running an ad-hoc trip. Hiding it would send a guard to
+      // manual entry for a vehicle DT knows about, which is the exact friction
+      // the list exists to remove. It simply shows nothing when selected.
+      const loaded = f.trips.filter((t) => t.unitCount > 0);
+      const empty = f.trips.filter((t) => t.unitCount === 0);
+      console.log(`    ${loaded.length} truck(s) with a planned load, ${empty.length} without`);
+
+      // Most-loaded first, so the truck a guard is most likely looking at is
+      // nearest the top of the list.
+      const counts = f.trips.map((t) => t.unitCount);
+      expect(counts, "trips are not sorted by load").toEqual([...counts].sort((a, b) => b - a));
+    }
+  }, 60_000);
 });
