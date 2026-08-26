@@ -458,3 +458,24 @@
 .gplantask > b { display:block; font-size:14.5px; }
 .gplantask > .gsub { display:block; margin:2px 0 6px; line-height:1.4; }
 .gplantask .gkv { padding:4px 0; border-bottom:none; font-size:13.5px; }
+
+/* No signal, while scanning.
+ *
+ * A BAR, NOT A DIALOG. Scanning keeps working offline — that is the case this
+ * app exists for — so this must inform without interrupting a loop the guard
+ * is running with a driver waiting. It sits between the viewfinder and the
+ * tally, where the eye already travels after each scan. */
+.goffline { flex:none; display:flex; align-items:center; gap:11px;
+  padding:10px 16px; background:var(--warnbg); color:var(--warnfg);
+  border-bottom:1px solid rgba(0,0,0,.08); }
+.goffline > div { flex:1; min-width:0; }
+.goffline b { display:block; font-size:14px; }
+.goffline span { display:block; font-size:12.5px; opacity:.85; }
+.goffline .gcount { flex:none; font-family:var(--mono); font-size:15px;
+  font-weight:650; background:var(--warn); color:#fff;
+  border-radius:9px; padding:3px 9px; }
+
+/* The close screen's unsent-work warning. Bounded so it cannot push the Close
+ * trip button off the screen — a guard who cannot find the close button is a
+ * guard who force-quits, which loses nothing but teaches them not to trust it. */
+.gofflinebox { flex:none; max-height:30vh; overflow-y:auto; padding-bottom:0; }

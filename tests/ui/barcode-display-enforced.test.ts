@@ -64,11 +64,6 @@ const ALLOWED: { file: string; snippet: string; why: string }[] = [
   // recover a true spelling from a folded one, and there is no fold to undo.
   {
     file: "app/(gate)/scan/scan-app.tsx",
-    snippet: "e.barcode === barcode",
-    why: "KEY — matching a scan against the day's expected pickings.",
-  },
-  {
-    file: "app/(gate)/scan/scan-app.tsx",
     snippet: "payload.barcode ?? payload.serialNo",
     why: "KEY — the local feed's identity for a queued row.",
   },

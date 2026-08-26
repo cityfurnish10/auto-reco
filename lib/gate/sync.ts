@@ -27,6 +27,7 @@ import { geoOk, isCounted, loadSite, INWARD_ONLY_KINDS, OUTWARD_PHOTO_SAMPLE_RAT
          type GateSite } from "./config";
 import type { Direction } from "../engine/types";
 import type { GateItemKind } from "../db/schema";
+import { canonicalize } from "../engine/barcode";
 
 /** What the completeness check found, sent with the trip's close. */
 export interface InCompleteness {
@@ -230,6 +231,52 @@ function completenessColumns(c: InCompleteness | null | undefined): Completeness
   };
 }
 
+/**
+ * Attach what is known about a barcode, at the moment it arrives.
+ *
+ * ENRICHMENT MOVED HERE FROM THE PHONE, and the reason is structural rather
+ * than tidiness. The device used to download the day's expected list so it
+ * could label a scan itself — which meant the plan was sitting on the handset,
+ * and the only thing stopping a guard seeing it was a rule I kept breaking.
+ *
+ * The gate is worth building because it is an INDEPENDENT witness. A guard who
+ * can see what is expected scans against the expectation, and the record stops
+ * being an observation. Now the phone holds nothing but what was scanned, and
+ * showing the plan is impossible rather than merely forbidden.
+ *
+ * One lookup for the whole batch. A forty-scan sync should not ask the
+ * database forty times what a barcode is.
+ */
+async function enrichScans(
+  admin: SupabaseClient,
+  who: GateIdentity,
+  businessDate: string,
+  barcodes: string[]
+): Promise<Map<string, Record<string, unknown>>> {
+  const found = new Map<string, Record<string, unknown>>();
+  const wanted = [...new Set(barcodes.filter(Boolean))];
+  if (!wanted.length) return found;
+
+  // Matched on the FOLD as well as the true spelling: a scanned QR and a
+  // planned line can differ by a confusable character and still be one label.
+  const canon = [...new Set(wanted.map((b) => canonicalize(b)))];
+  const { data } = await admin
+    .from("gate_expected_items")
+    .select("barcode,barcode_canon,product,so_number,ticket_id,customer,delivery_address,picking_ref,planned_by")
+    .eq("city", who.city)
+    .eq("business_date", businessDate)
+    .or(`barcode.in.(${wanted.map((b) => `"${b}"`).join(",")}),` +
+        `barcode_canon.in.(${canon.map((b) => `"${b}"`).join(",")})`);
+
+  for (const row of (data ?? []) as Record<string, unknown>[]) {
+    // Keyed both ways so a lookup succeeds whichever spelling the scan used.
+    for (const k of [row.barcode, row.barcode_canon]) {
+      if (k) found.set(canonicalize(String(k)), row);
+    }
+  }
+  return found;
+}
+
 export async function applyBatch(
   admin: SupabaseClient,
   who: GateIdentity,
@@ -312,6 +359,19 @@ export async function applyBatch(
   }
 
   // ── 2. Scans ─────────────────────────────────────────────────────────────
+  // What is known about these barcodes, looked up ONCE for the whole batch.
+  // The phone sends a bare scan; everything a person would want to read about
+  // it is attached here. See enrichScans for why this is not done on the
+  // device.
+  const scanDate = resolveBusinessDate(
+    batch.scans?.[0]?.scannedAt ?? now.toISOString(), now
+  )?.businessDate ?? null;
+  const known = scanDate
+    ? await enrichScans(admin, who, scanDate,
+        (batch.scans ?? []).map((x) => x.barcode ?? "").filter(Boolean))
+        .catch(() => new Map<string, Record<string, unknown>>())
+    : new Map<string, Record<string, unknown>>();
+
   for (const sc of batch.scans ?? []) {
     if (!sc.clientScanId) { report.scans.push(bad("(missing id)", "clientScanId required")); continue; }
 
@@ -363,6 +423,9 @@ export async function applyBatch(
     if (!d) { report.scans.push(bad(sc.clientScanId, "scannedAt is not a valid instant")); continue; }
     if (d.suspectClock) report.clockWarnings.push(`scan ${sc.clientScanId}: device clock off by ${Math.round(d.skewMs/60000)} min`);
 
+    // Looked up on the FOLD so a confusable character does not lose the match.
+    const match = sc.barcode ? known.get(canonicalize(sc.barcode.trim())) : undefined;
+
     const sampled = drawPhotoSample(direction, sc.entryMethod);
     const needsPhoto = !!sc.hasPhoto || sampled;
     const photoPath = needsPhoto
@@ -390,10 +453,13 @@ export async function applyBatch(
       item_kind: kind,
       quantity: qty,
       entry_method: sc.entryMethod,
-      product: sc.product?.trim() || null,
-      so_number: sc.soNumber?.trim() || null,
-      ticket_id: sc.ticketId?.trim() || null,
-      customer: sc.customer?.trim() || null,
+      // WHAT THE PHONE SENT, then what the server knows — in that order.
+      // A manual entry carries details a guard typed and those must win; a
+      // scan carries none, and the plan fills them in. Neither invents.
+      product: sc.product?.trim() || (match?.product as string) || null,
+      so_number: sc.soNumber?.trim() || (match?.so_number as string) || null,
+      ticket_id: sc.ticketId?.trim() || (match?.ticket_id as string) || null,
+      customer: sc.customer?.trim() || (match?.customer as string) || null,
       photo_path: photoPath,
       photo_sampled: sampled,
       lat: sc.lat ?? null,

@@ -81,8 +81,10 @@ export interface ConnectorResult {
 // serving somewhere new, both need updating — a mismatch is invisible and
 // costs whole cities.
 const CATCHMENTS: Record<City, string[]> = {
+  // Jaipur is served from the Delhi building — confirmed by operations
+  // 2026-08-26. It appeared in DT and was being dropped for want of a home.
   DELHI:     ["delhi", "new delhi", "ncr", "gurgaon", "gurugram", "noida",
-              "ghaziabad", "faridabad"],
+              "ghaziabad", "faridabad", "jaipur"],
   MUMBAI:    ["mumbai", "bombay", "navi mumbai", "thane", "bhiwandi"],
   PUNE:      ["pune"],
   HYDERABAD: ["hyderabad", "hydrabad", "hyd", "secunderabad"],

@@ -485,33 +485,19 @@ export default function GateApp() {
         feedback(false); setFlash("warn"); setHint(`${t("alreadyScanned")} · ${barcode}`);
         await pause(900); return;
       }
-      // The freshly-read list when there is one, the copy bootstrap brought
-      // otherwise. Never nothing: an item is only "not on the list" if there
-      // is a list, and treating an absent one as an empty one would make every
-      // scan an exception.
-      const match = (expected ?? boot?.expected ?? []).find(
-        (e) => e.barcode === barcode || e.barcode_canon === canonicalize(barcode)
-      );
-      // The check runs even when it is not shown. Recording what it WOULD have
-      // said is how the false-alarm rate gets measured before any guard is
-      // taught to dismiss a warning.
-      const listed = !!match;
-      if (!listed && boot?.config.expectedCheckLive) {
-        feedback(false); setFlash("warn");
-        setPendingScan({ barcode, label: barcode });
-        setReason(null); setPhoto(null);
-        await pause(220); setScreen("resolve"); return;
-      }
+      // NOTHING IS LOOKED UP HERE. The phone does not hold the plan — the
+      // server attaches the product, customer and order when the scan arrives.
+      // A guard who can see what is expected scans against the expectation,
+      // and the gate stops being an independent record of what was seen.
       feedback(true); setFlash("ok");
+      // Labelled with the barcode itself. The product name is attached by the
+      // server on sync — the phone deliberately does not know it, and a guard
+      // reading a sticker does not need the app to tell them what it says.
       await addScan({
         barcode,
         entryMethod: "scan",
         itemKind: "unit",
-        product: match?.product ?? null,
-        soNumber: match?.so_number ?? null,
-        ticketId: match?.ticket_id ?? null,
-        customer: match?.customer ?? null,
-      }, match?.product ?? barcode, false);
+      }, barcode, false);
       setHint("");
     } finally {
       // A short cooldown so one sticker held in view is not decoded thirty
@@ -1422,6 +1408,25 @@ export default function GateApp() {
               <div className={`gflash ${flash}`} />
               <div className="ghint">{hint || t("pointAtCode")}</div>
             </div>
+            {/* OFFLINE, WHILE SCANNING.
+                Scanning deliberately keeps working — a gate with no signal is
+                the case this app was built for, and the queue holds everything
+                until a connection returns. But a guard should KNOW, because
+                the difference between "sent" and "on this phone" matters if
+                the handset is lost, and because a shift that ends offline
+                leaves work that has not reached anybody.
+                A bar, not a dialog: it must not interrupt the scan loop. */}
+            {!online && (
+              <div className="goffline" role="status">
+                <Icon name="wifi_off" size={17} />
+                <div>
+                  <b>{t("offlineScanning")}</b>
+                  <span>{t("offlineScanningWhy")}</span>
+                </div>
+                {queue.waiting > 0 && <span className="gcount">{queue.waiting}</span>}
+              </div>
+            )}
+
             <div className="gtally">
               <span className="n">{lines.length}</span>
               <span className="lbl">{t("itemsScanned")}</span>
@@ -1601,6 +1606,25 @@ export default function GateApp() {
               </div>
             ))}
           </div>
+          {/* ── Nothing has left the phone yet ──────────────────────────
+              THE MOMENT IT MATTERS. Mid-scan, offline is a fact. At close it
+              is a decision: the guard is about to walk away, and everything
+              they recorded is still only on a handset that could be lost,
+              broken or left in a drawer. It never blocks the close — the
+              queue drains by itself the moment a connection returns — but
+              walking away not knowing is the thing to prevent. */}
+          {!online && queue.waiting > 0 && (
+            <div className="gbody gofflinebox">
+              <div className="gcard warn col">
+                <h3><Icon name="wifi_off" size={18} /> {queue.waiting} {t("offlineAtClose")}</h3>
+                <p>{t("offlineAtCloseWhy")}</p>
+                <button className="gbtn sm ghost" onClick={() => void sync()}>
+                  <Icon name="refresh" size={16} />{t("sendNow")}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* ── The last-minute box ──────────────────────────────────────
               Directly above Close trip, because this is where the guard
               already is when the loader shouts that one more went on. The

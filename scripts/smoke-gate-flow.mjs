@@ -507,9 +507,95 @@ if (await frame.count()) {
   bad("no photo frame on the manual form");
 }
 
+/* ── 7. Offline, mid-scan ─────────────────────────────────────────────── */
+//
+// THE CASE THIS APP EXISTS FOR. A gate with no signal must keep recording;
+// losing a movement because the wifi dropped is the failure the paper register
+// already has. So the requirement is narrow and strict: scanning keeps working,
+// the queue keeps growing, nothing is lost, and the guard is TOLD.
+step("Offline while scanning");
+// Back to the SCANNER first — the offline bar lives there, next to the
+// viewfinder, because that is where a guard's eye is when it matters. The
+// walkthrough had wandered off to the manual form by this point.
+for (const label of ["Cancel", "Back", "Resume trip"]) {
+  const b = page.getByRole("button", { name: new RegExp(`^${label}$`, "i") }).first();
+  if (await b.count()) { await b.click().catch(() => {}); await page.waitForTimeout(700); }
+}
+if (!(await seen("Items scanned"))) {
+  const resume = page.getByText("Resume trip", { exact: false }).first();
+  if (await resume.count()) { await resume.click().catch(() => {}); await page.waitForTimeout(1000); }
+}
+
+await ctx.setOffline(true);
+await page.waitForTimeout(1200);
+
+// The app learns about it from the browser's own event.
+await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+await page.waitForTimeout(700);
+
+if (await seen("No internet")) ok("the scanner says there is no internet");
+else bad("nothing tells the guard they are offline");
+
+// And it must be a BAR, not a dialog — a modal over a live scanner with a
+// driver waiting is worse than the problem it reports.
+const blockingDialog = await page.locator(".gsheet").count();
+if (blockingDialog === 0) ok("it does not block the screen with a dialog");
+else bad("an offline dialog is covering the scanner");
+
+// The queue must still accept work. Written straight in, as elsewhere in this
+// walkthrough, because a headless browser cannot scan a QR.
+const queuedBefore = await page.evaluate(() => new Promise((res) => {
+  const rq = indexedDB.open("gate-outbox", 1);
+  rq.onsuccess = () => {
+    const r = rq.result.transaction("items", "readonly").objectStore("items").getAll();
+    r.onsuccess = () => res(r.result.length);
+    r.onerror = () => res(-1);
+  };
+  rq.onerror = () => res(-1);
+}));
+await page.evaluate(() => new Promise((res, rej) => {
+  const rq = indexedDB.open("gate-outbox", 1);
+  rq.onsuccess = () => {
+    const tx = rq.result.transaction("items", "readwrite");
+    tx.objectStore("items").put({ clientId: "offline-1", kind: "scan", createdAt: Date.now(),
+      attempts: 0, payload: { clientScanId: "offline-1", clientTripId: "ct1",
+        barcode: "OFFLINE0000001", entryMethod: "scan", itemKind: "unit", quantity: 1,
+        scannedAt: new Date().toISOString() } });
+    tx.oncomplete = () => res(true);
+    tx.onerror = () => rej(tx.error);
+  };
+  rq.onerror = () => rej(rq.error);
+}));
+const queuedAfter = await page.evaluate(() => new Promise((res) => {
+  const rq = indexedDB.open("gate-outbox", 1);
+  rq.onsuccess = () => {
+    const r = rq.result.transaction("items", "readonly").objectStore("items").getAll();
+    r.onsuccess = () => res(r.result.length);
+    r.onerror = () => res(-1);
+  };
+  rq.onerror = () => res(-1);
+}));
+if (queuedAfter > queuedBefore) ok(`work still queues while offline (${queuedBefore} → ${queuedAfter})`);
+else bad("the queue would not accept a scan while offline");
+
+// Coming back must drain it by itself — a guard should not have to know to
+// press anything.
+const postedBefore = posted.length;
+await ctx.setOffline(false);
+await page.evaluate(() => window.dispatchEvent(new Event("online")));
+await page.waitForTimeout(2500);
+if (posted.length > postedBefore) ok("reconnecting drains the queue on its own");
+else bad("the queue did not drain after reconnecting");
+if (!(await seen("No internet"))) ok("the offline warning clears once connected");
+else bad("the offline warning is still showing after reconnecting");
+
 /* ── report ──────────────────────────────────────────────────────────── */
 step("Result");
-const uniq = [...new Set(errors)].filter((e) => !/favicon|models\/face|getUserMedia|Permission/i.test(e));
+const uniq = [...new Set(errors)].filter((e) =>
+  !/favicon|models\/face|getUserMedia|Permission/i.test(e) &&
+  // This walkthrough takes the network away deliberately; the browser
+  // complaining about it is the test working, not a defect.
+  !/Failed to load resource|internal error|Load failed|NetworkError/i.test(e));
 if (uniq.length) {
   console.log("  console errors:");
   for (const e of uniq.slice(0, 8)) console.log(`    • ${e.slice(0, 200)}`);

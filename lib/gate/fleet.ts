@@ -62,7 +62,13 @@ export interface PlannedTask {
  * to carry, so a guard should pick the truck and have the rest follow.
  */
 export interface PlannedTrip {
+  /** DT'S OWN TEXT, unmodified — "MT - T - DL-1L-AN9769". This is what gets
+   *  STORED on the trip, because it is what reconciliation has to match back
+   *  against DT. A tidied plate is a value that exists in no system. */
   vehicle: string;
+  /** The plate dug out of it, for DISPLAY only. A dropdown of vendor codes is
+   *  unreadable at a gate; a stored value nobody can match is worse. */
+  plate: string | null;
   /** Usually one. More than one means DT has the truck shared across tasks
    *  with different people, which the app offers rather than guesses between. */
   agents: string[];
@@ -263,14 +269,22 @@ export async function fleetForCity(city: City, now: Date = new Date()): Promise<
       // building, and normalizeCity is the one place that knows it.
       if (normalizeCity(r.city) !== city) continue;
 
-      const vehicle = vehicleFromTransportId(r.transportId) ?? vehicleFromAdhoc(r.adhoc_vehicle);
+      // RECORDED AS DT WRITES IT — confirmed with operations 2026-08-26.
+      // Extracting the plate produced a string that exists nowhere: not in DT,
+      // not in Odoo, not on the sheet. Reconciliation matches on DT's value,
+      // so DT's value is what is kept.
+      const raw = String(r.transportId ?? "").trim() || String(r.adhoc_vehicle ?? "").trim();
       const agent = normalizeAgent(r.doneBy);
       if (agent) agents.add(agent);
-      // A task with no readable plate cannot be attached to a truck. The agent
-      // still counts — they are working today whatever they are driving.
-      if (!vehicle) continue;
+      // No transport reference at all means there is nothing to attach a task
+      // to. The agent still counts — they are working today regardless.
+      if (!raw) continue;
 
-      const trip = byVehicle.get(vehicle) ?? { vehicle, agents: [], tasks: [], unitCount: 0 };
+      const trip = byVehicle.get(raw) ?? {
+        vehicle: raw,
+        plate: vehicleFromTransportId(raw) ?? vehicleFromAdhoc(raw),
+        agents: [], tasks: [], unitCount: 0,
+      };
       if (agent && !trip.agents.includes(agent)) trip.agents.push(agent);
 
       const units = ((r.units as { barcode?: string; Product_name?: string }[]) ?? [])
@@ -290,7 +304,7 @@ export async function fleetForCity(city: City, now: Date = new Date()): Promise<
         });
         trip.unitCount += units.length;
       }
-      byVehicle.set(vehicle, trip);
+      byVehicle.set(raw, trip);
     }
 
     const trips = [...byVehicle.values()]

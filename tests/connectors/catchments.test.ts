@@ -23,6 +23,8 @@ describe("the catchments a warehouse actually serves", () => {
     expect(normalizeCity("Faridabad")).toBe("DELHI");
     expect(normalizeCity("Navi Mumbai")).toBe("MUMBAI");
     expect(normalizeCity("Thane")).toBe("MUMBAI");
+    // Confirmed by operations 2026-08-26: Jaipur is served from Delhi.
+    expect(normalizeCity("Jaipur")).toBe("DELHI");
   });
 
   it("still places everything it placed before", () => {
@@ -45,10 +47,6 @@ describe("the catchments a warehouse actually serves", () => {
   });
 
   it("still refuses a place no warehouse serves", () => {
-    // Jaipur appears in DT (10 rows in a week) and no warehouse claims it.
-    // Silently filing it under the nearest gate would invent movements through
-    // a building they never passed through.
-    expect(normalizeCity("Jaipur")).toBeNull();
     expect(normalizeCity("")).toBeNull();
     expect(normalizeCity(null)).toBeNull();
     expect(normalizeCity("Atlantis")).toBeNull();

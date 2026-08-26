@@ -84,6 +84,15 @@ export const STRINGS: Record<string, Row> = {
   tripStillOpen:{en:"A trip is still open",hi:"एक ट्रिप अभी खुली है",mr:"एक ट्रिप अजून सुरू आहे",kn:"ಒಂದು ಟ್ರಿಪ್ ಇನ್ನೂ ತೆರೆದಿದೆ",te:"ఒక ట్రిప్ ఇంకా తెరిచి ఉంది"},
   tripStillOpenWhy:{en:"Close it first, or it will be marked unfinished.",hi:"पहले उसे बंद करें, वरना अधूरी मानी जाएगी।",mr:"आधी ती बंद करा, नाहीतर अपूर्ण मानली जाईल.",kn:"ಮೊದಲು ಅದನ್ನು ಮುಚ್ಚಿ, ಇಲ್ಲದಿದ್ದರೆ ಅಪೂರ್ಣವೆಂದು ಗುರುತಿಸಲಾಗುತ್ತದೆ.",te:"ముందు దాన్ని మూసివేయండి, లేకపోతే అసంపూర్ణంగా గుర్తించబడుతుంది."},
 
+  // ── No signal, mid-scan ───────────────────────────────────────────────
+  // Scanning keeps working; the guard is told, not stopped. A gate with no
+  // signal is the case this app was built for.
+  offlineScanning:{en:"No internet — still saving",hi:"इंटरनेट नहीं — फिर भी सेव हो रहा है",mr:"इंटरनेट नाही — तरीही सेव्ह होत आहे",kn:"ಇಂಟರ್ನೆಟ್ ಇಲ್ಲ — ಆದರೂ ಉಳಿಸಲಾಗುತ್ತಿದೆ",te:"ఇంటర్నెట్ లేదు — అయినా సేవ్ అవుతోంది"},
+  offlineScanningWhy:{en:"Keep scanning. Reconnect before you finish.",hi:"स्कैन करते रहें। खत्म करने से पहले इंटरनेट जोड़ें।",mr:"स्कॅन करत राहा. संपवण्याआधी इंटरनेट जोडा.",kn:"ಸ್ಕ್ಯಾನ್ ಮುಂದುವರಿಸಿ. ಮುಗಿಸುವ ಮೊದಲು ಇಂಟರ್ನೆಟ್ ಸಂಪರ್ಕಿಸಿ.",te:"స్కాన్ కొనసాగించండి. ముగించే ముందు ఇంటర్నెట్ కనెక్ట్ చేయండి."},
+  offlineAtClose:{en:"These are on this phone only",hi:"ये सिर्फ इस फोन में हैं",mr:"हे फक्त या फोनमध्ये आहेत",kn:"ಇವು ಈ ಫೋನ್‌ನಲ್ಲಿ ಮಾತ್ರ ಇವೆ",te:"ఇవి ఈ ఫోన్‌లో మాత్రమే ఉన్నాయి"},
+  sendNow:{en:"Try sending now",hi:"अभी भेजने की कोशिश करें",mr:"आता पाठवण्याचा प्रयत्न करा",kn:"ಈಗ ಕಳುಹಿಸಲು ಪ್ರಯತ್ನಿಸಿ",te:"ఇప్పుడు పంపడానికి ప్రయత్నించండి"},
+  offlineAtCloseWhy:{en:"Connect to the internet so they reach the office. They will send by themselves once you do.",hi:"इंटरनेट जोड़ें ताकि ये ऑफिस पहुँचें। जुड़ते ही अपने आप चले जाएँगे।",mr:"इंटरनेट जोडा म्हणजे हे ऑफिसला पोहोचतील. जोडताच आपोआप जातील.",kn:"ಇಂಟರ್ನೆಟ್ ಸಂಪರ್ಕಿಸಿ, ಇವು ಕಚೇರಿಗೆ ತಲುಪುತ್ತವೆ. ಸಂಪರ್ಕವಾದ ತಕ್ಷಣ ತಾವಾಗಿಯೇ ಹೋಗುತ್ತವೆ.",te:"ఇంటర్నెట్ కనెక్ట్ చేయండి, ఇవి ఆఫీసుకు చేరతాయి. కనెక్ట్ అయిన వెంటనే వాటంతట అవే వెళ్తాయి."},
+
   // ── Signing out of a shared phone ─────────────────────────────────────
   // Not the same as ending a shift, and the wording keeps them apart: this
   // hands the handset to a colleague and leaves the attendance record open.

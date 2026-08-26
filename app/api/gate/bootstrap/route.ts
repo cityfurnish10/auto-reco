@@ -32,18 +32,18 @@ export async function GET(req: NextRequest) {
   // now — not the day the reconcile is closing, which is two days behind.
   const businessDate = currentBusinessDate();
 
-  // Kick the expected list into shape, but do NOT wait for it. Odoo goes
-  // through Metabase and takes seconds; the app opening must not. Whatever is
-  // cached is served below, and the refresh lands in time for the trip close
-  // that actually consults it.
+  // Kick the expected list into shape, but do NOT wait for it, and do NOT send
+  // it. Odoo goes through Metabase and takes seconds; the app opening must not.
+  //
+  // THE PHONE NEVER RECEIVES THE PLAN. It used to, so it could label a scan
+  // itself — which put the day's expectations on the handset and left a rule,
+  // rather than an absence, as the only thing stopping a guard reading them.
+  // Scans are labelled on the server now (see enrichScans in sync.ts), and the
+  // refresh here exists so that lookup has something current to read.
+
   void ensureExpectedFresh(admin, businessDate).catch(() => {});
 
-  const [expected, openTrip, openShift] = await Promise.all([
-    admin
-      .from("gate_expected_items")
-      .select("barcode,barcode_canon,direction,product,so_number,ticket_id,customer,picking_ref,delivery_address")
-      .eq("city", device.city)
-      .eq("business_date", businessDate),
+  const [openTrip, openShift] = await Promise.all([
     // BOUNDED BY THE BUSINESS DAY, and ordered-then-limited rather than
     // .maybeSingle() on its own. Both details were bugs:
     //
@@ -101,7 +101,12 @@ export async function GET(req: NextRequest) {
     openTrip: openTrip.data ?? null,
     openShift: openShift.data ?? null,
     resumeError: openTrip.error?.message ?? openShift.error?.message ?? null,
-    expected: expected.data ?? [],
-    expectedCount: expected.data?.length ?? 0,
+    // Deliberately absent: the expected list. The gate is only worth having as
+    // an INDEPENDENT witness, and a guard who can see what is expected scans
+    // against the expectation rather than recording what is in front of them.
+    // Kept as a count of zero rather than removed outright so an older app
+    // build reads "nothing planned" instead of crashing on a missing field.
+    expected: [],
+    expectedCount: 0,
   });
 }
