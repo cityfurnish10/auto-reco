@@ -121,7 +121,7 @@ then the migration, then the code that depends on it.
 
 - `feat(scope):` · `fix(scope):` · `polish(scope):` · `docs(scope):`
 - The body explains **why**, including measurements and rejected alternatives.
-- Author is **nishantgawderya1** only. **No `Co-Authored-By` trailer.**
+- Author is **Shantanu Bhadada** only. **No `Co-Authored-By` trailer.**
 - **Scan the staged diff for secrets before every push.**
 - `.env*.local`, `*.xlsx/xls/csv/pdf` and `/reports/` are gitignored (customer PII).
 

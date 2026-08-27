@@ -112,7 +112,7 @@ real run never uses. Both looked plausible.
 - **Measure, don't assert.** Query the live DB before claiming behaviour.
 - **Report disproved hypotheses.** One guess about the biggest REAL category was
   wrong (4 of 592) and saying so was more useful than shipping it.
-- **Commit in batches** with a *why*-first body; **author nishantgawderya1 only,
+- **Commit in batches** with a *why*-first body; **author Shantanu Bhadada only,
   no Co-Authored-By trailer**; **secret-scan the staged diff before pushing**.
 - **Run** `npx tsc --noEmit && npm run lint && npm test && npm run build`.
 
