@@ -6,6 +6,7 @@
 // send (e.g. 2 days later, once the variances are resolved).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ErrorState } from "@/components/error-state";
 import { Icon } from "@/components/icon";
 import FollowUpSend from "./follow-up-send";
 import { useUsers } from "@/lib/hooks/use-users";
@@ -97,6 +98,7 @@ export default function EmailPreview() {
   const [viewing, setViewing] = useState<ArchivedView | null>(null);
   const [viewingLoading, setViewingLoading] = useState<string | null>(null);
   const [archiveRefresh, setArchiveRefresh] = useState(0); // bump to reload the list
+  const [previewReload, setPreviewReload] = useState(0); // bump to retry the preview fetch
   const archiveSeq = useRef(0); // stale-guard for fast date flips
 
   /* eslint-disable react-hooks/set-state-in-effect -- async-fetch loading toggle */
@@ -116,7 +118,7 @@ export default function EmailPreview() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [previewReload]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const refreshScheduled = useCallback(() => {
@@ -315,9 +317,7 @@ export default function EmailPreview() {
         </p>
       </div>
 
-      {error && (
-        <div className="card p-4 bg-danger-soft border border-danger/20 text-sm text-danger font-semibold">{error}</div>
-      )}
+      {error && <ErrorState what="the digest preview" detail={error} onRetry={() => setPreviewReload((n) => n + 1)} />}
 
       {/* minmax(0,1fr) lets the preview column SHRINK below its content width —
           without it the 600px email iframe forces horizontal page scroll on

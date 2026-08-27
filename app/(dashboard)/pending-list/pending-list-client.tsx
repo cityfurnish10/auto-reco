@@ -217,7 +217,6 @@ export default function PendingListClient({ user }: { user: SessionUser }) {
           <p className="text-xs text-text-muted">
             {loading ? "Loading…" : `${total} item${total === 1 ? "" : "s"}`}
             <span> · across all business dates</span>
-            {error && <span className="text-danger"> · {error}</span>}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative w-full sm:w-56">
@@ -313,6 +312,9 @@ export default function PendingListClient({ user }: { user: SessionUser }) {
           ))}
           {!loading && rows.length === 0 && (
             <EmptyState
+              error={error}
+              what="the pending list"
+              onRetry={refetch}
               compact
               icon={filtersActive ? "search_off" : "task_alt"}
               title={filtersActive ? "Nothing matches these filters" : "The pending list is empty"}
@@ -422,6 +424,9 @@ export default function PendingListClient({ user }: { user: SessionUser }) {
                 <tr>
                   <td colSpan={colCount}>
                     <EmptyState
+                      error={error}
+                      what="the pending list"
+                      onRetry={refetch}
                       icon={filtersActive ? "search_off" : "task_alt"}
                       title={
                         filtersActive ? "Nothing matches these filters" : "The pending list is empty"

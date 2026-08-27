@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { statFigure } from "@/lib/ui/stat-captions";
+import { ErrorState } from "@/components/error-state";
 import { useLeaderboard, type WindowKey } from "@/lib/hooks/use-leaderboard";
 import { Icon, type IconName } from "@/components/icon";
 import { clampPct } from "@/lib/stats/accuracy";
@@ -34,7 +36,7 @@ const WINDOWS: { key: WindowKey; label: string }[] = [
 const pct = (v: number | null) => (v === null ? "—" : `${v}%`);
 
 export default function LeaderboardPage() {
-  const { data, loading, error } = useLeaderboard();
+  const { data, loading, error, refetch } = useLeaderboard();
   const [windowKey, setWindowKey] = useState<WindowKey>("latest");
 
   const win = data?.windows?.[windowKey] ?? null;
@@ -111,11 +113,7 @@ export default function LeaderboardPage() {
         </div>
       </header>
 
-      {error && (
-        <div className="card p-4 bg-danger-soft border border-danger/20 text-sm text-danger font-semibold">
-          {error}
-        </div>
-      )}
+      {error && <ErrorState what="the scoreboard" detail={error} onRetry={refetch} />}
 
       {/* KPI Row */}
       <section className="grid grid-cols-1 md:grid-cols-4 gap-gutter">
@@ -141,7 +139,7 @@ export default function LeaderboardPage() {
             <Icon name="inventory_2" size={22} className="text-accent" />
           </div>
           <div className="mt-4">
-            <h3 className="kpi-value">{totalMovements.toLocaleString()}</h3>
+            <h3 className="kpi-value">{statFigure(loading, error, totalMovements)}</h3>
             <p className="text-xs text-text-muted">In and out, all cities, working days only</p>
           </div>
         </div>
@@ -152,11 +150,15 @@ export default function LeaderboardPage() {
             <Icon name="report" size={22} className="text-danger" />
           </div>
           <div className="mt-4">
-            <h3 className="kpi-value text-danger">{totalReal.toLocaleString()}</h3>
+            <h3 className="kpi-value text-danger">{statFigure(loading, error, totalReal)}</h3>
             {/* clampPct, like every other percentage in the app. This one was
                 printing the raw quotient — 1.7218543046357615% — beside a tile
                 that rounds the same ratio to one decimal. */}
-            <p className="text-xs text-text-muted">{pct(totalMovements ? clampPct((totalReal / totalMovements) * 100) : null)} of the {totalMovements.toLocaleString()} units moved</p>
+            <p className="text-xs text-text-muted">
+              {error
+                ? "Figures unavailable"
+                : `${pct(totalMovements ? clampPct((totalReal / totalMovements) * 100) : null)} of the ${totalMovements.toLocaleString()} units moved`}
+            </p>
           </div>
         </div>
 
@@ -178,7 +180,11 @@ export default function LeaderboardPage() {
           <div className="p-12 text-center text-text-muted">
             <Icon name="leaderboard" size={40} className="mx-auto mb-3 opacity-40" />
             <p className="text-sm">
-              {loading ? "Loading…" : "No stock checks have run yet — run one to fill the scoreboard."}
+              {loading
+                ? "Loading…"
+                : error
+                  ? "The scoreboard could not be read — see above."
+                  : "No stock checks have run yet — run one to fill the scoreboard."}
             </p>
           </div>
         ) : (

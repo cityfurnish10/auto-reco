@@ -88,3 +88,27 @@ export function cityRateLine(agg: StatLike | null | undefined): string {
   if (movements < MIN_MOVEMENTS) return `${n(real)} of ${n(movements)} units moved · too few to compare`;
   return `${n(real)} of ${n(movements)} units moved · ${accuracyOf(movements, real)}% traced`;
 }
+
+/**
+ * What a KPI tile prints where a number goes.
+ *
+ * THE POINT OF THIS FUNCTION IS THE MIDDLE BRANCH. The tiles used to render
+ * `agg?.real ?? 0`, so a figure that failed to load displayed as a confident
+ * **0** — "Not accounted for: 0" on a screen that had not managed to ask. That
+ * is the same conflation components/error-state.tsx exists to stop, in the
+ * largest type on the dashboard and on the one number a manager actually reads.
+ *
+ * An em dash is the honest character: it reads as "not known", where 0 reads as
+ * "checked, and the answer is none". The two are opposites and they must never
+ * look alike. The caption helpers above already return "" for a missing
+ * aggregate, so nothing underneath contradicts it.
+ */
+export function statFigure(
+  loading: boolean,
+  error: string | null | undefined,
+  value: number | null | undefined
+): string {
+  if (loading) return "…";
+  if (error) return "—";
+  return n(value ?? 0);
+}

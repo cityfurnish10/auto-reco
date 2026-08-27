@@ -24,7 +24,7 @@ import VarianceDetailModal from "./variance-detail-modal";
 import VarianceListModal, { type ListModalRequest } from "./variance-list-modal";
 import { isCityClosed } from "@/lib/engine/schedule";
 import { addDays } from "@/lib/engine/dates";
-import { cityRateLine, closedCaption, queueCaption, rateCaption } from "@/lib/ui/stat-captions";
+import { cityRateLine, closedCaption, queueCaption, rateCaption, statFigure } from "@/lib/ui/stat-captions";
 import {
   PRIORITY_BADGE,
   STATUS_BADGE,
@@ -37,6 +37,7 @@ import { downloadCsv, varianceRowsToCsv } from "@/lib/ui/variance-csv";
 import { SortHeader, type SortState } from "@/components/sort-header";
 import { RowCheckbox, SelectAllCheckbox } from "@/components/row-checkbox";
 import { CardListSkeleton, TableBodySkeleton } from "@/components/skeleton";
+import { ErrorState } from "@/components/error-state";
 import { EmptyState } from "@/components/empty-state";
 import { StaleRunBanner } from "./stale-run-banner";
 import { useSelection } from "@/lib/hooks/use-selection";
@@ -115,7 +116,12 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
   }, [setCityTab, setDateF]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const { stats, loading: statsLoading, refetch: refetchStats } = useStats(dateF || undefined);
+  const {
+    stats,
+    loading: statsLoading,
+    error: statsError,
+    refetch: refetchStats,
+  } = useStats(dateF || undefined);
 
   const filters: VarianceFilters = useMemo(
     () => ({
@@ -434,6 +440,11 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
 
       {/* KPI cards — loss-only. Posting-lag / hygiene (INFO) rows are kept in the
           DB for audit but excluded from these counts (see the hidden-count note). */}
+      {/* The figures could not be read. Every tile below shows an em dash rather
+          than a zero (see statFigure); this says why, and offers the retry. */}
+      {statsError && (
+        <ErrorState what="the figures" detail={statsError} onRetry={refetchStats} compact />
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="kpi-tile kpi-tile--accent flex flex-col justify-between group">
           <button
@@ -445,7 +456,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
           >
             <span className="kpi-label group-hover:underline">Not accounted for</span>
             <div className="flex items-end justify-between mt-2">
-              <span className="kpi-value">{statsLoading ? "…" : agg?.real ?? 0}</span>
+              <span className="kpi-value">{statFigure(statsLoading, statsError, agg?.real)}</span>
               {/* "High" is an enum value; "urgent" is what it means. Safe to
                   trust: applyBucket forces every INFO row to Info priority, so a
                   High row is a loss by construction. */}
@@ -465,7 +476,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             className="w-full text-left flex flex-col cursor-pointer"
           >
             <span className="kpi-label group-hover:underline">Still open</span>
-            <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.openReal ?? 0}</span>
+            <span className="kpi-value mt-2">{statFigure(statsLoading, statsError, agg?.openReal)}</span>
           </button>
           <span className="text-xs text-text-muted mt-1">
             {/* REAL-scoped, because that is what the click opens. */}
@@ -500,7 +511,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 `closed` across every bucket, so the tile read 88 and the list
                 behind it held 31 — and the ratio to `real` could exceed 100%,
                 which is why this tile was left relating itself to nothing. */}
-            <span className="kpi-value mt-2">{statsLoading ? "…" : agg?.closedReal ?? 0}</span>
+            <span className="kpi-value mt-2">{statFigure(statsLoading, statsError, agg?.closedReal)}</span>
             <span className="text-xs text-text-muted mt-1">
               {closedCaption(agg)}
             </span>
@@ -687,7 +698,6 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                   {" "}· sorted alphabetically (migration 0011 not applied)
                 </span>
               )}
-              {error && <span className="text-danger"> · {error}</span>}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -906,6 +916,9 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
           {loading && rows.length === 0 && <CardListSkeleton />}
           {!loading && rows.length === 0 && (
             <EmptyState
+              error={error}
+              what="these items"
+              onRetry={refetch}
               compact
               icon={filtersActive ? "search_off" : "task_alt"}
               title={filtersActive ? "Nothing matches these filters" : "Everything is accounted for"}
@@ -1088,6 +1101,9 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 <tr>
                   <td colSpan={15}>
                     <EmptyState
+                      error={error}
+                      what="these items"
+                      onRetry={refetch}
                       icon={filtersActive ? "search_off" : "task_alt"}
                       title={
                         filtersActive ? "Nothing matches these filters" : "Everything is accounted for"

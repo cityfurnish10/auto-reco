@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
 import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
 import { Skeleton, TableBodySkeleton } from "@/components/skeleton";
 import { useStickyState } from "@/lib/hooks/use-sticky-state";
 import { TIER } from "@/lib/ui/variance-labels";
@@ -138,6 +139,10 @@ export default function DayRecheckPanel({ defaultDate, today }: { defaultDate: s
   const [err, setErr] = useState<string | null>(null);
   const [klass, setKlass] = useState<(typeof CLASSES)[number]["id"]>("still-open");
   const [units, setUnits] = useState<UnitRow[] | null>(null);
+  // A failed units fetch used to setUnits([]), which the table below rendered
+  // as "Nothing in this group" — an empty-list claim over a failed read, the
+  // same conflation components/error-state.tsx exists to stop.
+  const [unitsErr, setUnitsErr] = useState<string | null>(null);
   const [unitsTotal, setUnitsTotal] = useState(0);
   const seq = useRef(0);
   const unitSeq = useRef(0);
@@ -195,16 +200,24 @@ export default function DayRecheckPanel({ defaultDate, today }: { defaultDate: s
     }
     const mine = ++unitSeq.current;
     setUnits(null);
+    setUnitsErr(null);
     const qs = new URLSearchParams({ date, class: klass, pageSize: "100" });
     fetch(`/api/stock/units?${qs}`, { credentials: "same-origin" })
-      .then((r) => r.json())
+      .then(async (r) => {
+        // .json() first would turn an empty-bodied 500 into "Unexpected end of
+        // JSON input" — a browser-internals string, shown to warehouse staff.
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((j) => {
         if (mine !== unitSeq.current) return;
         setUnits(j.rows ?? []);
         setUnitsTotal(j.total ?? 0);
       })
-      .catch(() => {
-        if (mine === unitSeq.current) setUnits([]);
+      .catch((e) => {
+        if (mine !== unitSeq.current) return;
+        setUnits([]);
+        setUnitsErr(e instanceof Error ? e.message : String(e));
       });
   }, [date, klass, cmp]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -238,9 +251,7 @@ export default function DayRecheckPanel({ defaultDate, today }: { defaultDate: s
       </div>
 
       {err ? (
-        <div className="card p-4 bg-danger-soft border border-danger/20 text-sm text-danger font-semibold">
-          We could not load {longDate(date)}. {err}
-        </div>
+        <ErrorState what={longDate(date)} detail={err} />
       ) : loading ? (
         <div className="space-y-6">
           <Skeleton className="h-40 w-full rounded-card" />
@@ -250,6 +261,8 @@ export default function DayRecheckPanel({ defaultDate, today }: { defaultDate: s
       ) : passes?.state === "no-runs" ? (
         <div className="card p-6">
           <EmptyState
+            // Unreachable while `err` stands — the branch above returns first.
+            error={null}
             icon="event_busy"
             title="This day has not been checked yet"
             detail={`Nothing has been reconciled for ${longDate(date)}. Pick an earlier day.`}
@@ -487,6 +500,8 @@ export default function DayRecheckPanel({ defaultDate, today }: { defaultDate: s
                       <tr>
                         <td colSpan={6}>
                           <EmptyState
+                            error={unitsErr}
+                            what="these units"
                             compact
                             icon="search_off"
                             title="Nothing in this group"

@@ -10,6 +10,7 @@
 // a glance which cities scan and which still upload a PDF.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ErrorState } from "@/components/error-state";
 import { Icon } from "@/components/icon";
 import { Modal } from "@/components/modal";
 import { CITIES } from "@/lib/sample-data";
@@ -194,7 +195,7 @@ function Activity({ user }: { user: SessionUser }) {
         <span className="ml-auto text-xs text-text-muted">{d?.businessDate ?? date}</span>
       </div>
 
-      {loadErr && <LoadError what="gate activity" detail={loadErr} onRetry={load} />}
+      {loadErr && <ErrorState what="gate activity" detail={loadErr} onRetry={load} />}
       {loading && !d && <p className="text-text-muted text-sm">Loading…</p>}
 
       {d && !loadErr && (
@@ -512,7 +513,7 @@ function Guards({ user }: { user: SessionUser }) {
         <button className="btn btn-primary" onClick={() => setAdding(true)}>Add guard</button>
       </div>
       {msg && <div className="card p-3 text-sm">{msg}</div>}
-      {loadErr && <LoadError what="guards" detail={loadErr} onRetry={load} />}
+      {loadErr && <ErrorState what="guards" detail={loadErr} onRetry={load} />}
       {!loadErr && rows.length === 0 && <Empty text="No guards yet." />}
       {!loadErr && rows.length > 0 && (
         <div className="card overflow-x-auto">
@@ -1093,7 +1094,7 @@ function Gates() {
     } finally { setBusy(null); }
   }
 
-  if (loadErr) return <LoadError what="the gates" detail={loadErr} onRetry={load} />;
+  if (loadErr) return <ErrorState what="the gates" detail={loadErr} onRetry={load} />;
 
   return (
     <div className="space-y-4">
@@ -1170,7 +1171,7 @@ function DeviceList({ city, refresh }: { city: string | null; refresh: string })
   }, [city]);
   useEffect(() => { load(); }, [load, refresh]);
 
-  if (err) return <LoadError what="the enrolled phones" detail={err} onRetry={load} />;
+  if (err) return <ErrorState what="the enrolled phones" detail={err} onRetry={load} />;
   if (rows.length === 0) return <Empty text="No phones enrolled yet." />;
 
   return (
@@ -1457,7 +1458,7 @@ function Reviews() {
         <span className="ml-auto text-xs text-text-muted">{rows.length} shown</span>
       </div>
 
-      {loadErr && <LoadError what="the photo checks" detail={loadErr} onRetry={load} />}
+      {loadErr && <ErrorState what="the photo checks" detail={loadErr} onRetry={load} />}
       {loading && <p className="text-text-muted text-sm">Loading…</p>}
 
       {!loading && !loadErr && rows.length === 0 && (
@@ -1551,30 +1552,6 @@ function Table({ head, children }: { head: string[]; children: React.ReactNode }
     </div>
   );
 }
-/**
- * A read that FAILED, shown as a failure.
- *
- * This component exists because of a real incident: a guard was saved
- * correctly, the list query was rejected by PostgREST, and the screen said
- * "No guards yet." The record was there the whole time. An empty state is a
- * statement about the data; an error is a statement about the request, and
- * conflating them sends someone hunting for a bug that is not there.
- */
-function LoadError({ what, detail, onRetry }: { what: string; detail: string; onRetry: () => void }) {
-  return (
-    <div className="card p-5 border border-danger/30 space-y-2">
-      <div className="flex items-center gap-2 text-danger font-medium">
-        <Icon name="warning" size={17} />Could not load {what}
-      </div>
-      <p className="text-sm text-text-muted">
-        This is a failure to read, not an empty list — anything saved is still there.
-      </p>
-      <code className="block text-xs bg-surface-elevated p-2 rounded-control break-all">{detail}</code>
-      <button className="btn btn-compact btn-secondary" onClick={onRetry}>Try again</button>
-    </div>
-  );
-}
-
 function Empty({ text }: { text: string }) {
   return <div className="card p-8 text-center text-text-muted text-sm">{text}</div>;
 }

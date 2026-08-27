@@ -18,6 +18,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
 import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
 import { Skeleton } from "@/components/skeleton";
 import { DateRange, presetRange, DEFAULT_PRESETS, type DateRangeValue } from "@/components/date-range";
 import { useStickyState } from "@/lib/hooks/use-sticky-state";
@@ -198,11 +199,7 @@ export default function MovementVolumesPanel({ today }: { today: string }) {
     );
   }
   if (err) {
-    return (
-      <div className="card p-4 bg-danger-soft border border-danger/20 text-sm text-danger font-semibold">
-        We could not load the movement figures. {err}
-      </div>
-    );
+    return <ErrorState what="the movement figures" detail={err} />;
   }
   if (!data) return null;
 
@@ -246,6 +243,8 @@ export default function MovementVolumesPanel({ today }: { today: string }) {
 
       {!hasAny ? (
         <EmptyState
+          // Unreachable while `err` stands — the early return above fires first.
+          error={null}
           icon="inventory_2"
           title="No movement records in this range"
           detail={

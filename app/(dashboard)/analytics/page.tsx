@@ -5,6 +5,8 @@
 // per-city accuracy comparison, each over a 7-day / 30-day window.
 
 import { useMemo, useState } from "react";
+import { statFigure } from "@/lib/ui/stat-captions";
+import { ErrorState } from "@/components/error-state";
 import { useAnalytics, type DayPoint } from "@/lib/hooks/use-analytics";
 import { Icon } from "@/components/icon";
 
@@ -57,7 +59,7 @@ function buildSeries(days: DayPoint[], nDays: number): TrendPoint[] {
 }
 
 export default function AnalyticsPage() {
-  const { data, loading, error } = useAnalytics();
+  const { data, loading, error, refetch } = useAnalytics();
   const [win, setWin] = useState<Win>("7");
   const nDays = win === "7" ? 7 : 30;
 
@@ -104,11 +106,7 @@ export default function AnalyticsPage() {
         </div>
       </header>
 
-      {error && (
-        <div className="card p-4 bg-danger-soft border border-danger/20 text-sm text-danger font-semibold">
-          {error}
-        </div>
-      )}
+      {error && <ErrorState what="the analytics" detail={error} onRetry={refetch} />}
 
       {/* KPI Row */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-gutter">
@@ -129,7 +127,7 @@ export default function AnalyticsPage() {
         </div>
         <div className="kpi-tile card-hover">
           <span className="kpi-label">Not accounted for</span>
-          <h3 className="kpi-value mt-3 text-danger">{totalReal.toLocaleString()}</h3>
+          <h3 className="kpi-value mt-3 text-danger">{statFigure(loading, error, totalReal)}</h3>
           <p className="text-xs text-text-muted">{totalMovements.toLocaleString()} movements</p>
         </div>
       </section>
@@ -138,7 +136,11 @@ export default function AnalyticsPage() {
         <div className="card p-12 text-center text-text-muted">
           <Icon name="monitoring" size={40} className="mx-auto mb-3 opacity-40" />
           <p className="text-sm">
-            {loading ? "Loading…" : "No stock checks have run yet — run one to fill these charts."}
+            {loading
+              ? "Loading…"
+              : error
+                ? "The charts could not be read — see above."
+                : "No stock checks have run yet — run one to fill these charts."}
           </p>
         </div>
       ) : (

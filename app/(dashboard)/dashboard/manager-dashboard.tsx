@@ -13,7 +13,7 @@ import VarianceDetailModal from "./variance-detail-modal";
 import VarianceListModal, { type ListModalRequest } from "./variance-list-modal";
 import { isCityClosed } from "@/lib/engine/schedule";
 import { addDays } from "@/lib/engine/dates";
-import { closedCaption, queueCaption, rateCaption } from "@/lib/ui/stat-captions";
+import { closedCaption, queueCaption, rateCaption, statFigure } from "@/lib/ui/stat-captions";
 import {
   PRIORITY_BADGE,
   STATUS_BADGE,
@@ -26,6 +26,7 @@ import {
 import { SortHeader, type SortState } from "@/components/sort-header";
 import { RowCheckbox, SelectAllCheckbox } from "@/components/row-checkbox";
 import { CardListSkeleton, TableBodySkeleton } from "@/components/skeleton";
+import { ErrorState } from "@/components/error-state";
 import { EmptyState } from "@/components/empty-state";
 import { StaleRunBanner } from "./stale-run-banner";
 import { useSelection } from "@/lib/hooks/use-selection";
@@ -77,7 +78,12 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const { stats, loading: statsLoading, refetch: refetchStats } = useStats(dateF || undefined);
+  const {
+    stats,
+    loading: statsLoading,
+    error: statsError,
+    refetch: refetchStats,
+  } = useStats(dateF || undefined);
   const cityAgg = useMemo(
     () => stats?.byCity.find((c) => c.city === city) ?? null,
     [stats, city]
@@ -327,6 +333,11 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
 
       {/* KPI grid — loss-only. Posting-lag / hygiene (INFO) rows stay in the DB
           for audit but are excluded from these counts (see hidden-count note). */}
+      {/* The figures could not be read. Every tile below shows an em dash rather
+          than a zero (see statFigure); this says why, and offers the retry. */}
+      {statsError && (
+        <ErrorState what="the figures" detail={statsError} onRetry={refetchStats} compact />
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <button
           onClick={() => setListRequest({ bucket: "REAL", status: "ALL", title: "All loss variances" })}
@@ -334,7 +345,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
         >
           <div className="p-2 bg-danger-soft text-danger rounded-control w-fit mb-4"><Icon name="warning" size={22} /></div>
           <p className="kpi-label group-hover:underline">Not accounted for</p>
-          <h3 className="kpi-value text-danger mt-1">{statsLoading ? "…" : cityAgg?.real ?? 0}</h3>
+          <h3 className="kpi-value text-danger mt-1">{statFigure(statsLoading, statsError, cityAgg?.real)}</h3>
           <span className="text-xs text-text-muted mt-1 block">{rateCaption(cityAgg)}</span>
         </button>
         <button
@@ -343,7 +354,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
         >
           <div className="p-2 bg-accent-soft text-accent rounded-control w-fit mb-4"><Icon name="pending_actions" size={22} /></div>
           <p className="kpi-label group-hover:underline">Still open</p>
-          <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.openReal ?? 0}</h3>
+          <h3 className="kpi-value mt-1">{statFigure(statsLoading, statsError, cityAgg?.openReal)}</h3>
           <span className="text-xs text-text-muted mt-1 block">{queueCaption(cityAgg)}</span>
         </button>
         <button
@@ -355,7 +366,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
           <div className="p-2 bg-surface-elevated rounded-control text-accent w-fit mb-4"><Icon name="approval" size={22} /></div>
           <p className="kpi-label group-hover:underline">With the admin</p>
           {/* REAL-scoped, matching the list this tile opens. */}
-          <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.pendingApprovalReal ?? 0}</h3>
+          <h3 className="kpi-value mt-1">{statFigure(statsLoading, statsError, cityAgg?.pendingApprovalReal)}</h3>
           <span className="text-xs text-text-muted mt-1 block">
             {(cityAgg?.pendingApprovalReal ?? 0) > 0
               ? "Submitted — nothing more for you to do on these"
@@ -370,7 +381,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
           <p className="kpi-label group-hover:underline">Closed today</p>
           {/* LOSSES ONLY, matching the list this tile opens — it used to count
               every bucket, so the number and the list behind it disagreed. */}
-          <h3 className="kpi-value mt-1">{statsLoading ? "…" : cityAgg?.closedReal ?? 0}</h3>
+          <h3 className="kpi-value mt-1">{statFigure(statsLoading, statsError, cityAgg?.closedReal)}</h3>
           <span className="text-xs text-text-muted mt-1 block">{closedCaption(cityAgg)}</span>
           {/* Pending-list items are stored as closed, so they land in the count
               above. Naming them stops the tile reading as "all finished". */}
@@ -407,11 +418,11 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
         </span>
         <span className="text-sm text-text-muted flex items-center gap-1.5">
           <Icon name="inventory_2" size={16} className="text-accent" /> PP-Box{" "}
-          <b className="text-text-primary">{statsLoading ? "…" : cityAgg?.ppBox ?? 0}</b>
+          <b className="text-text-primary">{statFigure(statsLoading, statsError, cityAgg?.ppBox)}</b>
         </span>
         <span className="text-sm text-text-muted flex items-center gap-1.5">
           <Icon name="category" size={16} className="text-accent" /> Consumables{" "}
-          <b className="text-text-primary">{statsLoading ? "…" : cityAgg?.consumable ?? 0}</b>
+          <b className="text-text-primary">{statFigure(statsLoading, statsError, cityAgg?.consumable)}</b>
         </span>
         <span className="text-xs text-text-disabled">Counted by quantity, not by barcode — they never appear in the list below.</span>
       </div>
@@ -437,7 +448,6 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                   {" "}· sorted alphabetically (migration 0011 not applied)
                 </span>
               )}
-              {error && <span className="text-danger"> · {error}</span>}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -616,6 +626,9 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
           {loading && rows.length === 0 && <CardListSkeleton />}
           {!loading && rows.length === 0 && (
             <EmptyState
+              error={error}
+              what="these items"
+              onRetry={refetch}
               compact
               icon={filtersActive ? "search_off" : "task_alt"}
               title={filtersActive ? "Nothing matches these filters" : `${city} is fully accounted for`}
@@ -751,6 +764,9 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                 <tr>
                   <td colSpan={13}>
                     <EmptyState
+                      error={error}
+                      what="these items"
+                      onRetry={refetch}
                       icon={filtersActive ? "search_off" : "task_alt"}
                       title={filtersActive ? "Nothing matches these filters" : `${city} is fully accounted for`}
                       detail={

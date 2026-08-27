@@ -104,7 +104,7 @@ export default function VarianceListModal({
   }, [searchInput]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const { rows, total, totalPages, businessDate, loading, refetch } = useVariances({
+  const { rows, total, totalPages, businessDate, loading, error, refetch } = useVariances({
     city,
     date,
     // A free-text search spans every bucket/status/date, same rule as the page
@@ -450,6 +450,9 @@ export default function VarianceListModal({
           {loading && rows.length === 0 && <CardListSkeleton />}
           {!loading && rows.length === 0 && (
             <EmptyState
+              error={error}
+              what="these items"
+              onRetry={refetch}
               compact
               title={narrowed ? "No variances match these filters" : "Nothing in this category"}
               detail={narrowed ? undefined : "Everything here has been dealt with."}
@@ -564,6 +567,9 @@ export default function VarianceListModal({
                 <tr>
                   <td colSpan={colCount}>
                     <EmptyState
+                      error={error}
+                      what="these items"
+                      onRetry={refetch}
                       title={
                         narrowed ? "No variances match these filters" : "Nothing in this category"
                       }

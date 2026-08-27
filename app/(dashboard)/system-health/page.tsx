@@ -5,6 +5,7 @@
 // and digest email sends (what happened, and when).
 
 import { useMemo } from "react";
+import { ErrorState } from "@/components/error-state";
 import { useSystemHealth } from "@/lib/hooks/use-system-health";
 import { Icon, type IconName } from "@/components/icon";
 
@@ -121,11 +122,7 @@ export default function SystemHealthPage() {
         </button>
       </header>
 
-      {error && (
-        <div className="card p-4 bg-danger-soft border border-danger/20 text-sm text-danger font-semibold">
-          {error}
-        </div>
-      )}
+      {error && <ErrorState what="system health" detail={error} onRetry={refetch} />}
 
       {/* Overall status banner */}
       <div className={`card p-4 flex items-center gap-3 ${anyFailed ? "bg-danger-soft border border-danger/20" : "bg-success-soft border border-success/20"}`}>
@@ -165,7 +162,11 @@ export default function SystemHealthPage() {
         </div>
         {events.length === 0 ? (
           <div className="p-10 text-center text-text-muted text-sm">
-            {loading ? "Loading…" : "No activity recorded yet."}
+            {loading
+              ? "Loading…"
+              : error
+                ? "Activity could not be read — see above."
+                : "No activity recorded yet."}
           </div>
         ) : (
           <ul className="divide-y divide-border">
