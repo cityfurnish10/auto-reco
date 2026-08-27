@@ -11,6 +11,7 @@
 // to their own city instead of leaking other cities' totals.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createClient } from "@/lib/supabase/server";
 import { PENDING_LIST_REASON } from "@/lib/ui/closure-reasons";
 
@@ -116,7 +117,7 @@ function emptyAgg(city: string): CityAgg {
   };
 }
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -401,4 +402,4 @@ export async function GET(req: NextRequest) {
     byCity: [...byCityMap.values()].sort((a, b) => a.city.localeCompare(b.city)),
     overall,
   });
-}
+});

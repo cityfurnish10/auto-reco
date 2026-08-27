@@ -13,13 +13,14 @@
 // sees all.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("gate/flags", async (req: NextRequest) => {
   const me = await getCurrentAppUser();
   if (!me || (me.role !== "admin" && me.role !== "manager")) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -58,4 +59,4 @@ export async function GET(req: NextRequest) {
     scanning: r.error ? [] : (r.data ?? []),
     scanningError: r.error?.message ?? null,
   }, { headers: { "Cache-Control": "no-store" } });
-}
+});

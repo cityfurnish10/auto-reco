@@ -8,6 +8,7 @@
 // Windows are anchored to the most recent business_date in the data.
 
 import { NextResponse } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { CITIES } from "@/lib/sample-data";
@@ -34,7 +35,7 @@ function cityAggregate(rows: StatRow[], from: string, to: string) {
   }).sort((a, b) => (b.accuracy ?? -1) - (a.accuracy ?? -1) || a.city.localeCompare(b.city));
 }
 
-export async function GET() {
+export const GET = jsonRoute("analytics", async () => {
   const me = await getCurrentAppUser();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -82,4 +83,4 @@ export async function GET() {
       last30: cityAggregate(rows, daysBefore(maxDate, 29), maxDate),
     },
   });
-}
+});

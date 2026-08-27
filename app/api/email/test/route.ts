@@ -7,6 +7,7 @@
 // Builds the digest from PERSISTED variances (no source re-pull) and mails it.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import {
@@ -21,7 +22,7 @@ import { saveEmailLog } from "@/lib/db/persist";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+export const POST = jsonRoute("email/test", async (req: NextRequest) => {
   const me = await getCurrentAppUser();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -123,4 +124,4 @@ export async function POST(req: NextRequest) {
     );
   }
   return NextResponse.json({ ok: true, date, ...meta });
-}
+});

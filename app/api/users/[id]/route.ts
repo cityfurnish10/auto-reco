@@ -6,6 +6,7 @@
 // Guards: an admin can't lock themselves out or remove the last active admin.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { CITIES } from "@/lib/sample-data";
@@ -24,10 +25,10 @@ async function activeAdminCount(admin: ReturnType<typeof createAdminClient>) {
   return count ?? 0;
 }
 
-export async function PATCH(
+export const PATCH = jsonRoute("users/item", async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const me = await getCurrentAppUser();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -96,12 +97,12 @@ export async function PATCH(
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ data });
-}
+});
 
-export async function DELETE(
+export const DELETE = jsonRoute("users/item", async (
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const me = await getCurrentAppUser();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -124,4 +125,4 @@ export async function DELETE(
   if (t.auth_id) await admin.auth.admin.deleteUser(t.auth_id).catch(() => {});
 
   return NextResponse.json({ ok: true });
-}
+});

@@ -9,6 +9,7 @@
 // role instead of growing a parallel identity system beside them.
 
 import { randomUUID } from "crypto";
+import { jsonRoute } from "@/lib/api/json-route";
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
@@ -26,7 +27,7 @@ async function supervisor() {
   return me;
 }
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("gate/guards", async (req: NextRequest) => {
   const me = await supervisor();
   if (!me) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
@@ -60,10 +61,10 @@ export async function GET(req: NextRequest) {
     }))
   );
   return NextResponse.json({ guards });
-}
+});
 
 /** PATCH — retake a guard's reference photo, or deactivate them. */
-export async function PATCH(req: NextRequest) {
+export const PATCH = jsonRoute("gate/guards", async (req: NextRequest) => {
   const me = await supervisor();
   if (!me) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
@@ -126,9 +127,9 @@ export async function PATCH(req: NextRequest) {
     photoProblem: up ? null
       : [upErr?.message, ...bucketProblems].filter(Boolean).join("; ") || "storage refused an upload link",
   });
-}
+});
 
-export async function POST(req: NextRequest) {
+export const POST = jsonRoute("gate/guards", async (req: NextRequest) => {
   const me = await supervisor();
   if (!me) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
@@ -245,4 +246,4 @@ export async function POST(req: NextRequest) {
     photoProblem: up ? null
       : [upErr?.message, ...bucketProblems].filter(Boolean).join("; ") || "storage refused an upload link",
   });
-}
+});

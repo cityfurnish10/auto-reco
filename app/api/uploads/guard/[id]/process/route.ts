@@ -8,6 +8,7 @@
 // OCR download + write use the service-role client.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { processGuardUpload } from "@/lib/connectors/ocr/process";
@@ -18,10 +19,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export async function POST(
+export const POST = jsonRoute("uploads/guard/process", async (
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const { id } = await params;
 
   const supabase = await createClient();
@@ -57,4 +58,4 @@ export async function POST(
   }
   const status = result.result === "skipped" ? 409 : 502; // skipped = file not in storage yet
   return NextResponse.json({ ok: false, ...result, error: result.reason ?? "OCR failed" }, { status });
-}
+});

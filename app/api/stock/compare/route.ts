@@ -11,6 +11,7 @@
 // /api/stock/units, paginated.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { readRuns, readSnapshots, readVariances } from "@/lib/stock/db";
@@ -25,7 +26,7 @@ export const dynamic = "force-dynamic";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("stock/compare", async (req: NextRequest) => {
   const me = await getCurrentAppUser();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -131,4 +132,4 @@ export async function GET(req: NextRequest) {
     totals,
     cities: totals.cities,
   });
-}
+});

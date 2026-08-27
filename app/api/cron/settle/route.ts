@@ -16,6 +16,7 @@
 // preview on either verb.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DISABLED_BODY, cronAuthorized, scheduledJobsDisabled } from "@/lib/reconcile/cron-guard";
 import { lastClosedBusinessDate } from "@/lib/reconcile/cron-dates";
@@ -54,10 +55,10 @@ async function handle(req: NextRequest, commit: boolean) {
   }
 }
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("cron/settle", async (req: NextRequest) => {
   return handle(req, false);
-}
+});
 
-export async function POST(req: NextRequest) {
+export const POST = jsonRoute("cron/settle", async (req: NextRequest) => {
   return handle(req, true);
-}
+});

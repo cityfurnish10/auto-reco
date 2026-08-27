@@ -5,6 +5,7 @@
 // state — flagged archived:false so the UI can label it as a reconstruction.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { listEmailPdfs, loadEmailArchive } from "@/lib/email/email-archive";
@@ -14,10 +15,10 @@ import { dashboardUrl } from "@/lib/email";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(
+export const GET = jsonRoute("email/archive/item", async (
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const me = await getCurrentAppUser();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -76,4 +77,4 @@ export async function GET(
     createdAt: log.created_at,
     ...envelope,
   });
-}
+});

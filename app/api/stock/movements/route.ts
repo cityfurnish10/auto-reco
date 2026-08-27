@@ -18,6 +18,7 @@
 // zero — a zero would read as "nothing moved".
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { readCityStats, readMovements } from "@/lib/stock/db";
@@ -53,7 +54,7 @@ export interface MovementBucket {
   booksRead: number | null;
 }
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("stock/movements", async (req: NextRequest) => {
   const me = await getCurrentAppUser();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -224,4 +225,4 @@ export async function GET(req: NextRequest) {
       drift: ledgerMovements === null ? null : ledgerMovements - rollupMovements,
     },
   });
-}
+});

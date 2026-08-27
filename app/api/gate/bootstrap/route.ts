@@ -10,6 +10,7 @@
 // change, sometimes by three phones at once.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { identifyDevice, withGuard } from "@/lib/gate/auth";
 import { EXPECTED_CHECK_LIVE, COMPLETENESS_SHOWN, OUTWARD_PHOTO_SAMPLE_RATE, loadSite } from "@/lib/gate/config";
@@ -19,7 +20,7 @@ import { ensureExpectedFresh } from "@/lib/gate/expected";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("gate/bootstrap", async (req: NextRequest) => {
   const admin = createAdminClient();
   const device = await identifyDevice(admin, req.headers.get("authorization"));
   if (!device) return NextResponse.json({ error: "unknown or revoked device" }, { status: 401 });
@@ -109,4 +110,4 @@ export async function GET(req: NextRequest) {
     expected: [],
     expectedCount: 0,
   });
-}
+});

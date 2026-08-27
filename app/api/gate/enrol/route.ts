@@ -8,6 +8,7 @@
 // revoked and re-enrolled, never recovered.
 
 import { randomUUID } from "crypto";
+import { jsonRoute } from "@/lib/api/json-route";
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
@@ -28,7 +29,7 @@ export const dynamic = "force-dynamic";
  *
  * Booleans and a name only. The secret itself is never returned.
  */
-export async function GET() {
+export const GET = jsonRoute("gate/enrol", async () => {
   // NOT session-gated, deliberately, and confined to preview so it can never
   // answer on production. Requiring a session made the diagnostic useless for
   // the exact failure it exists to explain: it returned "forbidden" while the
@@ -58,7 +59,7 @@ export async function GET() {
       : !secret ? "Protection Bypass secret is not attached to this deployment — redeploy after enabling it."
       : "Bypass will be added to pairing links.",
   });
-}
+});
 
 /** POST is enrolment; this lists the phones and who has used them. */
 export async function listDevices(city: string | null) {
@@ -94,7 +95,7 @@ export async function listDevices(city: string | null) {
   }));
 }
 
-export async function POST(req: NextRequest) {
+export const POST = jsonRoute("gate/enrol", async (req: NextRequest) => {
   const me = await getCurrentAppUser();
   if (!me || (me.role !== "admin" && me.role !== "manager")) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -204,4 +205,4 @@ export async function POST(req: NextRequest) {
     pairingUrl: `${base}/scan/pair?${q.toString()}`,
     site: site && { code: site.siteCode, label: site.label, lat: site.lat, lng: site.lng, radiusM: site.radiusM },
   });
-}
+});

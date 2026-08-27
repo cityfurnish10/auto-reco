@@ -4,6 +4,7 @@
 // delivered HTML is served per-row by /api/email/archive/[id].
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { istDayToUtcWindow } from "@/lib/connectors/ist-window";
@@ -11,7 +12,7 @@ import { istDayToUtcWindow } from "@/lib/connectors/ist-window";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("email/archive", async (req: NextRequest) => {
   const me = await getCurrentAppUser();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -35,4 +36,4 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   return NextResponse.json({ data: data ?? [] });
-}
+});

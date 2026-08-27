@@ -9,6 +9,7 @@
 // digest actually goes to.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { loadRecipientState, saveRecipientState } from "@/lib/email/recipient-store";
@@ -17,16 +18,16 @@ import { sanitizeRecipientState } from "@/lib/email/recipient-list";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export const GET = jsonRoute("email/recipients", async () => {
   const me = await getCurrentAppUser();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   const state = await loadRecipientState(createAdminClient());
   return NextResponse.json({ state });
-}
+});
 
-export async function PUT(req: NextRequest) {
+export const PUT = jsonRoute("email/recipients", async (req: NextRequest) => {
   const me = await getCurrentAppUser();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -47,4 +48,4 @@ export async function PUT(req: NextRequest) {
     );
   }
   return NextResponse.json({ ok: true, state });
-}
+});

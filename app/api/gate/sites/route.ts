@@ -9,13 +9,14 @@
 // rejecting every honest scan.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export const GET = jsonRoute("gate/sites", async () => {
   const me = await getCurrentAppUser();
   if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
@@ -37,9 +38,9 @@ export async function GET() {
       pinned: r.lat != null && r.lng != null,
     })),
   });
-}
+});
 
-export async function PATCH(req: NextRequest) {
+export const PATCH = jsonRoute("gate/sites", async (req: NextRequest) => {
   const me = await getCurrentAppUser();
   if (!me || (me.role !== "admin" && me.role !== "manager")) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -89,4 +90,4 @@ export async function PATCH(req: NextRequest) {
   const { error } = await admin.from("gate_sites").update(update).eq("city", body.city);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });
-}
+});

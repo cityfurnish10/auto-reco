@@ -14,6 +14,7 @@
 // form shows a plain text box, which is what it did before this existed.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { identifyDevice } from "@/lib/gate/auth";
 import { EMPTY_FLEET, fleetForCity } from "@/lib/gate/fleet";
@@ -23,7 +24,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 15;
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("gate/fleet", async (req: NextRequest) => {
   const admin = createAdminClient();
   const device = await identifyDevice(admin, req.headers.get("authorization"));
   if (!device) {
@@ -36,4 +37,4 @@ export async function GET(req: NextRequest) {
     // for five minutes would reintroduce the staleness it was built to remove.
     headers: { "Cache-Control": "no-store" },
   });
-}
+});

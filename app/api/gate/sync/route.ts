@@ -14,6 +14,7 @@
 // Excluded from middleware auth via the api/gate matcher; enforces its own.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { identifyDevice, markDeviceSeen, withGuard } from "@/lib/gate/auth";
 import { applyBatch, type InFaceCheck, type InScan, type InShift, type InTrip,
@@ -30,7 +31,7 @@ export const maxDuration = 60;
 const MAX_TRIPS = 40;
 const MAX_SCANS = 400;
 
-export async function POST(req: NextRequest) {
+export const POST = jsonRoute("gate/sync", async (req: NextRequest) => {
   const admin = createAdminClient();
   const device = await identifyDevice(admin, req.headers.get("authorization"));
   if (!device) {
@@ -105,4 +106,4 @@ export async function POST(req: NextRequest) {
     // The phone keeps syncing while this is true rather than assuming it is done.
     truncated,
   });
-}
+});

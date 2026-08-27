@@ -5,6 +5,7 @@
 // merges these into one chronological timeline.
 
 import { NextResponse } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
 const LIMIT = 25;
 const SOURCES = ["ODOO", "SHEET", "DT", "PHYSICAL"] as const;
 
-export async function GET() {
+export const GET = jsonRoute("system-health", async () => {
   const me = await getCurrentAppUser();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -73,4 +74,4 @@ export async function GET() {
     emails,
     sourceHealth,
   });
-}
+});

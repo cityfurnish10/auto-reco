@@ -7,6 +7,7 @@
 // Handles GET (Vercel Cron) and POST (manual / external scheduler / curl).
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DISABLED_BODY, cronAuthorized, scheduledJobsDisabled } from "@/lib/reconcile/cron-guard";
 import { runReconcilePipeline } from "@/lib/reconcile/pipeline";
@@ -132,9 +133,9 @@ async function handle(req: NextRequest) {
   return NextResponse.json({ ...result, recheck }, { status: result.ok ? 200 : 500 });
 }
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("cron/reconcile", async (req: NextRequest) => {
   return handle(req);
-}
-export async function POST(req: NextRequest) {
+});
+export const POST = jsonRoute("cron/reconcile", async (req: NextRequest) => {
   return handle(req);
-}
+});

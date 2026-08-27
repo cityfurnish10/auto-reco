@@ -12,13 +12,14 @@
 // check-in selfie failing to match that guard's own reference photo.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { guardsForDevice, identifyDevice, verifyGuardPin } from "@/lib/gate/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("gate/session", async (req: NextRequest) => {
   const admin = createAdminClient();
   const device = await identifyDevice(admin, req.headers.get("authorization"));
   if (!device) return NextResponse.json({ error: "unknown or revoked device" }, { status: 401 });
@@ -37,9 +38,9 @@ export async function GET(req: NextRequest) {
       enrolled: !!g.descriptor,
     })),
   });
-}
+});
 
-export async function POST(req: NextRequest) {
+export const POST = jsonRoute("gate/session", async (req: NextRequest) => {
   const admin = createAdminClient();
   const device = await identifyDevice(admin, req.headers.get("authorization"));
   if (!device) return NextResponse.json({ error: "unknown or revoked device" }, { status: 401 });
@@ -78,4 +79,4 @@ export async function POST(req: NextRequest) {
   await note(true);
   const g = guards.find((x) => x.guardId === body.guardId)!;
   return NextResponse.json({ ok: true, guard: { id: g.guardId, name: g.name } });
-}
+});

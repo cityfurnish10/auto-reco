@@ -7,6 +7,7 @@
 // checked against the device's own city before anything is returned.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { identifyDevice, withGuard } from "@/lib/gate/auth";
 import { currentBusinessDate } from "@/lib/reconcile/cron-dates";
@@ -14,7 +15,7 @@ import { currentBusinessDate } from "@/lib/reconcile/cron-dates";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("gate/history", async (req: NextRequest) => {
   const admin = createAdminClient();
   const device = await identifyDevice(admin, req.headers.get("authorization"));
   if (!device) return NextResponse.json({ error: "unknown or revoked device" }, { status: 401 });
@@ -56,4 +57,4 @@ export async function GET(req: NextRequest) {
       };
     }),
   });
-}
+});

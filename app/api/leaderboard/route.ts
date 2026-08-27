@@ -12,6 +12,7 @@
 // wall clock), so "last 7 days" means the 7 most recent days that have data.
 
 import { NextResponse } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { CITIES } from "@/lib/sample-data";
@@ -96,7 +97,7 @@ function buildWindow(
   };
 }
 
-export async function GET() {
+export const GET = jsonRoute("leaderboard", async () => {
   const me = await getCurrentAppUser();
   if (!me) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -149,4 +150,4 @@ export async function GET() {
   };
 
   return NextResponse.json({ empty: false, latestDate: maxDate, windows });
-}
+});

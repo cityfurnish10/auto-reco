@@ -8,6 +8,7 @@
 // Auth writes use the service-role admin client — never the browser.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { CITIES } from "@/lib/sample-data";
@@ -22,7 +23,7 @@ async function requireAdmin() {
   return me;
 }
 
-export async function GET() {
+export const GET = jsonRoute("users", async () => {
   if (!(await requireAdmin())) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
@@ -34,9 +35,9 @@ export async function GET() {
     .order("city", { ascending: true });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ data });
-}
+});
 
-export async function POST(req: NextRequest) {
+export const POST = jsonRoute("users", async (req: NextRequest) => {
   if (!(await requireAdmin())) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
@@ -95,4 +96,4 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ data: row }, { status: 201 });
-}
+});

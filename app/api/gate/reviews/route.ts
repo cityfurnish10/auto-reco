@@ -13,6 +13,7 @@
 // conversation, not an access control.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { ATTENDANCE_BUCKET, signPhotoRead } from "@/lib/gate/evidence";
@@ -20,7 +21,7 @@ import { ATTENDANCE_BUCKET, signPhotoRead } from "@/lib/gate/evidence";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("gate/reviews", async (req: NextRequest) => {
   const me = await getCurrentAppUser();
   if (!me || (me.role !== "admin" && me.role !== "manager")) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -80,9 +81,9 @@ export async function GET(req: NextRequest) {
     }))
   );
   return NextResponse.json({ checks });
-}
+});
 
-export async function PATCH(req: NextRequest) {
+export const PATCH = jsonRoute("gate/reviews", async (req: NextRequest) => {
   const me = await getCurrentAppUser();
   if (!me || (me.role !== "admin" && me.role !== "manager")) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -110,4 +111,4 @@ export async function PATCH(req: NextRequest) {
   }).eq("id", body.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });
-}
+});

@@ -18,6 +18,7 @@
 // rather than implying every id was applied.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { ALL_ACTIONS, ADMIN_ONLY, buildUpdate, type Action } from "../[id]/actions";
@@ -27,7 +28,7 @@ import { ALL_ACTIONS, ADMIN_ONLY, buildUpdate, type Action } from "../[id]/actio
 // this page" always fits.
 const MAX_IDS = 500;
 
-export async function PATCH(req: NextRequest) {
+export const PATCH = jsonRoute("variances/bulk", async (req: NextRequest) => {
   const appUser = await getCurrentAppUser();
   if (!appUser) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -124,4 +125,4 @@ export async function PATCH(req: NextRequest) {
     skipped: ids.length - updated,
     updatedIds: (data ?? []).map((r) => r.id as string),
   });
-}
+});

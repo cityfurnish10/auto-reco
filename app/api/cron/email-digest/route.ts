@@ -9,6 +9,7 @@
 // Optional ?date=YYYY-MM-DD to re-send a specific day's digest.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DISABLED_BODY, cronAuthorized, scheduledJobsDisabled } from "@/lib/reconcile/cron-guard";
 import {
@@ -198,9 +199,9 @@ async function handle(req: NextRequest) {
     followUpQueued: enqueue.enqueue ? date : enqueue.reason, pruned });
 }
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("cron/email-digest", async (req: NextRequest) => {
   return handle(req);
-}
-export async function POST(req: NextRequest) {
+});
+export const POST = jsonRoute("cron/email-digest", async (req: NextRequest) => {
   return handle(req);
-}
+});

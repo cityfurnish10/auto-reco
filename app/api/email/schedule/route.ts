@@ -7,6 +7,7 @@
 //   DELETE /api/email/schedule?id=<uuid>                    — cancel a pending send
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 
@@ -22,7 +23,7 @@ async function requireAdmin() {
 const clean = (list?: string[]): string[] =>
   (Array.isArray(list) ? list : []).map((s) => s.trim()).filter(Boolean);
 
-export async function POST(req: NextRequest) {
+export const POST = jsonRoute("email/schedule", async (req: NextRequest) => {
   const me = await requireAdmin();
   if (!me) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
@@ -89,9 +90,9 @@ export async function POST(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true, data });
-}
+});
 
-export async function GET() {
+export const GET = jsonRoute("email/schedule", async () => {
   const me = await requireAdmin();
   if (!me) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
@@ -103,9 +104,9 @@ export async function GET() {
     .limit(50);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ data: data ?? [] });
-}
+});
 
-export async function DELETE(req: NextRequest) {
+export const DELETE = jsonRoute("email/schedule", async (req: NextRequest) => {
   const me = await requireAdmin();
   if (!me) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
@@ -124,4 +125,4 @@ export async function DELETE(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ error: "not found or no longer pending" }, { status: 409 });
   return NextResponse.json({ ok: true });
-}
+});

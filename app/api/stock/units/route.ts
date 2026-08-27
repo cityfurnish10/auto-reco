@@ -10,6 +10,7 @@
 // rowPresent:false and null detail rather than being silently dropped.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { readRuns, readSnapshots, readVarianceDetail } from "@/lib/stock/db";
@@ -26,7 +27,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const CLASSES = ["cleared", "still-open", "newly-raised"] as const;
 const MAX_PAGE = 200;
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("stock/units", async (req: NextRequest) => {
   const me = await getCurrentAppUser();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -174,4 +175,4 @@ export async function GET(req: NextRequest) {
   });
 
   return NextResponse.json({ total, page, pageSize, rows, degraded: "none" });
-}
+});

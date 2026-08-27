@@ -17,6 +17,7 @@
 // another gate.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { identifyDevice } from "@/lib/gate/auth";
 import { ensureExpectedFresh } from "@/lib/gate/expected";
@@ -26,7 +27,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("gate/expected", async (req: NextRequest) => {
   const admin = createAdminClient();
   const device = await identifyDevice(admin, req.headers.get("authorization"));
   if (!device) {
@@ -61,4 +62,4 @@ export async function GET(req: NextRequest) {
     stale: !fresh.refreshed && fresh.reason !== "fresh",
     reason: fresh.reason ?? null,
   }, { headers: { "Cache-Control": "no-store" } });
-}
+});

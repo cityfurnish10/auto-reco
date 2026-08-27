@@ -4,6 +4,7 @@
 // call it directly. Defaults to today; accepts an optional { date } / ?date=.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { runReconcilePipeline } from "@/lib/reconcile/pipeline";
@@ -16,7 +17,7 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export async function POST(req: NextRequest) {
+export const POST = jsonRoute("reconcile", async (req: NextRequest) => {
   const me = await getCurrentAppUser();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ error: "forbidden — admin only" }, { status: 403 });
@@ -45,4 +46,4 @@ export async function POST(req: NextRequest) {
   });
 
   return NextResponse.json(result, { status: result.ok ? 200 : 500 });
-}
+});

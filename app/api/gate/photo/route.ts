@@ -16,6 +16,7 @@
 // the id alone is not a key to another gate's evidence.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { ATTENDANCE_BUCKET, EVIDENCE_BUCKET, signPhotoRead } from "@/lib/gate/evidence";
@@ -23,7 +24,7 @@ import { ATTENDANCE_BUCKET, EVIDENCE_BUCKET, signPhotoRead } from "@/lib/gate/ev
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("gate/photo", async (req: NextRequest) => {
   const me = await getCurrentAppUser();
   if (!me || (me.role !== "admin" && me.role !== "manager")) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -75,4 +76,4 @@ export async function GET(req: NextRequest) {
     });
   }
   return NextResponse.json({ url }, { headers: { "Cache-Control": "no-store" } });
-}
+});

@@ -3,9 +3,10 @@
 // Powers the header notification-bell badge (admin approval queue).
 
 import { NextResponse } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createClient } from "@/lib/supabase/server";
 
-export async function GET() {
+export const GET = jsonRoute("variances/pending-count", async () => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -23,4 +24,4 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   return NextResponse.json({ count: count ?? 0 });
-}
+});

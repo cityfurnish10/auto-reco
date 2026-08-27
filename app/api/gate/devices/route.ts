@@ -6,13 +6,14 @@
 // exists if the failures are kept.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { listDevices } from "../enrol/route";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("gate/devices", async (req: NextRequest) => {
   const me = await getCurrentAppUser();
   if (!me || (me.role !== "admin" && me.role !== "manager")) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -25,4 +26,4 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "could not list devices" }, { status: 500 });
   }
-}
+});

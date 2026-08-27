@@ -9,6 +9,7 @@
 // preview" — which meant nobody could check their own note before sending.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { buildDigestFromDb, renderDigestHtml, digestSubject } from "@/lib/email/digest";
@@ -21,7 +22,7 @@ export const dynamic = "force-dynamic";
 // being rendered into the iframe wholesale.
 const MAX_NOTES = 2000;
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("email/preview", async (req: NextRequest) => {
   const me = await getCurrentAppUser();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -55,4 +56,4 @@ export async function GET(req: NextRequest) {
     subject: digestSubject(digest),
     recipients: digestRecipients(),
   });
-}
+});

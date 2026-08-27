@@ -10,6 +10,7 @@
 // belongs to the next business day.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DISABLED_BODY, cronAuthorized, scheduledJobsDisabled } from "@/lib/reconcile/cron-guard";
 import { refreshExpected } from "@/lib/gate/expected";
@@ -42,5 +43,5 @@ async function handle(req: NextRequest) {
   return NextResponse.json({ ok: true, results });
 }
 
-export async function GET(req: NextRequest) { return handle(req); }
-export async function POST(req: NextRequest) { return handle(req); }
+export const GET = jsonRoute("cron/gate-expected", async (req: NextRequest) => { return handle(req); });
+export const POST = jsonRoute("cron/gate-expected", async (req: NextRequest) => { return handle(req); });

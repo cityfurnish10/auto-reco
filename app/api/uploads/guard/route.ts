@@ -10,11 +10,12 @@
 // exceed that).
 
 import { randomUUID } from "crypto";
+import { jsonRoute } from "@/lib/api/json-route";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 
-export async function POST(req: NextRequest) {
+export const POST = jsonRoute("uploads/guard", async (req: NextRequest) => {
   const appUser = await getCurrentAppUser();
   if (!appUser) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -73,4 +74,4 @@ export async function POST(req: NextRequest) {
     signedUrl: signed.signedUrl,
     token: signed.token,
   });
-}
+});

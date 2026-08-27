@@ -15,6 +15,7 @@
 // via the cookie client, so a manager's facets cover only their own city.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createClient } from "@/lib/supabase/server";
 import { OPS_TYPE_NONE } from "@/lib/ui/variance-format";
 
@@ -23,7 +24,7 @@ export interface Facet {
   count: number;
 }
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("variances/facets", async (req: NextRequest) => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -116,4 +117,4 @@ export async function GET(req: NextRequest) {
     responsibles: toList(owners),
     opsTypes: toList(opsTypes),
   });
-}
+});

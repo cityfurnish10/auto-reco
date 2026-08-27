@@ -6,6 +6,7 @@
 //   step, so the old PATCH confirm route is gone.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
@@ -15,10 +16,10 @@ export const runtime = "nodejs";
 
 const BUCKET = "guard-registers";
 
-export async function GET(
+export const GET = jsonRoute("uploads/guard/item", async (
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const { id } = await params;
   const supabase = await createClient();
   const {
@@ -33,12 +34,12 @@ export async function GET(
     return NextResponse.json({ error: "upload not found or not accessible" }, { status: 404 });
   }
   return NextResponse.json({ data });
-}
+});
 
-export async function DELETE(
+export const DELETE = jsonRoute("uploads/guard/item", async (
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const { id } = await params;
 
   const me = await getCurrentAppUser();
@@ -72,4 +73,4 @@ export async function DELETE(
   }
 
   return NextResponse.json({ ok: true, file: upload.file_name, driveTrashed: drive.trashed });
-}
+});

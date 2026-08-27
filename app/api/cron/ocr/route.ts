@@ -7,6 +7,7 @@
 // otherwise every pending upload is processed (bounded by ?limit, default 25).
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DISABLED_BODY, cronAuthorized, scheduledJobsDisabled } from "@/lib/reconcile/cron-guard";
 import { processPendingGuardUploads } from "@/lib/connectors/ocr/process";
@@ -42,9 +43,9 @@ async function handle(req: NextRequest) {
   }
 }
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("cron/ocr", async (req: NextRequest) => {
   return handle(req);
-}
-export async function POST(req: NextRequest) {
+});
+export const POST = jsonRoute("cron/ocr", async (req: NextRequest) => {
   return handle(req);
-}
+});

@@ -22,6 +22,7 @@
 // dates=all.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createClient } from "@/lib/supabase/server";
 
 // Sortable keys, whitelisted — the value reaches PostgREST's order() as a
@@ -56,7 +57,7 @@ const DEFAULT_SORT = "date";
 
 import { OPS_TYPE_NONE } from "@/lib/ui/variance-format";
 
-export async function GET(req: NextRequest) {
+export const GET = jsonRoute("variances", async (req: NextRequest) => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -230,4 +231,4 @@ export async function GET(req: NextRequest) {
     // alphabetical because migration 0011 is not applied.
     sortDegraded,
   });
-}
+});

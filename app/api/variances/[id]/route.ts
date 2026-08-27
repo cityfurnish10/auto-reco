@@ -12,16 +12,17 @@
 // Body: { action, reason?, note? }. `reason` is required for submit + close.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jsonRoute } from "@/lib/api/json-route";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 // Shared with the bulk route so the two can never disagree about what an
 // action writes — see ./actions.ts.
 import { ALL_ACTIONS, ADMIN_ONLY, buildUpdate, type Action } from "./actions";
 
-export async function PATCH(
+export const PATCH = jsonRoute("variances/item", async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const { id } = await params;
 
   const appUser = await getCurrentAppUser();
@@ -99,4 +100,4 @@ export async function PATCH(
   }
 
   return NextResponse.json({ data });
-}
+});
