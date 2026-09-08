@@ -39,6 +39,9 @@ next-env.d.ts
 *.xlsx
 *.xls
 *.csv
+# Guard registers are scanned PDFs of handwritten customer movement records.
+# handover/*.pdf is generated from handover/field-guide.html — regenerate, don't commit.
+*.pdf
 
 # local working artifacts
 /reports/

@@ -141,7 +141,10 @@ multi-run rows, the other passed defaults the real run never uses.
   actually worked on that commit — the handover docs still say "no trailer", but the
   history has carried them for months, so treat the trailer as normal and the doc as stale.
 - Secret-scan the staged diff before every push.
-- `.env*.local`, `*.xlsx/xls/csv/pdf`, `/reports/` are gitignored (customer PII).
+- `.env*`, `*.xlsx/xls/csv/pdf`, `/reports/`, `scratch_*` are gitignored (customer PII).
+  `*.pdf` was NOT ignored until Sept 2026 despite the handover docs claiming it was —
+  and guard registers are scanned PDFs of handwritten customer records. Verify with
+  `git check-ignore -v <file>` rather than trusting a doc.
 - **Comment the why, never the what** — especially the constraint that stops the next person "fixing" something deliberate.
 - **Measure, don't assert.** Query the live DB before claiming behaviour. Report disproved hypotheses; one guess about the biggest REAL category was wrong (4 of 592) and saying so was more useful than shipping it.
 
