@@ -28,6 +28,19 @@ const EXT = /\.tsx?$/;
  * matched line's own text so a reformat does not silently re-arm them.
  */
 const ALLOWED: { file: string; snippet: string; why: string }[] = [
+  // Enrichment (migration 0037) asks Odoo "what is this serial". The barcode is
+  // the LOOKUP KEY for that question and is never rendered — the answer is, as
+  // unit_product. Folding it would ask about a string no system holds.
+  {
+    file: "app/api/cron/gate-enrich/route.ts",
+    snippet: "fetchUnitFacts(scans.map((s) => s.barcode))",
+    why: "KEY: the raw QR payload is what Odoo's lot master is keyed on. Never shown.",
+  },
+  {
+    file: "app/api/cron/gate-enrich/route.ts",
+    snippet: "facts.get(s.barcode.trim())",
+    why: "KEY: matching Odoo's answer back to the scan that asked. Never shown.",
+  },
   // The Gate screens read gate_scans, where `barcode` is the RAW QR payload the
   // scanner returned — stored deliberately unfolded. shownBarcode() exists to
   // recover a true spelling from a folded one; here there is no fold to undo,

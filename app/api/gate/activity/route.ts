@@ -37,7 +37,11 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
     .eq("business_date", date)
     .order("opened_at", { ascending: false });
   let scans = admin.from("gate_scans")
-    .select("id,trip_id,barcode,serial_no,product,so_number,item_kind,quantity,entry_method,override_reason,exception_reason,barcode_pending,geo_ok,photo_path,scanned_at,guard_id")
+    // unit_* and last_* are DERIVED (migration 0037) — Odoo's answer to "what is
+    // this serial", never the day's plan. Shown so a manager chasing a gate-only
+    // item sees a product rather than a bare number; deliberately separate from
+    // product/so_number, which are the gate's own testimony.
+    .select("id,trip_id,barcode,serial_no,product,so_number,item_kind,quantity,entry_method,override_reason,exception_reason,barcode_pending,geo_ok,photo_path,scanned_at,guard_id,unit_product,unit_sku,last_customer,last_so,last_moved_at")
     .eq("business_date", date).eq("status", "recorded")
     .order("scanned_at", { ascending: true }).limit(2000);
 
