@@ -10,9 +10,13 @@
 
 import type { Metadata, Viewport } from "next";
 import "./gate.css";
+import ServiceWorkerRegister from "./sw-register";
 
 export const metadata: Metadata = {
   title: "Gate Register",
+  // Scoped to /scan, so installing the guard app never offers to install the
+  // dashboard and the service worker below never touches it.
+  manifest: "/scan/manifest.webmanifest",
   // Standalone so "Add to Home Screen" opens with no browser chrome at all —
   // the difference between something that feels like an app and something that
   // feels like a website a guard was told to use.
@@ -34,5 +38,10 @@ export const viewport: Viewport = {
 };
 
 export default function GateLayout({ children }: { children: React.ReactNode }) {
-  return <div className="gate-root">{children}</div>;
+  return (
+    <div className="gate-root">
+      <ServiceWorkerRegister />
+      {children}
+    </div>
+  );
 }

@@ -160,7 +160,13 @@ export const config = {
   // session, /api/gate/enrol, calls getCurrentAppUser() itself; that reads the
   // cookie-bound client directly and works whether or not middleware ran, so
   // excluding the prefix costs nothing.
+  //
+  // sw.js MUST be excluded. A service worker script is fetched by the browser
+  // with no session, so middleware answered it with a 307 to /login — the
+  // registration then failed silently and the guard app stayed unable to open
+  // without a signal, which is the entire problem it exists to solve. The file
+  // is public static JavaScript containing no data.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|robots.txt|sitemap.xml|api/cron|api/gate|scan|models).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|robots.txt|sitemap.xml|sw.js|api/cron|api/gate|scan|models).*)",
   ],
 };

@@ -56,6 +56,12 @@ const REASONS = ["rsnDamaged", "rsnLate", "rsnRepair", "rsnOther"];
 export default function GateApp() {
   const [screen, setScreen] = useState<Screen>("loading");
   const [lang, setLang] = useState<LangId>("en");
+  // One writer for the language, shared by the pre-sign-in strip and the
+  // full picker in Settings, so the two can never persist it differently.
+  const pickLang = useCallback((l: LangId) => {
+    setLang(l);
+    try { localStorage.setItem("gate.lang", l); } catch { /* private mode */ }
+  }, []);
   const [night, setNight] = useState(false);
   const t = makeT(lang);
 
@@ -1067,6 +1073,11 @@ export default function GateApp() {
             <div className="gglyph"><Icon name="lock" size={46} /></div>
             <h1>{t("notPaired")}</h1>
             <p>{t("askManager")}</p>
+            {/* Not a dead end: a guard whose manager has just sent the link can
+                act here instead of force-closing the app. */}
+            <button className="gbtn primary" style={{ marginTop: 18, marginInline: "auto" }}
+              onClick={() => location.reload()}>{t("retry")}</button>
+            <LangStrip lang={lang} onPick={pickLang} />
           </div>
         </Center>
       )}
@@ -1804,7 +1815,7 @@ export default function GateApp() {
             <div className="glangs">
               {LANGS.map((l) => (
                 <button key={l.id} className="glang" aria-pressed={lang === l.id}
-                  onClick={() => { setLang(l.id); localStorage.setItem("gate.lang", l.id); }}>
+                  onClick={() => pickLang(l.id)}>
                   <span className="native">{l.native}</span>
                   <span className="en">{l.en}</span>
                   <span className="chk">✓</span>
@@ -1932,6 +1943,29 @@ const when = (ms: number) => {
 
 const fmt = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+/**
+ * The five languages, on the screens a guard sees BEFORE signing in.
+ *
+ * The full picker lives in Settings, which sits behind pairing and a PIN — the
+ * wrong side of the door. A guard handed a new phone meets "This phone is not
+ * paired" in a language they may not read and has no way to change it, at
+ * exactly the moment they understand least.
+ *
+ * No translated labels by design: every option is written in its own script, so
+ * this needed no additions to the reviewed vocabulary in i18n.ts.
+ */
+function LangStrip({ lang, onPick }: { lang: LangId; onPick: (l: LangId) => void }) {
+  return (
+    <div className="glangstrip">
+      {LANGS.map((l) => (
+        <button key={l.id} type="button" aria-pressed={lang === l.id} onClick={() => onPick(l.id)}>
+          {l.native}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function Center({ children }: { children: React.ReactNode }) {
   return <div className="gcenter">{children}</div>;

@@ -484,3 +484,16 @@
  * that opens a page saying the same thing again. */
 .gsyncbox { gap:10px; }
 .gsyncbox .gbtn { width:100%; }
+
+/* Language strip for the screens BEFORE a guard is signed in.
+   The full picker in Settings sits behind pairing and a PIN, which is exactly
+   the wrong side of the door: a guard handed a new phone meets an unpaired
+   screen in a language they may not read, with no way to change it. This is the
+   compact form — no labels to translate, because each option is written in its
+   own script. */
+.glangstrip { display:flex; flex-wrap:wrap; justify-content:center; gap:7px; margin-top:26px; }
+.glangstrip button {
+  min-height:44px; padding:9px 15px; border-radius:11px; font-size:15px; font-weight:600;
+  border:1.5px solid var(--line); background:var(--card); color:var(--fg2);
+}
+.glangstrip button[aria-pressed="true"] { border-color:var(--primary); background:var(--card2); color:var(--fg); }
