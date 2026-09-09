@@ -35,12 +35,64 @@ function presenceFor(view: BarcodeView, source: SourceKind): SourcePresence {
 // live data 2026-07-12); guard/sheet Operation Type is the same ops language.
 // Odoo's procurement_status (ok/new/damaged) never matches the engine's terms,
 // so it's only a last-resort fill. Higher rank wins.
+//
+// PHYSICAL SITS BELOW SHEET, and that ordering is the whole point. Both speak
+// the same ops language, but the sheet is TYPED and the register is HANDWRITING
+// READ BY OCR — the least reliable text in the system. Ranking OCR above typed
+// was backwards, and the live data says so plainly (2026-09-09):
+//
+//   SHEET      65 distinct job types across 18,598 rows
+//   DT          5 distinct across 13,722
+//   PHYSICAL  517 distinct across  2,896   ← one new "type" every 5.6 rows
+//
+// The register's 517 are things like DICK_CUP (PICK_UP), DIVAUP (PICKUP),
+// ·REPLACEME (REPLACEMENT) and DELIVERY_CHEVAL (DELIVERY_CHENNAI). 605 units
+// carried a register job type that CONTRADICTED the ops sheet, and the register
+// won every one of them.
 const JOB_TYPE_RANK: Record<SourceKind, number> = {
   DT: 4,
-  PHYSICAL: 3,
-  SHEET: 2,
+  SHEET: 3,
+  PHYSICAL: 2,
   ODOO: 1,
 };
+
+/**
+ * Ops terms a TYPED source actually produces. An OCR'd job type is accepted
+ * only if it lands in here; anything else becomes null.
+ *
+ * WHY NULL RATHER THAN A FUZZY GUESS. "DICK_CUP" is almost certainly PICK_UP,
+ * but almost-certainly is how a reconciliation system starts inventing facts.
+ * The raw string is still in source_rows for anyone investigating; what this
+ * removes is a guess presented to an operator as a category. The same reasoning
+ * as geoOk() returning null rather than false in lib/gate/config.ts: absence of
+ * evidence is recorded as absence.
+ *
+ * Derived by measurement, not judgement — every value SHEET or DT produced at
+ * least 20 times (2026-09-09). The 18-value tail below that threshold covers
+ * 111 rows and is itself mostly typos (PO_IMWARD). Re-derive with:
+ *   SELECT upper(regexp_replace(trim(job_type),'[\s-]+','_','g')), count(*)
+ *     FROM source_rows WHERE source IN ('SHEET','DT') GROUP BY 1 ORDER BY 2 DESC;
+ *
+ * NOT used for spare/PP detection — isSpareJobType() reads the RAW row in
+ * run.ts before views exist, so a register reading "5PARE" still diverts to the
+ * count lane. This gate only decides what a human is shown and can filter on.
+ */
+const TYPED_JOB_TYPES: ReadonlySet<string> = new Set([
+  "NEW_RENTAL", "PICKUP_AND_REFUND", "DELIVERY", "PICK_UP", "REPLACEMENT",
+  "REPLACE", "REPAIR", "DELIVERED", "PICKUP_DONE", "PO_INWARD",
+  "STOCK_TRANSFER", "UPGRADE", "SPARE_PARTS", "SPARE_PART", "COMPLETED",
+  "PO_PAYMENT", "RELOCATION", "DEFAULTER_PICKUP", "PICKUP", "SPARES_INWARD",
+  "ORDER_UPGRADE", "SPARE_ITEMS_IN", "PO_INWARDS", "B2B",
+]);
+
+/** The job type to record for a row, or null when OCR produced something no
+ *  typed source has ever produced. */
+export function jobTypeFor(source: SourceKind, raw: string | null | undefined): string | null {
+  const norm = normalizeJobType(raw);
+  if (norm === null) return null;
+  if (source !== "PHYSICAL") return norm;
+  return TYPED_JOB_TYPES.has(norm) ? norm : null;
+}
 
 // rows are already: this city, this direction, valid barcodes only.
 export function buildViews(
@@ -92,8 +144,11 @@ export function buildViews(
     if (!view.product && row.product) view.product = row.product;
     if (row.jobType) {
       const rank = JOB_TYPE_RANK[row.source];
-      if (rank > (jobTypeRank.get(canonical) ?? 0)) {
-        view.jobType = normalizeJobType(row.jobType);
+      const value = jobTypeFor(row.source, row.jobType);
+      // A rejected OCR string must not claim the rank either — otherwise it
+      // would null the field AND block the ops sheet from filling it.
+      if (value !== null && rank > (jobTypeRank.get(canonical) ?? 0)) {
+        view.jobType = value;
         jobTypeRank.set(canonical, rank);
       }
     }
