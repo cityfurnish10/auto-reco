@@ -154,12 +154,37 @@ multi-run rows, the other passed defaults the real run never uses.
 
 - **`npm run build` fails** — `FATAL ERROR: JavaScript heap out of memory` in the TypeScript phase; compilation itself succeeds. Pre-existing, confirmed by stash-testing the baseline. Likely cause is in the build's own warning: stray `package.json` + `package-lock.json` in the developer's home directory make Next infer `~` as the workspace root. Fix with `turbopack.root` in `next.config.ts`, or remove the strays.
 - **Gate app is a silent pilot.** `GATE_APP_CITIES` is unset, so all five cities still read the OCR'd paper register; nothing the app records reaches reconciliation. Flipping a city is a config change, not development.
-- **Every geofence check has failed** (39/39) with GPS accurate to 13m — the five site pins came from Plus Codes and none has been confirmed on site.
-- **Face check passes 5 times in 27** (10 × `no_face`). Needs diagnosis before attendance can be relied on.
+- **EVERY GATE-APP NUMBER SO FAR IS TEST DATA.** All 39 scans and all 27 face checks
+  are one person on six devices (`Shantanu`, `Gate phone 002`, …) at a desk. Read
+  nothing about the field from them, and re-measure once a real guard has worked a
+  real shift. Two entries below used to be listed here as defects on exactly this
+  mistake; both dissolved the moment the data was actually looked at.
+- **Geofence: resolved for Delhi, open for the rest.** The "39/39 failed" reading was
+  half right and the wrong half mattered — replaying the recorded positions, the
+  phones were **13.8 km** from the warehouse, clustered within 49m of each other,
+  with GPS accurate to 13–42m. The check was working and telling the truth. Delhi's
+  pin was ALSO wrong (342m out, from a ~275m Plus Code cell) and is fixed in 0036
+  from an on-site capture. Mumbai, Pune, Bangalore and Hyderabad are still on short
+  Plus Codes and unconfirmed — one geo-stamped photo each is all that is needed.
+- **Face check: not broken.** The 27 checks split into two causes, neither a defect.
+  Ten `review`/null-score were checks made BEFORE that guard had a reference face
+  enrolled — the last one at 25 Aug 19:23, the second guard enrolled 19:29, first
+  pass 19:31. Exactly what `lib/gate/client/face.ts` says it does. Ten `no_face` were
+  all one guard across six devices and track the DEVICE, not the light (5 no-face on
+  "Gate phone 002", 3 clean passes on "Shantanu"), i.e. browsers without a usable
+  front camera. With a real camera and an enrolled face it works: 5 passes at
+  0.316–0.421 against a 0.45 threshold, plus one honest borderline at 0.487 flagged
+  for review. Process fix, not a code fix: **enrol the face before the first shift.**
 - **Expected-list coverage ~24 rows/day** against ~1,451 real movements. Why `EXPECTED_CHECK_LIVE` stays false.
 - **Demo mode is stale** — with Supabase unconfigured the app falls back to a demo store that models an older product (quantity deltas, `HIGH/MEDIUM/LOW`, an `.xlsx` upload flow). It will teach you the wrong domain model. It is not a spec.
 
 ## Open, needing a business decision
 
 - **Thursday weekly-off overlap.** Mumbai/Hyderabad/Pune close Thursday, but the business day runs Thu 15:00 → **Fri 15:00** and so contains Friday-morning working hours. The engine treats the whole date as closed and suppresses same-day REALs — a likely weekly leak in three of five cities. Raised three times, unanswered. Do not "fix" it in code without a decision.
-- **Mumbai at 32.9% accuracy**, 338 `Ops Sheet Only`. Largest single signal in the data.
+- **Mumbai is NOT at 32.9%** — that figure is one bad day recorded as a standing
+  fact. Measured 2026-09-09: 84.7% traced across all retained history, 89.2%
+  excluding two incidents, **96.2% over the last 21 days**. 31.4% was 25 July alone,
+  the worst day Mumbai has ever had. 410 of its 545 `Ops Sheet Only` rows fall on
+  25 and 28 July; the current rate is one to five a day. Ruled out as a matching
+  failure — Odoo has never held 339 of the 341. Looks like a backlog bulk-entered
+  into the sheet. **A question for the Mumbai team, not a code change.**
