@@ -33,6 +33,20 @@ const browser = await ENGINE.launch();
 const ctx = await browser.newContext({
   viewport: { width: 390, height: 844 },
   userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+  // SERVICE WORKERS OFF FOR THE WALKTHROUGH, and the reason is the harness, not
+  // the app. This test stubs the server at the network boundary with ctx.route.
+  // public/sw.js calls skipWaiting + clients.claim, so it takes control of the
+  // page MID-LOAD — and once it does, requests pass through it and Playwright's
+  // routes no longer see them. The first run after adding the worker proved it:
+  // the roster (fetched before control) was stubbed, the PIN check (after
+  // control) reached the real server, got a 401 for the fake token, and every
+  // step from check-in on failed with "Wrong PIN".
+  //
+  // On a real phone the worker steps aside for /api/ and the request reaches the
+  // server with a real token, so nothing here is hiding a product bug. What the
+  // worker actually does — open the app with no network — is tested on its own
+  // below, in a context where it is allowed to run.
+  serviceWorkers: "block",
 });
 const page = await ctx.newPage();
 
@@ -633,19 +647,83 @@ else bad("coming back to the app does not sync — a pocketed phone stays stale"
 step("Signing out actually signs you out");
 // The bug: settings' back button went to the PIN pad, which after a sign-out
 // belongs to nobody — and reads as still being signed in.
+// Signed out = no guard AND no shift. The walkthrough above left a shift open, so
+// both are cleared here, exactly the state handOver() leaves behind.
+onShift = false;
 await page.evaluate(() => localStorage.removeItem("gate.guardId"));
 await page.reload({ waitUntil: "domcontentloaded" });
 await page.waitForTimeout(2500);
-const gear = page.locator("button").filter({ has: page.locator("svg") }).last();
-if (await gear.count()) { await gear.click().catch(() => {}); await page.waitForTimeout(900); }
-if (await seen("Language")) {
-  const back = page.locator("button").first();
-  await back.click().catch(() => {});
-  await page.waitForTimeout(900);
-  // "Enter PIN" would mean it went to the keypad for a guard nobody selected.
-  if (await seen("Enter PIN")) bad("back from settings lands on the PIN pad after signing out");
-  else ok("back from settings returns to the guard list, not the PIN pad");
-} else ok("settings not reachable while signed out (also acceptable)");
+
+// The first version of this step passed WITHOUT testing anything: a vague
+// "last button with an icon" selector missed the gear, so it fell through to an
+// "also acceptable" branch and reported success. A test that cannot fail on the
+// regression it guards is worse than no test. So: real labels, and no escape.
+if (!(await seen("Who is on duty"))) {
+  bad("did not reach the guard list after signing out — cannot test the back button");
+} else {
+  const gear = page.getByRole("button", { name: "Settings", exact: true }).first();
+  if (!(await gear.count())) {
+    bad("no Settings button on the guard list — the path under test is unreachable");
+  } else {
+    await gear.click();
+    await page.waitForTimeout(900);
+    const back = page.getByRole("button", { name: "Back", exact: true }).first();
+    if (!(await back.count())) {
+      bad("settings opened but has no Back button");
+    } else {
+      await back.click();
+      await page.waitForTimeout(900);
+      // "Enter PIN" is the bug: a keypad for a guard nobody selected, which reads
+      // as still being signed in.
+      if (await seen("Enter PIN")) bad("back from settings lands on the PIN pad after signing out");
+      else if (await seen("Who is on duty")) ok("back from settings returns to the guard list, not the PIN pad");
+      else bad("back from settings went somewhere unexpected");
+    }
+  }
+}
+
+step("The app opens with no network (service worker)");
+// The one thing public/sw.js exists to do. Its own context, workers ALLOWED,
+// and NO device token on purpose: without a token the app shows the unpaired
+// screen straight from the shell with no API call, so this proves the worker
+// served the app offline without depending on any stubbed request — exactly the
+// kind the walkthrough above had to switch the worker off to keep.
+{
+  const swCtx = await browser.newContext({
+    viewport: { width: 390, height: 844 }, serviceWorkers: "allow",
+  });
+  const swPage = await swCtx.newPage();
+  try {
+    await swPage.goto(`${BASE}/scan`, { waitUntil: "load", timeout: 45_000 });
+    // Registration happens after load; give it time to install and claim.
+    const controlled = await swPage.waitForFunction(
+      () => !!navigator.serviceWorker && !!navigator.serviceWorker.controller,
+      null, { timeout: 15_000 }).then(() => true).catch(() => false);
+    if (controlled) ok("the service worker registers and takes control of /scan");
+    else bad("no service worker controls /scan — the app cannot open offline");
+
+    // One more online load so the build chunks are fetched THROUGH the worker
+    // and land in its cache.
+    await swPage.reload({ waitUntil: "load" });
+    await swPage.waitForTimeout(2500);
+
+    await swCtx.setOffline(true);
+    await swPage.reload({ waitUntil: "domcontentloaded" }).catch(() => {});
+    await swPage.waitForTimeout(3000);
+    const offlineText = (await swPage.locator("body").innerText().catch(() => "")).trim();
+    if (/not paired|Gate Check/i.test(offlineText)) ok("with the network gone, the app still opens");
+    else bad(`offline reload did not render the app — got: "${offlineText.replace(/\s+/g, " ").slice(0, 80)}"`);
+
+    // And the dashboard must NOT be served from cache — stale figures that look
+    // current are the failure the portal was fixed for.
+    const dash = await swPage.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded", timeout: 8_000 })
+      .then(() => "loaded").catch(() => "failed");
+    if (dash === "failed") ok("the dashboard is not served from the cache while offline");
+    else bad("the dashboard loaded offline — the service worker is caching it");
+  } finally {
+    await swCtx.close();
+  }
+}
 
 /* ── report ──────────────────────────────────────────────────────────── */
 step("Result");
