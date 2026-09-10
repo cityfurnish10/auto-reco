@@ -69,6 +69,11 @@ export default function GateApp() {
   const [err, setErr] = useState<string | null>(null);
   const [queue, setQueue] = useState({ waiting: 0, rejected: 0 });
   const [online, setOnline] = useState(true);
+  // "Try sending now" returned silently, so a guard tapping it saw nothing
+  // change and reported it broken. It was usually working — the queue simply
+  // held REJECTED rows, which no amount of retrying will clear. It now says
+  // that it ran, and SyncCard already names the rejected count beside it.
+  const [sending, setSending] = useState(false);
 
   // shift
   const [shiftId, setShiftId] = useState<string | null>(null);
@@ -423,11 +428,33 @@ export default function GateApp() {
   // the scanning path -- the part that must not fail -- never touches it at all.
 
   useEffect(() => {
+    // IMMEDIATELY, then on a timer. A 20-second interval alone meant a guard who
+    // opened the app saw "3 waiting" for up to twenty seconds before anything
+    // happened — reported from a real phone, and it reads as the app having
+    // forgotten the work rather than being about to send it.
+    const first = setTimeout(() => { void sync(); }, 0);
+
     const id = setInterval(() => { void sync(); }, 20_000);
     const on = () => { setOnline(true); void sync(); };
+
+    // AND ON RETURNING TO THE APP, which the interval cannot cover: mobile
+    // browsers throttle or suspend timers in a backgrounded tab, so a phone
+    // pocketed mid-shift and taken out again may not have ticked at all. This is
+    // the moment a guard is actually looking at the screen.
+    const onShow = () => { if (document.visibilityState === "visible") void sync(); };
+    document.addEventListener("visibilitychange", onShow);
+    // bfcache restores (Android back gesture, iOS swipe) fire neither the
+    // effect nor visibilitychange.
+    window.addEventListener("pageshow", onShow);
     window.addEventListener("online", on);
     window.addEventListener("offline", () => setOnline(false));
-    return () => { clearInterval(id); window.removeEventListener("online", on); };
+    return () => {
+      clearTimeout(first);
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onShow);
+      window.removeEventListener("pageshow", onShow);
+      window.removeEventListener("online", on);
+    };
   }, [sync]);
 
   /* ── selfie camera ─────────────────────────────────────────────────────
@@ -1348,8 +1375,13 @@ export default function GateApp() {
             <div className="gcard col gsyncbox">
               <SyncCard t={t} online={online} queue={queue} />
               {queue.waiting > 0 && (
-                <button className="gbtn sm ghost" onClick={() => void sync()}>
-                  <Icon name="refresh" size={16} />{t("sendNow")}
+                <button className="gbtn sm ghost" disabled={sending}
+                  onClick={async () => {
+                    setSending(true);
+                    try { await sync(); } finally { setSending(false); }
+                  }}>
+                  <Icon name={sending ? "sync" : "refresh"} size={16} />
+                  {sending ? t("starting") : t("sendNow")}
                 </button>
               )}
               {queue.rejected > 0 && (
@@ -1667,8 +1699,13 @@ export default function GateApp() {
               <div className="gcard warn col">
                 <h3><Icon name="wifi_off" size={18} /> {queue.waiting} {t("offlineAtClose")}</h3>
                 <p>{t("offlineAtCloseWhy")}</p>
-                <button className="gbtn sm ghost" onClick={() => void sync()}>
-                  <Icon name="refresh" size={16} />{t("sendNow")}
+                <button className="gbtn sm ghost" disabled={sending}
+                  onClick={async () => {
+                    setSending(true);
+                    try { await sync(); } finally { setSending(false); }
+                  }}>
+                  <Icon name={sending ? "sync" : "refresh"} size={16} />
+                  {sending ? t("starting") : t("sendNow")}
                 </button>
               </div>
             </div>
@@ -1803,7 +1840,11 @@ export default function GateApp() {
 
       {screen === "settings" && (
         <>
-          <Bar t={t} title={t("settings")} left={<BackBtn onClick={() => setScreen(shiftId ? "today" : "pin")} />} />
+          <Bar t={t} title={t("settings")} left={<BackBtn onClick={() =>
+            // `me` is what handOver() clears. Without checking it, backing out of
+            // settings after signing out landed on the PIN pad for a guard who is no
+            // longer selected — which reads as still being signed in.
+            setScreen(shiftId ? "today" : me ? "pin" : "who")} />} />
           <div className="gbody">
             <div className="gswitch">
               <span>{t("nightMode")}</span>
