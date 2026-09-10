@@ -589,6 +589,64 @@ else bad("the queue did not drain after reconnecting");
 if (!(await seen("No internet"))) ok("the offline warning clears once connected");
 else bad("the offline warning is still showing after reconnecting");
 
+/* ── the paths that only break BETWEEN screens ───────────────────────────
+   Three faults reported from a real phone, none of which the walkthrough above
+   would have caught: every one is about what happens when a guard LEAVES the
+   app and comes back, or moves between screens. A single clean pass through the
+   happy path never exercises them. */
+
+step("The queue drains on open, not twenty seconds later");
+// The bug: sync ran on a 20s interval and nothing else, so opening the app
+// showed "N waiting" while apparently doing nothing. Reload with something in
+// the outbox and require a sync attempt promptly — not eventually.
+await page.evaluate(() => new Promise((res) => {
+  const rq = indexedDB.open("gate-outbox", 1);
+  rq.onsuccess = () => {
+    const tx = rq.result.transaction("items", "readwrite");
+    tx.objectStore("items").put({ clientId: "onopen-1", kind: "scan", createdAt: Date.now(),
+      payload: { clientScanId: "onopen-1", barcode: "SMOKEOPEN0001", direction: "OUT" } });
+    tx.oncomplete = () => res(null);
+    tx.onerror = () => res(null);
+  };
+  rq.onerror = () => res(null);
+}));
+const beforeOpen = posted.length;
+await page.reload({ waitUntil: "domcontentloaded" });
+// Deliberately short. The whole point is that it does NOT wait for the timer.
+await page.waitForTimeout(4000);
+if (posted.length > beforeOpen) ok("it tries to send as soon as the app opens");
+else bad("nothing was sent on open — the guard waits on the 20s timer again");
+
+step("It syncs again on coming back to the app");
+// Mobile browsers suspend timers in a backgrounded tab, so returning to the app
+// is the one moment that must not rely on the interval having ticked.
+const beforeShow = posted.length;
+await page.evaluate(() => {
+  Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+  document.dispatchEvent(new Event("visibilitychange"));
+  window.dispatchEvent(new Event("pageshow"));
+});
+await page.waitForTimeout(2500);
+if (posted.length > beforeShow) ok("returning to the app triggers a sync");
+else bad("coming back to the app does not sync — a pocketed phone stays stale");
+
+step("Signing out actually signs you out");
+// The bug: settings' back button went to the PIN pad, which after a sign-out
+// belongs to nobody — and reads as still being signed in.
+await page.evaluate(() => localStorage.removeItem("gate.guardId"));
+await page.reload({ waitUntil: "domcontentloaded" });
+await page.waitForTimeout(2500);
+const gear = page.locator("button").filter({ has: page.locator("svg") }).last();
+if (await gear.count()) { await gear.click().catch(() => {}); await page.waitForTimeout(900); }
+if (await seen("Language")) {
+  const back = page.locator("button").first();
+  await back.click().catch(() => {});
+  await page.waitForTimeout(900);
+  // "Enter PIN" would mean it went to the keypad for a guard nobody selected.
+  if (await seen("Enter PIN")) bad("back from settings lands on the PIN pad after signing out");
+  else ok("back from settings returns to the guard list, not the PIN pad");
+} else ok("settings not reachable while signed out (also acceptable)");
+
 /* ── report ──────────────────────────────────────────────────────────── */
 step("Result");
 const uniq = [...new Set(errors)].filter((e) =>
