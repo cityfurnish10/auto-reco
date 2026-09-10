@@ -18,11 +18,17 @@
 -- UI, arriving through the database instead.
 --
 -- WHAT THIS DOES INSTEAD. Looks the serial up in Odoo's LOT MASTER — what the
--- unit IS, not where it is meant to go. Measured 2026-09-09 against real
--- serials: product resolves cleanly every time; last-known customer and order
--- resolve about a third of the time and are frequently an internal partner
--- ("Cityfurnish India Private Limited (gur)") rather than an end customer. So
--- product is the reliable field and the rest is a chase hint, stored as such.
+-- unit IS, not where it is meant to go.
+--
+-- Measured on the first real run (2026-09-10) over all 38 serialised scans the
+-- pilot had recorded: product 38/38, last customer 36/38, last SO 25/38. An
+-- earlier version of this comment said customer and order resolved "about a
+-- third of the time", from a hand-picked sample of three. It was wrong, and the
+-- correction is left visible rather than quietly edited out.
+--
+-- Product remains the field to rely on; the rest is a chase hint rather than
+-- evidence, which is a statement about what the data MEANS and does not change
+-- with the hit rate.
 --
 -- WHY NEW COLUMNS AND NOT THE EXISTING ONES. gate_scans.product, .so_number,
 -- .ticket_id and .customer are what the RECONCILIATION reads as the gate's own

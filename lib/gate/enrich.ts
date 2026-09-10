@@ -10,15 +10,25 @@
 // where has it BEEN. Never where it is going. A dictionary lookup, not a
 // verification.
 //
-// Measured 2026-09-09 against real serials:
-//   product          resolves every time — reliable, and the field worth having
-//   last customer/SO resolves about a third of the time, and is often an
-//                    internal partner ("Cityfurnish India Private Limited
-//                    (gur)") rather than an end customer
+// Measured on the first real run, 2026-09-10, over all 38 serialised scans the
+// pilot had recorded:
 //
-// Which is why product is treated as the point of this and the rest as a chase
-// hint. Nothing here is written to the columns the reconciliation reads; see
-// migration 0037 for that separation and why it is load bearing.
+//   product          38/38  100%
+//   last customer    36/38   95%   real customers AND vendors (WAKEFIT
+//                                  INNOVATIONS on inbound units, say) — both
+//                                  are facts about the unit, both useful
+//   last SO          25/38   66%
+//
+// An earlier note here said customer and SO resolved "about a third of the
+// time". That came from hand-picking three serials, and was wrong — kept in
+// this comment because the lesson is the reusable part: three rows is an
+// anecdote, and this file is exactly where a made-up-sounding number does
+// damage.
+//
+// Product is still the field to rely on, and the rest is still a chase hint
+// rather than evidence — that has not changed, only the odds. Nothing here is
+// written to the columns the reconciliation reads; see migration 0037 for that
+// separation and why it is load bearing.
 
 import { runNativeSql } from "../connectors/metabase";
 
