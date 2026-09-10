@@ -14,9 +14,18 @@
 // for — the exact failure the paper register already has.
 
 const DB = "gate-outbox";
-const VERSION = 1;
+// VERSION 2 adds META. The upgrade is additive: onupgradeneeded only creates the
+// stores that are missing, so a phone already holding a queue at version 1 keeps
+// every item and blob — nothing is migrated or rewritten.
+const VERSION = 2;
 const ITEMS = "items";
 const BLOBS = "blobs";
+// The device pairing lives HERE, beside the queue, rather than only in
+// localStorage. Browsers clear the two independently — iOS Safari can drop a
+// site's storage after seven days unused — and localStorage going while this
+// database survives left a phone saying "not paired" while still holding scans
+// nobody knew were there. Kept together, they survive or go together.
+const META = "meta";
 
 export type Kind = "trip" | "scan" | "shift" | "face" | "void";
 
@@ -48,6 +57,7 @@ function open(): Promise<IDBDatabase> {
         s.createIndex("createdAt", "createdAt");
       }
       if (!db.objectStoreNames.contains(BLOBS)) db.createObjectStore(BLOBS);
+      if (!db.objectStoreNames.contains(META)) db.createObjectStore(META);
     };
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
@@ -76,6 +86,39 @@ export async function putBlob(clientId: string, blob: Blob) {
 
 export async function getBlob(clientId: string): Promise<Blob | undefined> {
   return tx<Blob | undefined>(BLOBS, "readonly", (s) => s.get(clientId));
+}
+
+/** A small keyed value stored beside the queue — currently only the pairing. */
+export async function getMeta(key: string): Promise<string | undefined> {
+  return tx<string | undefined>(META, "readonly", (s) => s.get(key));
+}
+
+/**
+ * Resolves on TRANSACTION COMPLETE, not request success. The pairing page
+ * navigates away as soon as this returns, and a write that has only reached
+ * "success" can still be lost if the page unloads before the transaction
+ * commits. This is the one write where that gap matters.
+ */
+export async function setMeta(key: string, value: string): Promise<void> {
+  const db = await open();
+  await new Promise<void>((res, rej) => {
+    const t = db.transaction(META, "readwrite");
+    t.objectStore(META).put(value, key);
+    t.oncomplete = () => res();
+    t.onerror = () => rej(t.error);
+    t.onabort = () => rej(t.error);
+  });
+}
+
+export async function deleteMeta(key: string): Promise<void> {
+  const db = await open();
+  await new Promise<void>((res, rej) => {
+    const t = db.transaction(META, "readwrite");
+    t.objectStore(META).delete(key);
+    t.oncomplete = () => res();
+    t.onerror = () => rej(t.error);
+    t.onabort = () => rej(t.error);
+  });
 }
 
 export async function all(): Promise<OutboxItem[]> {

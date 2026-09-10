@@ -300,7 +300,7 @@ else bad("no manual-add button on the scanner");
 // this point is the real removal code against a real queued row.
 withTrip = true;
 await page.evaluate(() => new Promise((res, rej) => {
-  const rq = indexedDB.open("gate-outbox", 1);
+  const rq = indexedDB.open("gate-outbox");
   rq.onsuccess = () => {
     const db = rq.result;
     const tx = db.transaction("items", "readwrite");
@@ -376,7 +376,7 @@ if (!(await xBtn.count())) {
   //
   // and exactly one of the two must still be live.
   const state = await page.evaluate(() => new Promise((res) => {
-    const rq = indexedDB.open("gate-outbox", 1);
+    const rq = indexedDB.open("gate-outbox");
     rq.onsuccess = () => {
       const r = rq.result.transaction("items", "readonly").objectStore("items").getAll();
       r.onsuccess = () => res(r.result.map((i) => ({ kind: i.kind, id: i.payload.clientScanId })));
@@ -426,7 +426,7 @@ if (!(await xBtn.count())) {
     else bad("the second removal did not take effect");
 
     const after2 = await page.evaluate(() => new Promise((res) => {
-      const rq = indexedDB.open("gate-outbox", 1);
+      const rq = indexedDB.open("gate-outbox");
       rq.onsuccess = () => {
         const r = rq.result.transaction("items", "readonly").objectStore("items").getAll();
         r.onsuccess = () => res(r.result.map((i) => ({ kind: i.kind, id: i.payload.clientScanId })));
@@ -559,7 +559,7 @@ else bad("an offline dialog is covering the scanner");
 // The queue must still accept work. Written straight in, as elsewhere in this
 // walkthrough, because a headless browser cannot scan a QR.
 const queuedBefore = await page.evaluate(() => new Promise((res) => {
-  const rq = indexedDB.open("gate-outbox", 1);
+  const rq = indexedDB.open("gate-outbox");
   rq.onsuccess = () => {
     const r = rq.result.transaction("items", "readonly").objectStore("items").getAll();
     r.onsuccess = () => res(r.result.length);
@@ -568,7 +568,7 @@ const queuedBefore = await page.evaluate(() => new Promise((res) => {
   rq.onerror = () => res(-1);
 }));
 await page.evaluate(() => new Promise((res, rej) => {
-  const rq = indexedDB.open("gate-outbox", 1);
+  const rq = indexedDB.open("gate-outbox");
   rq.onsuccess = () => {
     const tx = rq.result.transaction("items", "readwrite");
     tx.objectStore("items").put({ clientId: "offline-1", kind: "scan", createdAt: Date.now(),
@@ -581,7 +581,7 @@ await page.evaluate(() => new Promise((res, rej) => {
   rq.onerror = () => rej(rq.error);
 }));
 const queuedAfter = await page.evaluate(() => new Promise((res) => {
-  const rq = indexedDB.open("gate-outbox", 1);
+  const rq = indexedDB.open("gate-outbox");
   rq.onsuccess = () => {
     const r = rq.result.transaction("items", "readonly").objectStore("items").getAll();
     r.onsuccess = () => res(r.result.length);
@@ -614,7 +614,7 @@ step("The queue drains on open, not twenty seconds later");
 // showed "N waiting" while apparently doing nothing. Reload with something in
 // the outbox and require a sync attempt promptly — not eventually.
 await page.evaluate(() => new Promise((res) => {
-  const rq = indexedDB.open("gate-outbox", 1);
+  const rq = indexedDB.open("gate-outbox");
   rq.onsuccess = () => {
     const tx = rq.result.transaction("items", "readwrite");
     tx.objectStore("items").put({ clientId: "onopen-1", kind: "scan", createdAt: Date.now(),
@@ -680,6 +680,88 @@ if (!(await seen("Who is on duty"))) {
       else bad("back from settings went somewhere unexpected");
     }
   }
+}
+
+step("A phone that loses its pairing does not lose its work");
+// Three safeguards, each covering what the one before cannot:
+//   1. the pairing is kept BESIDE the queue in IndexedDB as well as localStorage,
+//      so browser clean-up cannot take the pairing and strand the work;
+//   2. the app asks the browser to keep this storage (not observable headless);
+//   3. if the pairing is lost anyway, the phone says work is waiting, sends
+//      nothing without a pairing, and sends it all once paired again.
+// Every assertion here fails against the code before this change.
+{
+  // The walkthrough's first init script re-seeds the token on every load; this
+  // one removes it again while the flag is set — how "the browser cleared
+  // localStorage" is faked. Init scripts run in the order they were added.
+  await ctx.addInitScript(() => {
+    try { if (localStorage.getItem("__smoke_unpair") === "1") localStorage.removeItem("gate.deviceToken"); }
+    catch { /* blocked */ }
+  });
+  const sentStranded = () =>
+    posted.some((b) => (b.scans ?? []).some((x) => x.clientScanId === "stranded-1"));
+
+  // ── safeguard 1: localStorage gone, IndexedDB intact → still paired ─────
+  await page.evaluate(() => localStorage.setItem("__smoke_unpair", "1"));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(2500);
+  if (await seen("not paired")) bad("clearing localStorage unpaired the phone — the pairing is not kept beside the queue");
+  else ok("with localStorage cleared, the pairing survives beside the queue");
+
+  // ── safeguard 3: pairing gone from BOTH, work still queued ───────────────
+  await page.evaluate(() => new Promise((res) => {
+    const rq = indexedDB.open("gate-outbox");
+    rq.onsuccess = () => {
+      try {
+        const tx = rq.result.transaction("meta", "readwrite");
+        tx.objectStore("meta").delete("gate.deviceToken");
+        tx.oncomplete = () => res(true); tx.onerror = () => res(false);
+      } catch { res(false); }  // no meta store on the old code — nothing to delete
+    };
+    rq.onerror = () => res(false);
+  }));
+  // Reload FIRST, so the phone is unpaired before any work exists — otherwise the
+  // still-paired page in memory could send it and fake a result either way.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(2500);
+  await page.evaluate(() => new Promise((res) => {
+    const rq = indexedDB.open("gate-outbox");
+    rq.onsuccess = () => {
+      const tx = rq.result.transaction("items", "readwrite");
+      tx.objectStore("items").put({ clientId: "stranded-1", kind: "scan", createdAt: Date.now(), attempts: 0,
+        payload: { clientScanId: "stranded-1", barcode: "SMOKESTRAND01", direction: "OUT" } });
+      tx.oncomplete = () => res(null); tx.onerror = () => res(null);
+    };
+    rq.onerror = () => res(null);
+  }));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(3500);
+  if (!(await seen("not paired"))) {
+    bad("with the pairing gone from both copies, the phone did not say it is unpaired");
+  } else if (await seen("Your work is saved on this phone")) {
+    ok("the unpaired screen says saved work is still waiting");
+  } else {
+    bad("the unpaired screen hides that work is still waiting on the phone");
+  }
+  if (sentStranded()) bad("an unpaired phone tried to send its queue with no pairing");
+  else ok("nothing is sent while the phone has no pairing");
+
+  // ── recovery: paired again → the work that WAITED is sent ─────────────────
+  // "It was sent" is not enough on its own. The old code also sent it — early,
+  // while unpaired, with an empty token — so a bare "sent at some point" check
+  // PASSED against the old code for the wrong reason (caught by running this
+  // step against the pre-change app). The real claim is HELD, THEN SENT: no send
+  // before pairing, at least one after. That fails on the old code whether or
+  // not it happens to resend later.
+  const pairedAt = posted.length;
+  await page.evaluate(() => localStorage.removeItem("__smoke_unpair"));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(4000);
+  const firstSend = posted.findIndex((b) =>
+    (b.scans ?? []).some((x) => x.clientScanId === "stranded-1"));
+  if (firstSend >= pairedAt) ok("the work that waited was held until paired, then sent");
+  else if (firstSend === -1) bad("after pairing again, the work that waited was never sent");
+  else bad("the waiting work was sent before the phone was paired — not held for it");
 }
 
 step("The app opens with no network (service worker)");

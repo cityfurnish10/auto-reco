@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/components/icon";
 import { LANGS, makeT, type LangId } from "@/lib/gate/client/i18n";
 import * as outbox from "@/lib/gate/client/outbox";
-import { bootstrap, clearGuardId, drain, expectedNow, fleet as fetchFleet, getGuardId, getToken,
+import { bootstrap, clearGuardId, drain, expectedNow, fleet as fetchFleet, getGuardId, loadToken, requestPersistence,
          history, rosterFor, signIn, type Bootstrap, type ExpectedItem, type Fleet,
          type GuardOption, type HistoryTrip } from "@/lib/gate/client/api";
 import { click, compress, feedback, position } from "@/lib/gate/client/media";
@@ -292,8 +292,20 @@ export default function GateApp() {
       } catch { /* storage blocked — totals restart, nothing is lost */ }
 
       let token: string | null = null;
-      try { token = getToken(); } catch { /* storage blocked */ }
-      if (!token) { setScreen("unpaired"); return; }
+      // loadToken, not getToken: it reads the copy beside the queue and repairs
+      // whichever copy is missing, so a phone whose localStorage was cleared
+      // stays paired instead of dropping to the unpaired screen.
+      try { token = await loadToken(); } catch { /* storage blocked */ }
+      if (!token) {
+        // COUNT THE QUEUE FIRST. This returned before the queue was ever read,
+        // so an unpaired phone showed zero waiting even when it held scans —
+        // exactly the case where the guard most needs to know work is safe.
+        try { await refreshQueue(); } catch { /* shown as zero until it recovers */ }
+        setScreen("unpaired");
+        return;
+      }
+      // Paired: ask the browser to keep this storage. Harmless to repeat.
+      void requestPersistence();
 
       // The queue lives in IndexedDB, which a locked-down browser can refuse
       // outright. That must not stop the app opening.
@@ -1099,7 +1111,18 @@ export default function GateApp() {
           <div className="ghero">
             <div className="gglyph"><Icon name="lock" size={46} /></div>
             <h1>{t("notPaired")}</h1>
-            <p>{t("askManager")}</p>
+            {/* If the pairing was lost but work survived, SAY SO. "Not paired"
+                alone reads as "everything is gone", and a guard who believes
+                that starts a paper copy. Both lines already exist in all five
+                reviewed languages, so nothing new was translated here. */}
+            {queue.waiting > 0 ? (
+              <>
+                <p><b>{t("workIsSafe")}</b> · {queue.waiting} {t("waiting")}</p>
+                <p>{t("deviceRevokedWhy")}</p>
+              </>
+            ) : (
+              <p>{t("askManager")}</p>
+            )}
             {/* Not a dead end: a guard whose manager has just sent the link can
                 act here instead of force-closing the app. */}
             <button className="gbtn primary" style={{ marginTop: 18, marginInline: "auto" }}

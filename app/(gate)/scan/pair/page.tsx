@@ -13,7 +13,7 @@
 
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { setToken } from "@/lib/gate/client/api";
+import { requestPersistence, setToken } from "@/lib/gate/client/api";
 
 // The token arrives in the query string, so this subtree can only render on the
 // client. Without the boundary Next tries to prerender it at build time and the
@@ -37,14 +37,25 @@ function Pair() {
 
   useEffect(() => {
     if (!token) return;
-    setToken(token);
-    // Straight into the app, replacing the entry so neither the device token
-    // nor the Vercel bypass secret sits in the phone's history or survives in a
-    // screenshot of the address bar. The bypass has already done its job by
-    // this point -- Vercel set a cookie on the way in, so the app and its API
-    // keep working from here without it.
-    const id = setTimeout(() => router.replace("/scan"), 800);
-    return () => clearTimeout(id);
+    let cancelled = false;
+    void (async () => {
+      // WAIT FOR THE WRITE before leaving. setToken now commits the pairing to
+      // IndexedDB, which is asynchronous; navigating away mid-write could lose
+      // it, and a phone that thinks it paired but did not is worse than a slow
+      // pairing screen.
+      await setToken(token);
+      // The moment the phone is genuinely ours is the moment to ask the browser
+      // to keep its storage.
+      void requestPersistence();
+      // Straight into the app, replacing the entry so neither the device token
+      // nor the Vercel bypass secret sits in the phone's history or survives in
+      // a screenshot of the address bar. The bypass has already done its job by
+      // this point -- Vercel set a cookie on the way in, so the app and its API
+      // keep working from here without it.
+      await new Promise((r) => setTimeout(r, 800));
+      if (!cancelled) router.replace("/scan");
+    })();
+    return () => { cancelled = true; };
   }, [token, router]);
 
   return bad

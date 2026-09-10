@@ -1,8 +1,11 @@
 // Talking to the server, and draining the outbox.
 //
-// The device token lives in localStorage rather than a cookie: the phone is
-// paired once and then behaves like a dedicated terminal, and a cookie would be
-// cleared by the browser cleanup a personal phone gets regularly.
+// The device token is never a cookie: the phone is paired once and then behaves
+// like a dedicated terminal, and a cookie would be cleared by the browser
+// cleanup a personal phone gets regularly.
+//
+// It is held in TWO places — IndexedDB beside the outbox, and localStorage — and
+// read from memory after startup. See loadToken() for why each exists.
 
 import * as outbox from "./outbox";
 
@@ -12,10 +15,74 @@ const TOKEN_KEY = "gate.deviceToken";
 // guard changes every shift.
 const GUARD_KEY = "gate.guardId";
 
-export const getToken = () =>
-  typeof window === "undefined" ? null : localStorage.getItem(TOKEN_KEY);
-export const setToken = (t: string) => localStorage.setItem(TOKEN_KEY, t);
-export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+// Loaded once at startup (loadToken) and held here, so the eight request helpers
+// below can keep building headers synchronously — IndexedDB is async, and
+// making every call site await it would be a large change for no gain.
+let cachedToken: string | null = null;
+
+// localStorage throws outright in some locked-down and private modes; a thrown
+// read must mean "not there", never "the app cannot open".
+function lsGet(): string | null {
+  try { return typeof window === "undefined" ? null : localStorage.getItem(TOKEN_KEY); }
+  catch { return null; }
+}
+function lsSet(t: string) { try { localStorage.setItem(TOKEN_KEY, t); } catch { /* blocked */ } }
+function lsDel() { try { localStorage.removeItem(TOKEN_KEY); } catch { /* blocked */ } }
+
+/** Synchronous, for building headers. Memory first, then localStorage — so it
+ *  still answers correctly in the moment before loadToken() has resolved. */
+export const getToken = (): string | null => cachedToken ?? lsGet();
+
+/**
+ * Read the pairing, from wherever it survived, and repair the other copy.
+ *
+ * WHY TWO COPIES. IndexedDB is the one that matters: it sits beside the outbox,
+ * so browser clean-up takes both or neither, and "not paired but still holding
+ * scans" stops being possible. localStorage is kept as well because every phone
+ * paired before this change has its token ONLY there — reading IndexedDB alone
+ * would have unpaired the whole fleet on deploy. Whichever copy is missing is
+ * written back, so an existing phone migrates silently on its next open.
+ */
+export async function loadToken(): Promise<string | null> {
+  let fromDb: string | null = null;
+  try { fromDb = (await outbox.getMeta(TOKEN_KEY)) ?? null; } catch { /* IndexedDB refused */ }
+  const fromLs = lsGet();
+  const token = fromDb ?? fromLs;
+  if (token) {
+    cachedToken = token;
+    if (!fromDb) { try { await outbox.setMeta(TOKEN_KEY, token); } catch { /* keep localStorage copy */ } }
+    if (!fromLs) lsSet(token);
+  }
+  return token;
+}
+
+/** Durable: resolves once the IndexedDB copy has committed. */
+export async function setToken(t: string): Promise<void> {
+  cachedToken = t;
+  lsSet(t);
+  try { await outbox.setMeta(TOKEN_KEY, t); } catch { /* localStorage copy stands */ }
+}
+
+export async function clearToken(): Promise<void> {
+  cachedToken = null;
+  lsDel();
+  try { await outbox.deleteMeta(TOKEN_KEY); } catch { /* already gone */ }
+}
+
+/**
+ * Ask the browser to keep this site's storage rather than clear it under
+ * pressure. It may say no, and there is nothing to do if it does — this lowers
+ * the odds, it guarantees nothing. Browsers are likelier to agree for an app
+ * installed to the home screen. Only an installed Android app (an APK) removes
+ * the risk entirely; see the discussion that led to public/sw.js.
+ */
+export async function requestPersistence(): Promise<boolean | null> {
+  try {
+    if (typeof navigator === "undefined" || !navigator.storage?.persist) return null;
+    if (await navigator.storage.persisted?.()) return true;
+    return await navigator.storage.persist();
+  } catch { return null; }
+}
 
 export const getGuardId = () =>
   typeof window === "undefined" ? null : localStorage.getItem(GUARD_KEY);
@@ -167,6 +234,14 @@ export interface SyncResult {
  */
 export async function drain(): Promise<SyncResult> {
   const empty: SyncResult = { sent: 0, stored: 0, duplicate: 0, rejected: 0, photosUploaded: 0, offline: false };
+  // NO PAIRING, NO SEND. An unpaired phone used to post its whole queue with an
+  // empty bearer token. The real server refuses that, so nothing was lost — but
+  // it is a request that can only ever fail, and it meant the stranded work was
+  // never demonstrably HELD. The queue now waits, intact, until the phone is
+  // paired again. Awaits loadToken so a phone whose localStorage copy is gone
+  // still sends on open rather than waiting a whole interval.
+  const token = getToken() ?? (await loadToken());
+  if (!token) return empty;
   const items = await outbox.pending();
   if (items.length === 0) return empty;
 
