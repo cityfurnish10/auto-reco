@@ -325,3 +325,45 @@ export function chooseTask(tasks: UnitTask[], scannedAt: string, direction: stri
   if (match) return { task: match, matched: true, final: true };
   return { task: latestTask(tasks), matched: false, final: taskWindowClosed(scannedAt, now) };
 }
+
+/* ── The customer on the order, from Odoo ─────────────────────────────────── */
+
+/**
+ * Odoo's customer for each sale order — sale_order.partner_id, the account the
+ * order belongs to.
+ *
+ * WHY NOT DT'S NAME. A DT task carries whoever was entered for that visit, and
+ * that is not reliably the customer. Reported on FUL5ZA24120009: DT's task for
+ * ON-RET-DEL-52343 says CHARUVI AGARWAL, Odoo's order says Yuvika Agrawal, and
+ * Odoo is the one the business treats as correct. Measured on 200 recent
+ * orders held by both (11 Sep 2026): 151 identical, 39 sharing only part of
+ * the name, 10 different outright — often a company account in Odoo against a
+ * person in DT (URBAN VOYAGE STAYS vs an individual, a vendor vs a contact).
+ * So DT supplies the ticket, job type and SO; Odoo names the customer.
+ *
+ * Order names are interpolated for the same reason serials are (Metabase has no
+ * bind parameters), so they pass the same filter.
+ */
+export function soCustomersSql(orders: string[]): string {
+  const safe = askable(orders);
+  if (safe.length === 0) return "";
+  return `
+SELECT so.name AS so, rp.name AS customer
+FROM sale_order so
+JOIN res_partner rp ON rp.id = so.partner_id
+WHERE so.name IN (${safe.map((o) => `'${o}'`).join(",")})`.trim();
+}
+
+/** Order → Odoo customer name. Orders Odoo does not hold simply do not appear. */
+export async function fetchSoCustomers(orders: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const sql = soCustomersSql(orders);
+  if (sql === "") return out;
+  const { rows } = await runNativeSql(odooDbId(), sql, TIMEOUT_MS);
+  for (const r of rows as Record<string, unknown>[]) {
+    const so = String(r.so ?? "").trim();
+    const name = String(r.customer ?? "").replace(/\s+/g, " ").trim();
+    if (so && name) out.set(so, name);
+  }
+  return out;
+}

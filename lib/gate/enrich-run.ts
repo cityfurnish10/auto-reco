@@ -7,7 +7,7 @@
 // everything nobody opened.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { chooseTask, fetchUnitFacts, fetchUnitTasks } from "./enrich";
+import { chooseTask, fetchSoCustomers, fetchUnitFacts, fetchUnitTasks, type UnitTask } from "./enrich";
 
 export interface ScanToEnrich {
   id: string;
@@ -57,6 +57,24 @@ export async function enrichScans(db: SupabaseClient, scans: ScanToEnrich[]): Pr
       : Promise.resolve(null),
   ]);
 
+  // Decide each scan's task first, so the customer lookup is one Odoo query for
+  // every order involved rather than one per row.
+  const chosen = new Map<string, ReturnType<typeof chooseTask>>();
+  if (tasks) {
+    for (const s of tasksFor) chosen.set(s.id, chooseTask(tasks.get(s.barcode!.trim()) ?? [], s.scannedAt, s.direction));
+  }
+  const orders = [...new Set([...chosen.values()].map((c) => c.task?.so).filter((o): o is string => !!o))];
+  // The customer comes from Odoo, not DT (see fetchSoCustomers). If Odoo cannot
+  // be asked, the DT half is skipped for this run rather than written with DT's
+  // name — that name is the one reported as wrong — and is retried next run.
+  let customers: Map<string, string> | null = new Map();
+  if (orders.length) {
+    customers = await fetchSoCustomers(orders)
+      .catch((e) => { out.failed.push(`odoo customers: ${String(e).slice(0, 120)}`); return null; });
+  }
+  // No Odoo customer → blank, never DT's name as a stand-in.
+  const customerFor = (t: UnitTask) => (t.so && customers?.get(t.so)) || null;
+
   for (const s of withBarcode) {
     const key = s.barcode!.trim();
     const patch: Record<string, unknown> = {};
@@ -72,11 +90,11 @@ export async function enrichScans(db: SupabaseClient, scans: ScanToEnrich[]): Pr
       }
       patch.enriched_at = now;
     }
-    if (s.needsTask && tasks) {
-      const { task: t, matched, final } = chooseTask(tasks.get(key) ?? [], s.scannedAt, s.direction);
+    if (s.needsTask && tasks && customers) {
+      const { task: t, matched, final } = chosen.get(s.id)!;
       if (t) {
         Object.assign(patch, {
-          task_ticket: t.ticket, task_job_type: t.jobType, task_customer: t.customer,
+          task_ticket: t.ticket, task_job_type: t.jobType, task_customer: customerFor(t),
           task_so: t.so, task_city: t.city, task_date: t.date, task_matched: matched,
         });
         if (matched) out.dtMatched++;

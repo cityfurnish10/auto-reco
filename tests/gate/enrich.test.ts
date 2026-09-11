@@ -6,7 +6,7 @@
 // and the separation of derived columns from witnessed ones.
 
 import { describe, expect, it } from "vitest";
-import { chooseTask, latestTask, taskForScan, taskWindowClosed, unitFactsSql, unitTaskPipeline, type UnitTask } from "../../lib/gate/enrich";
+import { chooseTask, latestTask, soCustomersSql, taskForScan, taskWindowClosed, unitFactsSql, unitTaskPipeline, type UnitTask } from "../../lib/gate/enrich";
 
 const sql = unitFactsSql(["FUL5ZA24120009", "APC7VY19041490"]);
 
@@ -164,6 +164,29 @@ describe("with no task for this movement, the latest one — labelled", () => {
 
   it("a unit DT has never seen still gets nothing", () => {
     expect(chooseTask([], scan, "IN").task).toBeNull();
+  });
+});
+
+describe("the customer name comes from Odoo's order, not DT", () => {
+  // Reported: DT's task for ON-RET-DEL-52343 says CHARUVI AGARWAL; Odoo's
+  // order says Yuvika Agrawal, and Odoo is the correct one.
+  it("asks Odoo for the order's own customer", () => {
+    const sql = soCustomersSql(["ON-RET-DEL-52343"]);
+    expect(sql).toContain("FROM sale_order so");
+    expect(sql).toContain("rp.id = so.partner_id");
+    expect(sql).toContain("'ON-RET-DEL-52343'");
+  });
+
+  it("cannot be made to run anything but that lookup", () => {
+    expect(soCustomersSql(["'; DROP TABLE sale_order; --"])).toBe("");
+    expect(soCustomersSql(["ON-1", "'; DROP x"])).not.toContain("DROP");
+  });
+
+  it("the writer never uses DT's name as a stand-in", async () => {
+    const { readFileSync } = await import("node:fs");
+    const run = readFileSync("lib/gate/enrich-run.ts", "utf8");
+    expect(run).toContain("task_customer: customerFor(t)");
+    expect(run).not.toMatch(/task_customer:\s*t\.customer/);
   });
 });
 
