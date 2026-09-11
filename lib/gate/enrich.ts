@@ -34,6 +34,7 @@
 
 import { runMongoPipeline, runNativeSql } from "../connectors/metabase";
 import { dtDatabaseId } from "./fleet";
+import { utcToIstDate } from "../connectors/ist-window";
 
 export interface UnitFacts {
   serial: string;
@@ -141,20 +142,48 @@ export async function fetchUnitFacts(serials: string[]): Promise<Map<string, Uni
   return out;
 }
 
-/* ── The unit's most recent DT task (migration 0039) ─────────────────────── */
+/* ── The DT task behind THIS movement (migrations 0039, 0040) ──────────── */
 
 // Ticket and job type exist only in the Delivery Tracker — Odoo's "reference"
 // is its own transfer number, not a ticket — and DT's customer is the person
 // the task was for, where Odoo's partner is often a vendor. So this is the
 // second half of the lookup, and it reads a different system.
 //
-// It is closer to the plan than the Odoo half: a unit at the gate today usually
-// has today's task as its most recent one. Accepted because of where the answer
-// goes — gate_scans.task_*, which a manager reads and neither the guard's phone
-// nor the reconciliation ever does. See 0039.
+// THE MISTAKE THE FIRST VERSION MADE, found on the first trip anybody opened.
+// It attached each unit's MOST RECENT task, however old. FUL5ZA24120009 was
+// scanned inward at Delhi on 11 Sep 2026 and the screen said "Pickup and
+// Refund, CHARUVI AGARWAL, ticket 1099165" — a pickup from 8 March, two
+// movements ago (the unit left Gurgaon on an internal transfer on 22 March,
+// which has no DT task at all). Six-month-old context in a row labelled with
+// today's trip reads as a fact about today, and is worse than a blank.
+//
+// So a task is attached only when it plausibly IS this movement: scheduled
+// within TASK_WINDOW of the scan, preferring the kind that matches the gate
+// direction (a delivery goes OUT, a pickup comes IN), then the nearest date.
+// No such task → the columns stay empty, which is the truth.
+//
+// Still closer to the plan than the Odoo half, and still acceptable only
+// because of where the answer goes — gate_scans.task_*, which a manager reads
+// and neither the guard's phone nor the reconciliation ever does.
+
+/**
+ * How far a task's scheduled date may sit from the scan, in IST calendar days.
+ *
+ * DT's scheduledDate is a DATE, not a clock (6,659 of 6,753 pinned at 10:00
+ * IST), so this is day arithmetic. A delivery truck can load the evening
+ * before its scheduled day, hence one day AFTER the scan. A pickup comes back
+ * the same evening or a day or two later, hence three days BEFORE. Chosen from
+ * how the trucks run, not measured — every gate scan so far is desk test data.
+ * Re-measure against Delhi's first real week before trusting the edges.
+ */
+export const TASK_WINDOW = { daysBeforeScan: 3, daysAfterScan: 1 };
 
 export interface UnitTask {
   serial: string;
+  /** "pickup" when the item record hangs off pickup_deliveryId, else "delivery". */
+  kind: "pickup" | "delivery";
+  /** IST calendar date the task was scheduled for. */
+  date: string | null;
   ticket: string | null;
   jobType: string | null;
   customer: string | null;
@@ -163,9 +192,9 @@ export interface UnitTask {
 }
 
 /**
- * One aggregation for a batch of serials. Newest item record per barcode, then
- * the task it belongs to — the pickup if there is one (a pickup always comes
- * after the delivery in a unit's life), otherwise the delivery.
+ * Every task a batch of serials has ever had — a unit's whole life is a
+ * handful of records, so no date filter is needed in the query, and matching
+ * each scan to its own date is done in TypeScript where it can be tested.
  *
  * $convert rather than $toObjectId: a malformed id must cost that one row its
  * ticket, not throw and cost the whole batch.
@@ -175,38 +204,39 @@ export function unitTaskPipeline(serials: string[]): unknown[] | null {
   if (safe.length === 0) return null;
   return [
     { $match: { barcode: { $in: safe } } },
-    { $sort: { updatedAt: -1 } },
-    { $group: { _id: "$barcode", it: { $first: "$$ROOT" } } },
     {
       $lookup: {
         from: "deliveries",
         let: { d: { $convert: {
-          input: { $ifNull: ["$it.pickup_deliveryId", "$it.deliveryId"] },
+          input: { $ifNull: ["$pickup_deliveryId", "$deliveryId"] },
           to: "objectId", onError: null, onNull: null,
         } } },
         pipeline: [
           { $match: { $expr: { $eq: ["$_id", "$$d"] } } },
-          { $project: { ticketNumber: 1, jobType: 1, firstName: 1, lastName: 1, city: 1 } },
+          { $project: { ticketNumber: 1, jobType: 1, firstName: 1, lastName: 1, city: 1, scheduledDate: 1 } },
         ],
         as: "dv",
       },
     },
-    { $unwind: { path: "$dv", preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: "$dv", preserveNullAndEmptyArrays: false } },
     {
       $project: {
-        _id: 0, serial: "$_id", so: "$it.Sale_Order",
+        _id: 0, serial: "$barcode", so: "$Sale_Order",
+        kind: { $cond: [{ $gt: [{ $ifNull: ["$pickup_deliveryId", null] }, null] }, "pickup", "delivery"] },
+        scheduled: "$dv.scheduledDate",
         ticket: "$dv.ticketNumber", jobType: "$dv.jobType", city: "$dv.city",
         customer: { $trim: { input: { $concat: [
           { $ifNull: ["$dv.firstName", ""] }, " ", { $ifNull: ["$dv.lastName", ""] },
         ] } } },
       },
     },
+    { $limit: 5000 },
   ];
 }
 
-/** Same contract as fetchUnitFacts: only what DT knew, never throws for data. */
-export async function fetchUnitTasks(serials: string[]): Promise<Map<string, UnitTask>> {
-  const out = new Map<string, UnitTask>();
+/** Every task per serial. Same contract as fetchUnitFacts: never throws for data. */
+export async function fetchUnitTasks(serials: string[]): Promise<Map<string, UnitTask[]>> {
+  const out = new Map<string, UnitTask[]>();
   const pipeline = unitTaskPipeline(serials);
   if (!pipeline) return out;
 
@@ -218,10 +248,54 @@ export async function fetchUnitTasks(serials: string[]): Promise<Map<string, Uni
   for (const r of rows as Record<string, unknown>[]) {
     const serial = str(r.serial);
     if (!serial) continue;
-    out.set(serial, {
-      serial, ticket: str(r.ticket), jobType: str(r.jobType),
+    const list = out.get(serial) ?? [];
+    list.push({
+      serial,
+      kind: r.kind === "pickup" ? "pickup" : "delivery",
+      date: utcToIstDate(str(r.scheduled)) ?? null,
+      ticket: str(r.ticket), jobType: str(r.jobType),
       customer: str(r.customer), so: str(r.so), city: str(r.city),
     });
+    out.set(serial, list);
   }
   return out;
+}
+
+const dayDiff = (a: string, b: string) =>
+  Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000);
+
+/**
+ * The task that is this movement, or null.
+ *
+ * Inside the window only. Within it, the kind matching the direction wins
+ * (OUT ↔ delivery, IN ↔ pickup) — but a mismatched kind is still accepted,
+ * because a failed delivery coming back IN the same day is a delivery task and
+ * is exactly the row a manager wants explained. Then the nearest date.
+ */
+export function taskForScan(tasks: UnitTask[], scannedAt: string, direction: string | null): UnitTask | null {
+  const scanDay = utcToIstDate(scannedAt);
+  if (!scanDay) return null;
+  const wanted = direction === "OUT" ? "delivery" : direction === "IN" ? "pickup" : null;
+  const inWindow = tasks.filter((t) => {
+    if (!t.date) return false;
+    const d = dayDiff(t.date, scanDay);
+    return d >= -TASK_WINDOW.daysBeforeScan && d <= TASK_WINDOW.daysAfterScan;
+  });
+  inWindow.sort((a, b) =>
+    (Number(b.kind === wanted) - Number(a.kind === wanted))
+    || (Math.abs(dayDiff(a.date!, scanDay)) - Math.abs(dayDiff(b.date!, scanDay))));
+  return inWindow[0] ?? null;
+}
+
+/**
+ * Whether it is still worth asking about a scan that matched nothing. A task
+ * can be entered in DT after the truck has already come through — an ad-hoc
+ * pickup logged that evening — so an unmatched scan is re-asked until the
+ * window has closed, and only then recorded as "DT has nothing for this".
+ */
+export function taskWindowClosed(scannedAt: string, now: Date = new Date()): boolean {
+  const scanDay = utcToIstDate(scannedAt);
+  const today = utcToIstDate(now);
+  if (!scanDay || !today) return true;
+  return dayDiff(today, scanDay) > TASK_WINDOW.daysAfterScan + 1;
 }

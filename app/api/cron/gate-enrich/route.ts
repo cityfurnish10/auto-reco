@@ -47,24 +47,24 @@ export const POST = jsonRoute("cron/gate-enrich", async (req: NextRequest) => {
   // Asked for together, falling back to the Odoo pass alone if 0039 has not
   // been applied — migrations go in by hand, and a missing column must cost the
   // new lookup, not the one that already worked.
-  const base = () => db.from("gate_scans").select("id,barcode,enriched_at,task_checked_at")
+  const base = () => db.from("gate_scans").select("id,barcode,scanned_at,direction,enriched_at,task_checked_at")
     .eq("status", "recorded").not("barcode", "is", null);
   let dtReady = true;
   let res = await base().or("enriched_at.is.null,task_checked_at.is.null")
     .order("scanned_at", { ascending: false }).limit(LIMIT);
   if (isMissingColumn(res.error)) {
     dtReady = false;
-    res = await db.from("gate_scans").select("id,barcode,enriched_at")
+    res = await db.from("gate_scans").select("id,barcode,scanned_at,direction,enriched_at")
       .eq("status", "recorded").not("barcode", "is", null).is("enriched_at", null)
       .order("scanned_at", { ascending: false }).limit(LIMIT) as typeof res;
   }
   if (res.error) throw new Error(`gate-enrich: reading scans failed: ${res.error.message}`);
 
-  const rows = (res.data ?? []) as { id: string; barcode: string; enriched_at: string | null; task_checked_at?: string | null }[];
+  const rows = (res.data ?? []) as { id: string; barcode: string; scanned_at: string; direction: string | null; enriched_at: string | null; task_checked_at?: string | null }[];
   if (rows.length === 0) return NextResponse.json({ ok: true, considered: 0, dtReady });
 
   const outcome = await enrichScans(db, rows.map((r) => ({
-    id: r.id, barcode: r.barcode,
+    id: r.id, barcode: r.barcode, scannedAt: r.scanned_at, direction: r.direction,
     needsFacts: !r.enriched_at,
     needsTask: dtReady && !r.task_checked_at,
   })));

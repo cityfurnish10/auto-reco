@@ -157,12 +157,16 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
           // whole scanning project.
           barcode: (r.barcode as string) ?? null,
           serialNo: r.serial_no, product: r.product, soNumber: r.so_number,
-          // The register row. Witnessed values first, looked-up ones as the
-          // fallback — a guard-typed SO beats Odoo's last one for this unit.
+          // The register row. Witnessed values first, then the DT task matched
+          // to THIS movement. Deliberately NOT Odoo's last_so / last_customer:
+          // those are the unit's last known movement, which can be months old
+          // (FUL5ZA24120009's was a March transfer), and a stale value in a row
+          // labelled with today's trip reads as a fact about today. Item name
+          // is the exception — what a unit IS does not go out of date.
           itemName: (r.product as string) ?? (r.unit_product as string) ?? null,
-          soDisplay: (r.so_number as string) ?? (r.task_so as string) ?? (r.last_so as string) ?? null,
+          soDisplay: (r.so_number as string) ?? (r.task_so as string) ?? null,
           ticket: (r.ticket_id as string) ?? (r.task_ticket as string) ?? null,
-          customer: (r.customer as string) ?? (r.task_customer as string) ?? (r.last_customer as string) ?? null,
+          customer: (r.customer as string) ?? (r.task_customer as string) ?? null,
           jobType: (r.task_job_type as string) ?? null,
           // Whether a lookup is still owed, so the screen can say "looking up"
           // rather than a dash that reads as "there is nothing".

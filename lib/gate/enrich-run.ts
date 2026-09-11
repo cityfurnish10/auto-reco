@@ -7,14 +7,17 @@
 // everything nobody opened.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchUnitFacts, fetchUnitTasks } from "./enrich";
+import { fetchUnitFacts, fetchUnitTasks, taskForScan, taskWindowClosed } from "./enrich";
 
 export interface ScanToEnrich {
   id: string;
   barcode: string | null;
+  /** When and which way it crossed — a DT task is matched to THIS movement. */
+  scannedAt: string;
+  direction: string | null;
   /** Odoo pass (0037) not yet run. */
   needsFacts: boolean;
-  /** DT pass (0039) not yet run. */
+  /** DT pass (0039) not yet answered — no match yet, and the window still open. */
   needsTask: boolean;
 }
 
@@ -31,9 +34,10 @@ export interface EnrichOutcome {
  * system's columns and nothing else — Odoo being slow must not stop a ticket
  * number from DT arriving, and neither may fail the caller.
  *
- * The "checked" stamp is written even on a miss, so a serial neither system
- * knows is not re-asked every run. It is NOT written when the lookup itself
- * failed: that is not an answer, and the row should be tried again.
+ * The "checked" stamp is written on a miss too, so a serial nobody knows is not
+ * re-asked every run — for DT, only once the scan's matching window has
+ * closed. It is never written when the lookup itself failed: that is not an
+ * answer, and the row should be tried again.
  */
 export async function enrichScans(db: SupabaseClient, scans: ScanToEnrich[]): Promise<EnrichOutcome> {
   const out: EnrichOutcome = { considered: scans.length, odooMatched: 0, dtMatched: 0, failed: [] };
@@ -69,19 +73,29 @@ export async function enrichScans(db: SupabaseClient, scans: ScanToEnrich[]): Pr
       patch.enriched_at = now;
     }
     if (s.needsTask && tasks) {
-      const t = tasks.get(key);
+      const t = taskForScan(tasks.get(key) ?? [], s.scannedAt, s.direction);
       if (t) {
         Object.assign(patch, {
           task_ticket: t.ticket, task_job_type: t.jobType, task_customer: t.customer,
-          task_so: t.so, task_city: t.city,
+          task_so: t.so, task_city: t.city, task_date: t.date,
         });
         out.dtMatched++;
+        patch.task_checked_at = now;
+      } else if (taskWindowClosed(s.scannedAt)) {
+        // Only now is "DT has no task for this movement" an answer. Before it,
+        // the task may simply not have been entered yet.
+        patch.task_checked_at = now;
       }
-      patch.task_checked_at = now;
     }
     if (Object.keys(patch).length === 0) continue;
     // One row failing must not abandon the rest; it is picked up next run.
-    await db.from("gate_scans").update(patch).eq("id", s.id);
+    const up = await db.from("gate_scans").update(patch).eq("id", s.id);
+    // task_date arrives with 0040, applied by hand. Until then, write the rest
+    // rather than losing the whole row's answer over one column.
+    if (isMissingColumn(up.error) && "task_date" in patch) {
+      delete patch.task_date;
+      await db.from("gate_scans").update(patch).eq("id", s.id);
+    }
   }
   return out;
 }

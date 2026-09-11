@@ -444,7 +444,7 @@ function TripModal({ trip, onClose, onLookedUp }: {
                     return (
                       <td key={c.label}
                           className={`px-3 py-2 whitespace-nowrap ${c.mono ? "font-mono" : ""} ${v ? "" : "text-text-muted"}`}>
-                        {v ?? (c.lookedUp && it.lookupPending ? "…" : "—")}
+                        {v ?? (c.lookedUp && it.lookupPending && lookup === "running" ? "…" : "—")}
                       </td>
                     );
                   })}
@@ -486,7 +486,9 @@ function TripModal({ trip, onClose, onLookedUp }: {
  * quietly disagree with the screen.
  *
  * `lookedUp` marks the columns filled from Odoo/DT by barcode after the scan
- * rather than recorded at the gate — shown as "…" while that lookup is owed.
+ * rather than recorded at the gate — shown as "…" while the lookup runs. A
+ * dash afterwards means no DT task matches this movement, which is common and
+ * true (vendor stock, internal transfers), not a failure.
  */
 const REGISTER_COLUMNS: {
   label: string; mono?: boolean; lookedUp?: boolean;

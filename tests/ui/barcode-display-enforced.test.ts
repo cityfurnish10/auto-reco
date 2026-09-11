@@ -38,7 +38,7 @@ const ALLOWED: { file: string; snippet: string; why: string }[] = [
   },
   {
     file: "app/api/gate/activity/enrich/route.ts",
-    snippet: "barcode: r.barcode, needsFacts",
+    snippet: "barcode: r.barcode, scannedAt: r.scanned_at",
     why: "KEY: same lookup, for one trip a manager has just opened. Never shown.",
   },
   // The Gate screens read gate_scans, where `barcode` is the RAW QR payload the

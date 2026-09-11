@@ -6,7 +6,7 @@
 // and the separation of derived columns from witnessed ones.
 
 import { describe, expect, it } from "vitest";
-import { unitFactsSql, unitTaskPipeline } from "../../lib/gate/enrich";
+import { taskForScan, taskWindowClosed, unitFactsSql, unitTaskPipeline, type UnitTask } from "../../lib/gate/enrich";
 
 const sql = unitFactsSql(["FUL5ZA24120009", "APC7VY19041490"]);
 
@@ -74,17 +74,66 @@ describe("the DT task lookup (ticket, job type, customer)", () => {
     expect(unitTaskPipeline(["'; DROP x"])).toBeNull();
   });
 
-  it("takes each unit's newest item record, then that record's task", () => {
-    expect(pipe.indexOf('"$sort":{"updatedAt":-1}')).toBeLessThan(pipe.indexOf('"$group"'));
-    expect(pipe).toContain('"$first":"$$ROOT"');
-    // The pickup comes after the delivery in a unit's life, so it wins.
-    expect(pipe).toContain('"$ifNull":["$it.pickup_deliveryId","$it.deliveryId"]');
+  it("returns every task with its date, so each scan can be matched to its own", () => {
+    // The first version kept only the newest task per unit, which is how a
+    // March pickup ended up on a September scan.
+    expect(pipe).not.toContain('"$first"');
+    expect(pipe).toContain('"scheduled":"$dv.scheduledDate"');
+    expect(pipe).toContain('"$pickup_deliveryId"');
   });
 
   it("cannot lose the batch to one malformed task id", () => {
-    // $toObjectId throws on a bad string and fails the whole aggregation.
     expect(pipe).toContain('"onError":null');
     expect(pipe).not.toContain("$toObjectId");
+  });
+});
+
+describe("matching a DT task to the scan it explains", () => {
+  const task = (kind: "pickup" | "delivery", date: string, ticket: string): UnitTask => ({
+    serial: "S", kind, date, ticket, jobType: null, customer: null, so: null, city: null,
+  });
+
+  it("THE REPORTED CASE: a six-month-old pickup is not today's movement", () => {
+    // FUL5ZA24120009's real DT history, and its real gate scan: inward at
+    // Delhi, 11 Sep 2026 15:20 IST. The screen showed ticket 1099165.
+    const history = [task("pickup", "2026-03-08", "1099165"), task("delivery", "2025-09-07", "938667")];
+    expect(taskForScan(history, "2026-09-11T09:50:30.622Z", "IN")).toBeNull();
+  });
+
+  it("attaches a delivery scheduled today to an outward scan", () => {
+    const t = taskForScan([task("delivery", "2026-09-12", "D1")], "2026-09-12T03:00:00Z", "OUT");
+    expect(t?.ticket).toBe("D1");
+  });
+
+  it("allows a truck loaded the evening before its delivery day", () => {
+    // 20:00 IST on the 11th, delivery scheduled for the 12th.
+    expect(taskForScan([task("delivery", "2026-09-12", "D1")], "2026-09-11T14:30:00Z", "OUT")?.ticket).toBe("D1");
+    expect(taskForScan([task("delivery", "2026-09-13", "D2")], "2026-09-11T14:30:00Z", "OUT")).toBeNull();
+  });
+
+  it("allows a pickup that reaches the gate a few days later, and no later", () => {
+    const scan = "2026-09-12T06:00:00Z"; // 12 Sep IST
+    expect(taskForScan([task("pickup", "2026-09-09", "P1")], scan, "IN")?.ticket).toBe("P1");
+    expect(taskForScan([task("pickup", "2026-09-08", "P0")], scan, "IN")).toBeNull();
+  });
+
+  it("prefers the kind that matches the direction, then the nearest date", () => {
+    const scan = "2026-09-12T06:00:00Z";
+    const both = [task("delivery", "2026-09-12", "D"), task("pickup", "2026-09-11", "P")];
+    expect(taskForScan(both, scan, "IN")?.ticket).toBe("P");
+    expect(taskForScan(both, scan, "OUT")?.ticket).toBe("D");
+    const two = [task("pickup", "2026-09-09", "far"), task("pickup", "2026-09-12", "near")];
+    expect(taskForScan(two, scan, "IN")?.ticket).toBe("near");
+  });
+
+  it("still explains a failed delivery coming back in the same day", () => {
+    expect(taskForScan([task("delivery", "2026-09-12", "D")], "2026-09-12T12:00:00Z", "IN")?.ticket).toBe("D");
+  });
+
+  it("keeps asking while a task could still be entered, then stops", () => {
+    const scan = "2026-09-11T09:50:30Z";
+    expect(taskWindowClosed(scan, new Date("2026-09-12T10:00:00Z"))).toBe(false);
+    expect(taskWindowClosed(scan, new Date("2026-09-14T10:00:00Z"))).toBe(true);
   });
 });
 

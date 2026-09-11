@@ -36,18 +36,18 @@ export const POST = jsonRoute("gate/activity/enrich", async (req: NextRequest) =
   if (!t.data) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   let dtReady = true;
-  let res = await db.from("gate_scans").select("id,barcode,enriched_at,task_checked_at")
+  let res = await db.from("gate_scans").select("id,barcode,scanned_at,direction,enriched_at,task_checked_at")
     .eq("trip_id", tripId).eq("status", "recorded").limit(500);
   if (isMissingColumn(res.error)) {
     dtReady = false;
-    res = await db.from("gate_scans").select("id,barcode,enriched_at")
+    res = await db.from("gate_scans").select("id,barcode,scanned_at,direction,enriched_at")
       .eq("trip_id", tripId).eq("status", "recorded").limit(500) as typeof res;
   }
   if (res.error) return NextResponse.json({ error: res.error.message }, { status: 500 });
 
-  const rows = (res.data ?? []) as { id: string; barcode: string | null; enriched_at: string | null; task_checked_at?: string | null }[];
+  const rows = (res.data ?? []) as { id: string; barcode: string | null; scanned_at: string; direction: string | null; enriched_at: string | null; task_checked_at?: string | null }[];
   const todo = rows
-    .map((r) => ({ id: r.id, barcode: r.barcode, needsFacts: !r.enriched_at, needsTask: dtReady && !r.task_checked_at }))
+    .map((r) => ({ id: r.id, barcode: r.barcode, scannedAt: r.scanned_at, direction: r.direction, needsFacts: !r.enriched_at, needsTask: dtReady && !r.task_checked_at }))
     .filter((r) => r.needsFacts || r.needsTask);
   if (todo.length === 0) return NextResponse.json({ ok: true, considered: 0, dtReady });
 
