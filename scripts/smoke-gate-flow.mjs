@@ -221,6 +221,16 @@ await page.waitForTimeout(1200);
 
 /* ── 3. the trip form: pickers, and the mandatory fields ─────────────── */
 step("Starting a trip");
+// The guard is not asked to manage sending. Sync is automatic — on open, on
+// return, on reconnect, every 20s — so the old "N saved here, not sent yet /
+// Try sending now" panel is gone from Today. Checked here, while Today is the
+// screen in front of us.
+if (await seen("Start trip")) {
+  const panel = await page.locator(".gsyncbox").count();
+  const sendBtn = await page.getByRole("button", { name: /send now|try sending/i }).count();
+  if (panel === 0 && sendBtn === 0) ok("Today has no sync panel or send button");
+  else bad("Today still shows the sync panel — the guard is being asked to manage sending");
+}
 if (!(await seen("Start trip"))) await tap("Start trip");
 await tap("Start trip");
 await page.waitForTimeout(1200);
@@ -259,6 +269,21 @@ await page.waitForTimeout(400);
 const chosen = await page.locator(".gpickchosen.on").count();
 if (chosen === 2) ok("both pickers collapsed to a chosen row");
 else bad(`expected 2 collapsed 'chosen' rows, found ${chosen}`);
+
+// "CHANGE" MUST REOPEN THE LIST. It did nothing on every iPhone: the pickers sat
+// inside a <label>, and WebKit forwarded the tap AFTER the handler had opened
+// the list — onto the first option, the vehicle already chosen, which closed it
+// again. Chromium does not forward in that case, so only this engine shows it.
+await page.waitForTimeout(600);
+await page.locator(".gpickchosen").first().getByText("Change").click();
+await page.waitForTimeout(700);
+if (await page.locator(".gpicklist").count()) {
+  ok("tapping Change on the vehicle reopens its list");
+  await tap("HR26DK8337");
+  await page.waitForTimeout(700);
+  if ((await page.locator(".gpickchosen.on").count()) === 2) ok("re-choosing collapses it again, agent kept");
+  else bad("after Change and re-choosing, the form is not back to two chosen rows");
+} else bad("tapping Change on the vehicle does nothing — the list did not reopen");
 
 // THE GUARD IS NEVER SHOWN WHAT IS EXPECTED, and the stub deliberately
 // supplies a full planned load — customer, address, units — so this proves the
@@ -385,7 +410,13 @@ if (!(await xBtn.count())) {
     rq.onerror = () => res([]);
   }));
 
-  const voided = new Set(state.filter((i) => i.kind === "void").map((i) => i.id));
+  // Voids QUEUED or already SENT. Counting only queued ones passed for months
+  // because a sent void was never cleared from the phone (the stuck-queue bug);
+  // with that fixed, a void leaves promptly and has to be read off the wire.
+  const voided = new Set([
+    ...state.filter((i) => i.kind === "void").map((i) => i.id),
+    ...posted.flatMap((b) => (b.voids ?? []).map((v) => v.clientScanId)),
+  ]);
   const live = new Set([
     ...state.filter((i) => i.kind === "scan").map((i) => i.id),
     ...posted.flatMap((b) => (b.scans ?? []).map((x) => x.clientScanId)),
@@ -634,6 +665,20 @@ else bad("nothing was sent on open — the guard waits on the 20s timer again");
 step("It syncs again on coming back to the app");
 // Mobile browsers suspend timers in a backgrounded tab, so returning to the app
 // is the one moment that must not rely on the interval having ticked.
+// Something to send first. An empty queue rightly sends nothing, and this
+// check only ever passed because sent closes and sign-outs were never cleared
+// and so the queue was never empty.
+await page.evaluate(() => new Promise((res) => {
+  const rq = indexedDB.open("gate-outbox");
+  rq.onsuccess = () => {
+    const tx = rq.result.transaction("items", "readwrite");
+    tx.objectStore("items").put({ clientId: "onshow-1", kind: "scan", createdAt: Date.now(), attempts: 0,
+      payload: { clientScanId: "onshow-1", barcode: "SMOKESHOW0001", direction: "OUT" } });
+    tx.oncomplete = () => res(null);
+    tx.onerror = () => res(null);
+  };
+  rq.onerror = () => res(null);
+}));
 const beforeShow = posted.length;
 await page.evaluate(() => {
   Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
@@ -643,6 +688,48 @@ await page.evaluate(() => {
 await page.waitForTimeout(2500);
 if (posted.length > beforeShow) ok("returning to the app triggers a sync");
 else bad("coming back to the app does not sync — a pocketed phone stays stale");
+
+step("Nothing already sent stays on the phone");
+// THE BUG: a trip close, a sign-out and a removed line are queued under their
+// own ids ("<trip>-close", "<shift>-out", a void id), but the server names its
+// reply after the trip, shift or scan. The phone removed by the reply's name,
+// matched nothing, and kept all three as "not sent" forever — a demo phone
+// showed five. The stub above replies exactly as the real server does, by
+// record id, so this is the real drain against the real reply shape.
+const stuckIds = ["smoke-trip-close", "smoke-shift-out", "smoke-void"];
+const queued = () => page.evaluate((ids) => new Promise((res) => {
+  const rq = indexedDB.open("gate-outbox");
+  rq.onsuccess = () => {
+    const req = rq.result.transaction("items", "readonly").objectStore("items").getAll();
+    req.onsuccess = () => res(req.result.filter((i) => ids.includes(i.clientId)).length);
+    req.onerror = () => res(-1);
+  };
+  rq.onerror = () => res(-1);
+}), stuckIds);
+await page.evaluate(() => new Promise((res) => {
+  const rq = indexedDB.open("gate-outbox");
+  rq.onsuccess = () => {
+    const tx = rq.result.transaction("items", "readwrite");
+    const st = tx.objectStore("items");
+    const at = new Date().toISOString();
+    st.put({ clientId: "smoke-trip-close", kind: "trip", createdAt: Date.now(), attempts: 0,
+      payload: { clientTripId: "smoke-trip", direction: "OUT", vehicleNo: "HR26DK8337",
+                 openedAt: at, closedAt: at, status: "closed" } });
+    st.put({ clientId: "smoke-shift-out", kind: "shift", createdAt: Date.now(), attempts: 0,
+      payload: { clientShiftId: "smoke-shift", checkedInAt: at, checkedOutAt: at, status: "closed" } });
+    st.put({ clientId: "smoke-void", kind: "void", createdAt: Date.now(), attempts: 0,
+      payload: { clientScanId: "smoke-scan", reason: "smoke", voidedAt: at } });
+    tx.oncomplete = () => res(null);
+    tx.onerror = () => res(null);
+  };
+  rq.onerror = () => res(null);
+}));
+const seeded = await queued();
+await page.reload({ waitUntil: "domcontentloaded" });
+await page.waitForTimeout(5000);
+const left = await queued();
+if (seeded === 3 && left === 0) ok("a close, a sign-out and a removal leave the queue once the server has them");
+else bad(`queued ${seeded}, still on the phone after syncing: ${left} — they will show as "not sent" forever`);
 
 step("Signing out actually signs you out");
 // The bug: settings' back button went to the PIN pad, which after a sign-out

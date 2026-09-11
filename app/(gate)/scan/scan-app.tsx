@@ -149,6 +149,13 @@ export default function GateApp() {
    * The window is short enough to be invisible and long enough to cover the
    * re-render, and it only ever suppresses an OPEN — nothing a guard does can
    * be lost by it.
+   *
+   * The "same tap arriving twice" was the pickers' <label> wrapper forwarding
+   * it (see Field). This window only ever caught one direction of that — a
+   * choice followed by a ghost open — and the other, an open followed by a
+   * ghost choice, broke "Change" on every iPhone. The wrapper is no longer a
+   * label; the window stays because it is cheap insurance against a real
+   * double tap.
    */
   const pickerSettling = useRef(0);
   const openPickerSafely = useCallback((id: string | null, fromChoice = false) => {
@@ -1166,7 +1173,7 @@ export default function GateApp() {
       {screen === "queue" && (
         <>
           <Bar t={t} title={t("queueTitle")}
-               left={<BackBtn onClick={() => setScreen("today")} />} />
+               left={<BackBtn onClick={() => setScreen("profile")} />} />
           <div className="gbody">
             <SyncCard t={t} online={online} queue={queue} />
 
@@ -1388,32 +1395,16 @@ export default function GateApp() {
             </>
           } />
           <div className="gbody">
-            {/* THE CARD DOES THE JOB ITSELF.
-                It used to be a button that opened a separate screen — so a
-                guard seeing "not sent yet" had to tap through to a page that
-                mostly repeated the same sentence and offered a Send button.
-                The action belongs where the problem is stated. The detail
-                screen is still there, but only offered when something has been
-                REFUSED, which is the one case with anything worth reading. */}
-            <div className="gcard col gsyncbox">
-              <SyncCard t={t} online={online} queue={queue} />
-              {queue.waiting > 0 && (
-                <button className="gbtn sm ghost" disabled={sending}
-                  onClick={async () => {
-                    setSending(true);
-                    try { await sync(); } finally { setSending(false); }
-                  }}>
-                  <Icon name={sending ? "sync" : "refresh"} size={16} />
-                  {sending ? t("starting") : t("sendNow")}
-                </button>
-              )}
-              {queue.rejected > 0 && (
-                <button className="gbtn sm warn" onClick={() => setScreen("queue")}>
-                  <Icon name="warning" size={16} />
-                  {queue.rejected} {t("needsAttention")}
-                </button>
-              )}
-            </div>
+            {/* NO SYNC PANEL HERE, on purpose. Sending is automatic — on open,
+                on coming back to the app, on reconnecting, and every 20 seconds
+                — so "N not sent yet" with a Send button asked the guard to
+                manage something they cannot affect. Worse, it was wrong: closes,
+                sign-outs and removals were never cleared from the count (see
+                pairReplies), so it only ever grew and taught guards to ignore
+                it. The status lives in Settings for whoever troubleshoots a
+                phone; refused items reach managers on the portal's Gate screen.
+                What stays on the work screens is the one fact a guard can act
+                on: there is no network right now. */}
             {shiftAt && (
               <div className="gcard ok">
                 <Icon name="check_circle" size={22} className="gbig" />
@@ -1641,7 +1632,7 @@ export default function GateApp() {
                       </Field>
                     )}
                     {cat !== "customer_return" && (
-                      <Field label={t("quantity")}>
+                      <Field label={t("quantity")} group>
                         <div className="gqty">
                           <button className="gkey" onClick={() => setMQty((q) => Math.max(1, q - 1))}>−</button>
                           <input className="gf mono" inputMode="numeric" value={mQty}
@@ -1887,6 +1878,15 @@ export default function GateApp() {
               ))}
             </div>
             <SyncCard t={t} online={online} queue={queue} />
+            {/* The only way in to refused items now the Today panel is gone.
+                Kept on the phone and never discarded, but a manager already
+                sees each one on the portal, so this is for troubleshooting. */}
+            {queue.rejected > 0 && (
+              <button className="gbtn sm warn" style={{ marginTop: 10 }} onClick={() => setScreen("queue")}>
+                <Icon name="warning" size={16} />
+                {queue.rejected} {t("needsAttention")}
+              </button>
+            )}
             <div style={{ height: 10 }} />
             <button className="gbtn sm ghost" onClick={() => {
               // Handover. The queue is deliberately NOT cleared: those rows
@@ -2062,7 +2062,22 @@ function SignOutBtn({ onClick }: { onClick: () => void }) {
     </button>
   );
 }
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * A labelled field. `group` for anything holding BUTTONS rather than one input.
+ *
+ * A <label> passes a tap on itself to the first control inside it, and on an
+ * iPhone it does so AFTER the tap's own handler has run. If that handler
+ * changed the screen, the forwarded tap lands on whatever button is first now.
+ * That is exactly how the vehicle "Change" did nothing on a phone: the tap
+ * opened the list, the label forwarded it to the first option — the vehicle
+ * already chosen — and choosing it closed the list again, all within one tap.
+ * Chromium does not forward in that case, so it only ever showed on WebKit.
+ * A plain group has no forwarding to go wrong.
+ */
+function Field({ label, children, group }: { label: string; children: React.ReactNode; group?: boolean }) {
+  if (group) {
+    return <div className="gfld" role="group" aria-label={label}><span>{label}</span>{children}</div>;
+  }
   return <label className="gfld"><span>{label}</span>{children}</label>;
 }
 /**
@@ -2112,7 +2127,7 @@ function Picker({ t, label, hint, options, unavailable, value, onChange,
     : [];
 
   return (
-    <Field label={label}>
+    <Field label={label} group>
       {loading && (
         <div className="gpickload">
           <Icon name="progress_activity" size={17} className="gspinicon" />

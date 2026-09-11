@@ -278,12 +278,12 @@ export async function drain(): Promise<SyncResult> {
   }
 
   const res: SyncResult = { ...empty, sent: items.length };
-  for (const group of [json.trips, json.scans, json.voids, json.shifts, json.faceChecks]) {
-    for (const o of group ?? []) {
-      if (o.status === "stored") { res.stored++; }
-      else if (o.status === "duplicate") { res.duplicate++; await outbox.remove(o.clientId); }
-      else { res.rejected++; await outbox.markRejected(o.clientId, o.reason ?? "rejected"); }
-    }
+  const answered = pairReplies(items, json);
+  const confirmed: string[] = [];
+  for (const { queueId, reply } of answered) {
+    if (reply.status === "stored") { res.stored++; confirmed.push(queueId); }
+    else if (reply.status === "duplicate") { res.duplicate++; await outbox.remove(queueId); }
+    else { res.rejected++; await outbox.markRejected(queueId, reply.reason ?? "rejected"); }
   }
 
   // Images last, and each one on its own: a failed upload must not lose the
@@ -307,11 +307,57 @@ export async function drain(): Promise<SyncResult> {
 
   // Only now clear what the server confirmed. Doing this before the images
   // would drop the blob a moment before we tried to upload it.
-  for (const group of [json.trips, json.scans, json.voids, json.shifts, json.faceChecks]) {
-    for (const o of group ?? []) if (o.status === "stored") await outbox.remove(o.clientId);
-  }
+  for (const queueId of confirmed) await outbox.remove(queueId);
 
   return res;
+}
+
+type Reply = { clientId: string; status: string; reason?: string };
+
+/** The field in each queued payload that the server names its reply by. */
+const RECORD_ID: Record<outbox.Kind, string> = {
+  trip: "clientTripId", scan: "clientScanId", void: "clientScanId",
+  shift: "clientShiftId", face: "clientCheckId",
+};
+
+/**
+ * Match each server reply to the queue entry it answers.
+ *
+ * THE REPLY IS NAMED BY THE RECORD, NOT BY THE QUEUE ENTRY, and the two are not
+ * always the same string. A trip close is queued as `${tripId}-close`, a
+ * sign-out as `${shiftId}-out`, a void under its own id — all so they do not
+ * overwrite the entry they follow — but the server answers each by the trip,
+ * shift or scan it touched. Removing by the reply's name removed nothing, so
+ * every closed trip, every sign-out and every removed line stayed on the phone
+ * as "not sent" forever, re-sent every 20 seconds, although the server had
+ * applied it the first time. On a busy gate that is a queue that only grows.
+ *
+ * Matched on the record id, taking the first unclaimed entry: a trip opened and
+ * closed in one batch gets two replies with the same name, one per entry, in
+ * the order they were sent. A reply that matches nothing removes nothing —
+ * the safe way round, because the entry is simply sent again.
+ */
+export function pairReplies(
+  items: Pick<outbox.OutboxItem, "clientId" | "kind" | "payload">[],
+  json: { trips?: Reply[]; scans?: Reply[]; voids?: Reply[]; shifts?: Reply[]; faceChecks?: Reply[] },
+): { queueId: string; reply: Reply }[] {
+  const groups: [outbox.Kind, Reply[] | undefined][] = [
+    ["trip", json.trips], ["scan", json.scans], ["void", json.voids],
+    ["shift", json.shifts], ["face", json.faceChecks],
+  ];
+  const out: { queueId: string; reply: Reply }[] = [];
+  const claimed = new Set<string>();
+  for (const [kind, replies] of groups) {
+    const sent = items.filter((i) => i.kind === kind);
+    for (const reply of replies ?? []) {
+      const entry = sent.find((i) => !claimed.has(i.clientId)
+        && (i.payload as Record<string, unknown>)[RECORD_ID[kind]] === reply.clientId);
+      if (!entry) continue;
+      claimed.add(entry.clientId);
+      out.push({ queueId: entry.clientId, reply });
+    }
+  }
+  return out;
 }
 
 export interface HistoryTrip {
