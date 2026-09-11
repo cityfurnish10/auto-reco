@@ -33,13 +33,13 @@ const ALLOWED: { file: string; snippet: string; why: string }[] = [
   // unit_product. Folding it would ask about a string no system holds.
   {
     file: "app/api/cron/gate-enrich/route.ts",
-    snippet: "fetchUnitFacts(scans.map((s) => s.barcode))",
-    why: "KEY: the raw QR payload is what Odoo's lot master is keyed on. Never shown.",
+    snippet: "id: r.id, barcode: r.barcode,",
+    why: "KEY: the raw QR payload is what Odoo's lot master and DT's items are keyed on. Never shown.",
   },
   {
-    file: "app/api/cron/gate-enrich/route.ts",
-    snippet: "facts.get(s.barcode.trim())",
-    why: "KEY: matching Odoo's answer back to the scan that asked. Never shown.",
+    file: "app/api/gate/activity/enrich/route.ts",
+    snippet: "barcode: r.barcode, needsFacts",
+    why: "KEY: same lookup, for one trip a manager has just opened. Never shown.",
   },
   // The Gate screens read gate_scans, where `barcode` is the RAW QR payload the
   // scanner returned — stored deliberately unfolded. shownBarcode() exists to
@@ -47,8 +47,8 @@ const ALLOWED: { file: string; snippet: string; why: string }[] = [
   // and passing it through one would be the bug rather than the fix.
   {
     file: "app/(dashboard)/gate/gate-client.tsx",
-    snippet: "{it.barcode ?? it.serialNo",
-    why: "LABEL, and correct: a gate scan's barcode is the raw QR payload, never the canonical fold.",
+    snippet: "value: (_, i) => i.barcode ?? i.serialNo",
+    why: "LABEL, and correct: a gate scan's barcode is the raw QR payload, never the canonical fold — shown in the trip table and written to its CSV.",
   },
   {
     file: "app/api/gate/activity/route.ts",

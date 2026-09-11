@@ -36,18 +36,27 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
             "unplanned_count,expected_warned")
     .eq("business_date", date)
     .order("opened_at", { ascending: false });
-  let scans = admin.from("gate_scans")
-    // unit_* and last_* are DERIVED (migration 0037) — Odoo's answer to "what is
-    // this serial", never the day's plan. Shown so a manager chasing a gate-only
-    // item sees a product rather than a bare number; deliberately separate from
-    // product/so_number, which are the gate's own testimony.
-    .select("id,trip_id,barcode,serial_no,product,so_number,item_kind,quantity,entry_method,override_reason,exception_reason,barcode_pending,geo_ok,photo_path,scanned_at,guard_id,unit_product,unit_sku,last_customer,last_so,last_moved_at")
-    .eq("business_date", date).eq("status", "recorded")
-    .order("scanned_at", { ascending: true }).limit(2000);
+  // unit_* and last_* are DERIVED (migration 0037) — Odoo's answer to "what is
+  // this serial". task_* are DERIVED too (0039) — the unit's latest DT task,
+  // which is where ticket, job type and the real customer live. All shown so a
+  // manager sees the register row rather than a bare number; all deliberately
+  // separate from product/so_number, which are the gate's own testimony.
+  const SCAN_COLS = "id,trip_id,barcode,serial_no,product,so_number,ticket_id,customer,item_kind,quantity,entry_method,override_reason,exception_reason,barcode_pending,geo_ok,photo_path,scanned_at,guard_id,unit_product,unit_sku,last_customer,last_so,last_moved_at";
+  const TASK_COLS = ",task_ticket,task_job_type,task_customer,task_so,task_city,task_checked_at,enriched_at";
+  const scansQuery = (cols: string) => {
+    let q = admin.from("gate_scans").select(cols)
+      .eq("business_date", date).eq("status", "recorded")
+      .order("scanned_at", { ascending: true }).limit(2000);
+    if (city) q = q.eq("city", city);
+    if (guardId) q = q.eq("guard_id", guardId);
+    if (direction) q = q.eq("direction", direction);
+    return q;
+  };
+  let scans = scansQuery(SCAN_COLS + TASK_COLS);
 
-  if (city) { trips = trips.eq("city", city); scans = scans.eq("city", city); }
-  if (guardId) { trips = trips.eq("guard_id", guardId); scans = scans.eq("guard_id", guardId); }
-  if (direction) { trips = trips.eq("direction", direction); scans = scans.eq("direction", direction); }
+  if (city) trips = trips.eq("city", city);
+  if (guardId) trips = trips.eq("guard_id", guardId);
+  if (direction) trips = trips.eq("direction", direction);
 
   // Retractions, counted separately and never mixed into the item totals. A
   // voided row must not inflate what moved — that is the whole reason it is
@@ -61,7 +70,11 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
   if (guardId) removed = removed.eq("guard_id", guardId);
   if (direction) removed = removed.eq("direction", direction);
 
-  const [tr, sc, rm] = await Promise.all([trips, scans, removed]);
+  let [tr, sc, rm] = await Promise.all([trips, scans, removed]);
+  // 0039 applied by hand, possibly not yet: without its columns, show what 0037
+  // gave rather than failing the whole Activity page over a lookup.
+  if (sc.error?.code === "42703") { scans = scansQuery(SCAN_COLS + ",enriched_at"); sc = await scans; }
+  if (sc.error?.code === "42703") { scans = scansQuery(SCAN_COLS); sc = await scans; }
   if (tr.error) return NextResponse.json({ error: tr.error.message }, { status: 500 });
   if (sc.error) return NextResponse.json({ error: sc.error.message }, { status: 500 });
   // A failure to read retractions must not take the whole page down with it —
@@ -144,6 +157,16 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
           // whole scanning project.
           barcode: (r.barcode as string) ?? null,
           serialNo: r.serial_no, product: r.product, soNumber: r.so_number,
+          // The register row. Witnessed values first, looked-up ones as the
+          // fallback — a guard-typed SO beats Odoo's last one for this unit.
+          itemName: (r.product as string) ?? (r.unit_product as string) ?? null,
+          soDisplay: (r.so_number as string) ?? (r.task_so as string) ?? (r.last_so as string) ?? null,
+          ticket: (r.ticket_id as string) ?? (r.task_ticket as string) ?? null,
+          customer: (r.customer as string) ?? (r.task_customer as string) ?? (r.last_customer as string) ?? null,
+          jobType: (r.task_job_type as string) ?? null,
+          // Whether a lookup is still owed, so the screen can say "looking up"
+          // rather than a dash that reads as "there is nothing".
+          lookupPending: ("enriched_at" in r && !r.enriched_at) || ("task_checked_at" in r && !r.task_checked_at),
           itemKind: r.item_kind, quantity: r.quantity,
           entryMethod: r.entry_method,
           override: r.override_reason ?? null,

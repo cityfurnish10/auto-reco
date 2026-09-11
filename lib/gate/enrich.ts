@@ -6,9 +6,11 @@
 // Odoo about today by construction, which is the same failure COMPLETENESS_SHOWN
 // refuses in the UI, arriving through the database instead.
 //
-// So the lookup is deliberately narrow: given a serial, what is this unit, and
-// where has it BEEN. Never where it is going. A dictionary lookup, not a
-// verification.
+// So the Odoo lookup is deliberately narrow: given a serial, what is this unit,
+// and where has it BEEN. A dictionary lookup, not a verification. The DT half
+// at the bottom of this file (ticket, job type, customer) is closer to the plan,
+// and is only acceptable because of where both answers are written — columns a
+// manager reads and the engine and the guard never do.
 //
 // Measured on the first real run, 2026-09-10, over all 38 serialised scans the
 // pilot had recorded:
@@ -30,7 +32,8 @@
 // written to the columns the reconciliation reads; see migration 0037 for that
 // separation and why it is load bearing.
 
-import { runNativeSql } from "../connectors/metabase";
+import { runMongoPipeline, runNativeSql } from "../connectors/metabase";
+import { dtDatabaseId } from "./fleet";
 
 export interface UnitFacts {
   serial: string;
@@ -133,6 +136,91 @@ export async function fetchUnitFacts(serials: string[]): Promise<Map<string, Uni
       lastDirection: str(r.last_direction),
       // Odoo returns a timestamp even for a date cast; keep the date half only.
       lastMovedAt: str(r.last_moved_at)?.slice(0, 10) ?? null,
+    });
+  }
+  return out;
+}
+
+/* ── The unit's most recent DT task (migration 0039) ─────────────────────── */
+
+// Ticket and job type exist only in the Delivery Tracker — Odoo's "reference"
+// is its own transfer number, not a ticket — and DT's customer is the person
+// the task was for, where Odoo's partner is often a vendor. So this is the
+// second half of the lookup, and it reads a different system.
+//
+// It is closer to the plan than the Odoo half: a unit at the gate today usually
+// has today's task as its most recent one. Accepted because of where the answer
+// goes — gate_scans.task_*, which a manager reads and neither the guard's phone
+// nor the reconciliation ever does. See 0039.
+
+export interface UnitTask {
+  serial: string;
+  ticket: string | null;
+  jobType: string | null;
+  customer: string | null;
+  so: string | null;
+  city: string | null;
+}
+
+/**
+ * One aggregation for a batch of serials. Newest item record per barcode, then
+ * the task it belongs to — the pickup if there is one (a pickup always comes
+ * after the delivery in a unit's life), otherwise the delivery.
+ *
+ * $convert rather than $toObjectId: a malformed id must cost that one row its
+ * ticket, not throw and cost the whole batch.
+ */
+export function unitTaskPipeline(serials: string[]): unknown[] | null {
+  const safe = askable(serials);
+  if (safe.length === 0) return null;
+  return [
+    { $match: { barcode: { $in: safe } } },
+    { $sort: { updatedAt: -1 } },
+    { $group: { _id: "$barcode", it: { $first: "$$ROOT" } } },
+    {
+      $lookup: {
+        from: "deliveries",
+        let: { d: { $convert: {
+          input: { $ifNull: ["$it.pickup_deliveryId", "$it.deliveryId"] },
+          to: "objectId", onError: null, onNull: null,
+        } } },
+        pipeline: [
+          { $match: { $expr: { $eq: ["$_id", "$$d"] } } },
+          { $project: { ticketNumber: 1, jobType: 1, firstName: 1, lastName: 1, city: 1 } },
+        ],
+        as: "dv",
+      },
+    },
+    { $unwind: { path: "$dv", preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        _id: 0, serial: "$_id", so: "$it.Sale_Order",
+        ticket: "$dv.ticketNumber", jobType: "$dv.jobType", city: "$dv.city",
+        customer: { $trim: { input: { $concat: [
+          { $ifNull: ["$dv.firstName", ""] }, " ", { $ifNull: ["$dv.lastName", ""] },
+        ] } } },
+      },
+    },
+  ];
+}
+
+/** Same contract as fetchUnitFacts: only what DT knew, never throws for data. */
+export async function fetchUnitTasks(serials: string[]): Promise<Map<string, UnitTask>> {
+  const out = new Map<string, UnitTask>();
+  const pipeline = unitTaskPipeline(serials);
+  if (!pipeline) return out;
+
+  const { rows } = await runMongoPipeline(dtDatabaseId(), "orderfromcityfurnishes", pipeline, TIMEOUT_MS);
+  const str = (v: unknown) => {
+    const s = v == null ? "" : String(v).replace(/\s+/g, " ").trim();
+    return s === "" || s.toLowerCase() === "null" ? null : s;
+  };
+  for (const r of rows as Record<string, unknown>[]) {
+    const serial = str(r.serial);
+    if (!serial) continue;
+    out.set(serial, {
+      serial, ticket: str(r.ticket), jobType: str(r.jobType),
+      customer: str(r.customer), so: str(r.so), city: str(r.city),
     });
   }
   return out;

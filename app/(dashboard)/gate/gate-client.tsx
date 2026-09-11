@@ -84,6 +84,12 @@ interface TripItem {
   soNumber: string | null; itemKind: string; quantity: number; entryMethod: string;
   override: string | null; exception: string | null; awaitingBarcode: boolean;
   geoOk: boolean | null; hasPhoto: boolean; scannedAt: string;
+  /** The register row. Witnessed where the guard recorded it, otherwise looked
+   *  up by barcode from Odoo and DT after the scan — see migration 0039. */
+  itemName: string | null; soDisplay: string | null; ticket: string | null;
+  customer: string | null; jobType: string | null;
+  /** A lookup is still owed; a dash here would read as "nothing to find". */
+  lookupPending: boolean;
 }
 /** What the completeness check found when the trip closed. Null when the trip
  *  predates the check, or closed with no list to check against — which is a
@@ -296,14 +302,41 @@ function Activity({ user }: { user: SessionUser }) {
         </>
       )}
 
-      <TripModal trip={open} onClose={() => setOpen(null)} />
+      <TripModal trip={open ? (d?.trips.find((t) => t.id === open.id) ?? open) : null}
+                 onClose={() => setOpen(null)} onLookedUp={load} />
     </div>
   );
 }
 
 /** Everything about one trip, including the items the table only counts. */
-function TripModal({ trip, onClose }: { trip: Trip | null; onClose: () => void }) {
+function TripModal({ trip, onClose, onLookedUp }: {
+  trip: Trip | null; onClose: () => void; onLookedUp: () => void;
+}) {
   const [photo, setPhoto] = useState<{ scanId: string; label: string } | null>(null);
+  const [lookup, setLookup] = useState<"idle" | "running" | "failed">("idle");
+  const asked = useRef<string | null>(null);
+
+  // Ask for this trip's details the moment it is opened, once per trip. The
+  // scheduled lookup runs every two hours, and a manager opens a trip right
+  // after the truck leaves — which is exactly when it would still be bare.
+  const tripId = trip?.id ?? null;
+  const pending = !!trip?.items.some((i) => i.lookupPending);
+  useEffect(() => {
+    if (!tripId || !pending || asked.current === tripId) return;
+    asked.current = tripId;
+    setLookup("running");
+    fetch("/api/gate/activity/enrich", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tripId }),
+    })
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.ok === false) throw new Error(j.error ?? "lookup failed");
+        setLookup("idle"); onLookedUp();
+      })
+      .catch(() => setLookup("failed"));
+  }, [tripId, pending, onLookedUp]);
+
   if (!trip) return null;
   return (
     <Modal open onClose={onClose}
@@ -379,12 +412,26 @@ function TripModal({ trip, onClose }: { trip: Trip | null; onClose: () => void }
         </div>
       )}
 
+      {trip.items.length > 0 && (
+        <div className="flex items-center gap-3 mb-2">
+          <b className="text-sm">Items</b>
+          {lookup === "running" && (
+            <span className="text-xs text-text-muted">Looking up order, ticket and customer…</span>
+          )}
+          {lookup === "failed" && (
+            <span className="text-xs text-warning">Could not look up details just now — they will fill in on the next scheduled run.</span>
+          )}
+          <button className="btn btn-compact btn-secondary ml-auto" onClick={() => downloadTripCsv(trip)}>
+            <Icon name="download" size={15} /> Download
+          </button>
+        </div>
+      )}
       {trip.items.length === 0 ? <Empty text="No items on this trip." /> : (
         <div className="overflow-x-auto border border-border rounded-control">
           <table className="w-full text-sm">
             <thead>
               <tr>
-                {["Barcode", "Item", "Kind", "Qty", "How", "Time"].map((h) => (
+                {[...REGISTER_COLUMNS.map((c) => c.label), "How", "Time"].map((h) => (
                   <th key={h} className="text-left px-3 py-2 text-xs uppercase tracking-wide text-text-muted whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -392,11 +439,15 @@ function TripModal({ trip, onClose }: { trip: Trip | null; onClose: () => void }
             <tbody>
               {trip.items.map((it) => (
                 <tr key={it.id} className="border-t border-border">
-                  {/* Raw scanned spelling — never the fold. */}
-                  <td className="px-3 py-2 font-mono">{it.barcode ?? it.serialNo ?? "—"}</td>
-                  <td className="px-3 py-2">{it.product ?? "—"}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{it.itemKind.replace(/_/g, " ")}</td>
-                  <td className="px-3 py-2 tabular-nums">{it.quantity}</td>
+                  {REGISTER_COLUMNS.map((c) => {
+                    const v = c.value(trip, it);
+                    return (
+                      <td key={c.label}
+                          className={`px-3 py-2 whitespace-nowrap ${c.mono ? "font-mono" : ""} ${v ? "" : "text-text-muted"}`}>
+                        {v ?? (c.lookedUp && it.lookupPending ? "…" : "—")}
+                      </td>
+                    );
+                  })}
                   <td className="px-3 py-2 whitespace-nowrap">
                     <span className={`badge ${it.entryMethod === "scan" ? "badge-done" : "badge-medium"}`}>
                       {it.entryMethod}
@@ -427,6 +478,61 @@ function TripModal({ trip, onClose }: { trip: Trip | null; onClose: () => void }
       <PhotoViewer key={photo?.scanId ?? "none"} photo={photo} onClose={() => setPhoto(null)} />
     </Modal>
   );
+}
+
+/**
+ * The register row, in the order the paper register and the ops team read it.
+ * One list drives both the table and the download, so the file can never
+ * quietly disagree with the screen.
+ *
+ * `lookedUp` marks the columns filled from Odoo/DT by barcode after the scan
+ * rather than recorded at the gate — shown as "…" while that lookup is owed.
+ */
+const REGISTER_COLUMNS: {
+  label: string; mono?: boolean; lookedUp?: boolean;
+  value: (trip: Trip, it: TripItem) => string | null;
+}[] = [
+  { label: "City", value: (t) => t.city || null },
+  { label: "SO Number", mono: true, lookedUp: true, value: (_, i) => i.soDisplay },
+  { label: "Ticket ID", mono: true, lookedUp: true, value: (_, i) => i.ticket },
+  { label: "Customer Name", lookedUp: true, value: (_, i) => i.customer },
+  { label: "Job Type", lookedUp: true, value: (_, i) => i.jobType },
+  { label: "Item Name", lookedUp: true, value: (_, i) => i.itemName },
+  { label: "Movement Type", value: (t) => (t.direction === "OUT" ? "Outward" : "Inward") },
+  // Raw scanned spelling — never the fold.
+  { label: "Barcode", mono: true, value: (_, i) => i.barcode ?? i.serialNo },
+  { label: "Agent", value: (t) => t.driverName },
+  { label: "Transport", mono: true, value: (t) => t.vehicleNo },
+];
+
+/**
+ * The trip's items as a CSV a manager can open in Excel.
+ *
+ * Two details that are not decoration. A leading BOM, or Excel reads a Hindi
+ * customer name as mojibake. And any cell starting with = + - @ is prefixed
+ * with an apostrophe: a barcode comes from a sticker anyone can print, and a
+ * spreadsheet treats "=HYPERLINK(...)" in a cell as a formula to run.
+ */
+function downloadTripCsv(trip: Trip) {
+  const cell = (v: string | null | undefined) => {
+    let s = v ?? "";
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const header = [...REGISTER_COLUMNS.map((c) => c.label), "Entry", "Scanned At"];
+  const lines = trip.items.map((it) => [
+    ...REGISTER_COLUMNS.map((c) => c.value(trip, it)),
+    it.entryMethod,
+    new Date(it.scannedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+  ].map(cell).join(","));
+  const csv = "\uFEFF" + [header.map(cell).join(","), ...lines].join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  const day = new Date(trip.openedAt).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  a.href = url;
+  a.download = `gate-trip-${trip.vehicleNo.replace(/[^A-Za-z0-9-]/g, "")}-${day}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /**

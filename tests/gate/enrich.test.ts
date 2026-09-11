@@ -6,7 +6,7 @@
 // and the separation of derived columns from witnessed ones.
 
 import { describe, expect, it } from "vitest";
-import { unitFactsSql } from "../../lib/gate/enrich";
+import { unitFactsSql, unitTaskPipeline } from "../../lib/gate/enrich";
 
 const sql = unitFactsSql(["FUL5ZA24120009", "APC7VY19041490"]);
 
@@ -62,5 +62,44 @@ describe("what the query cannot be made to do", () => {
   it("deduplicates, so one truck of identical products is one lookup", () => {
     const s2 = unitFactsSql(["AAA111111", "AAA111111", " AAA111111 "]);
     expect(s2.match(/'AAA111111'/g)).toHaveLength(1);
+  });
+});
+
+describe("the DT task lookup (ticket, job type, customer)", () => {
+  const pipe = JSON.stringify(unitTaskPipeline(["FUL5ZA24120009", "FUL5ZA24120009", "'; DROP x"]));
+
+  it("asks only about plausible serials, once each", () => {
+    expect(pipe.match(/FUL5ZA24120009/g)).toHaveLength(1);
+    expect(pipe).not.toContain("DROP");
+    expect(unitTaskPipeline(["'; DROP x"])).toBeNull();
+  });
+
+  it("takes each unit's newest item record, then that record's task", () => {
+    expect(pipe.indexOf('"$sort":{"updatedAt":-1}')).toBeLessThan(pipe.indexOf('"$group"'));
+    expect(pipe).toContain('"$first":"$$ROOT"');
+    // The pickup comes after the delivery in a unit's life, so it wins.
+    expect(pipe).toContain('"$ifNull":["$it.pickup_deliveryId","$it.deliveryId"]');
+  });
+
+  it("cannot lose the batch to one malformed task id", () => {
+    // $toObjectId throws on a bad string and fails the whole aggregation.
+    expect(pipe).toContain('"onError":null');
+    expect(pipe).not.toContain("$toObjectId");
+  });
+});
+
+describe("where the looked-up details are allowed to go", () => {
+  it("the reconciliation's gate reader never selects them", async () => {
+    const { readFileSync } = await import("node:fs");
+    const guard = readFileSync("lib/connectors/guard.ts", "utf8");
+    for (const col of ["unit_product", "last_customer", "last_so", "task_ticket", "task_job_type", "task_customer", "task_so"]) {
+      expect(guard).not.toContain(col);
+    }
+  });
+
+  it("the guard's own history never selects them", async () => {
+    const { readFileSync } = await import("node:fs");
+    const hist = readFileSync("app/api/gate/history/route.ts", "utf8");
+    expect(hist).not.toMatch(/task_|unit_product|last_customer|select\(\s*"\*"/);
   });
 });

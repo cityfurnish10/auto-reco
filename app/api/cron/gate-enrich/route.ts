@@ -20,7 +20,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { jsonRoute } from "@/lib/api/json-route";
 import { DISABLED_BODY, cronAuthorized, scheduledJobsDisabled } from "@/lib/reconcile/cron-guard";
-import { fetchUnitFacts } from "@/lib/gate/enrich";
+import { enrichScans, isMissingColumn } from "@/lib/gate/enrich-run";
 import { metabaseConfigured } from "@/lib/connectors/metabase";
 
 export const runtime = "nodejs";
@@ -42,45 +42,32 @@ export const POST = jsonRoute("cron/gate-enrich", async (req: NextRequest) => {
   }
 
   const db = createAdminClient();
-  const { data, error } = await db
-    .from("gate_scans")
-    .select("id,barcode")
-    .is("enriched_at", null)
-    .eq("status", "recorded")
-    .not("barcode", "is", null)
-    .order("scanned_at", { ascending: false })
-    .limit(LIMIT);
-  if (error) throw new Error(`gate-enrich: reading scans failed: ${error.message}`);
 
-  const scans = (data ?? []) as { id: string; barcode: string }[];
-  if (scans.length === 0) return NextResponse.json({ ok: true, considered: 0 });
-
-  const facts = await fetchUnitFacts(scans.map((s) => s.barcode));
-
-  const now = new Date().toISOString();
-  let matched = 0;
-  for (const s of scans) {
-    const f = facts.get(s.barcode.trim());
-    // enriched_at is stamped either way. A serial Odoo has never heard of is an
-    // answer, and re-asking every run would spend the whole budget on the same
-    // unknown units forever.
-    const patch = f
-      ? {
-          unit_product: f.product, unit_sku: f.sku,
-          last_customer: f.lastCustomer, last_so: f.lastSo,
-          last_direction: f.lastDirection, last_moved_at: f.lastMovedAt,
-          enriched_at: now,
-        }
-      : { enriched_at: now };
-    const { error: upErr } = await db.from("gate_scans").update(patch).eq("id", s.id);
-    // One row failing must not abandon the rest; it is simply picked up next run.
-    if (!upErr && f) matched++;
+  // Two passes wanted: Odoo (enriched_at, 0037) and DT (task_checked_at, 0039).
+  // Asked for together, falling back to the Odoo pass alone if 0039 has not
+  // been applied — migrations go in by hand, and a missing column must cost the
+  // new lookup, not the one that already worked.
+  const base = () => db.from("gate_scans").select("id,barcode,enriched_at,task_checked_at")
+    .eq("status", "recorded").not("barcode", "is", null);
+  let dtReady = true;
+  let res = await base().or("enriched_at.is.null,task_checked_at.is.null")
+    .order("scanned_at", { ascending: false }).limit(LIMIT);
+  if (isMissingColumn(res.error)) {
+    dtReady = false;
+    res = await db.from("gate_scans").select("id,barcode,enriched_at")
+      .eq("status", "recorded").not("barcode", "is", null).is("enriched_at", null)
+      .order("scanned_at", { ascending: false }).limit(LIMIT) as typeof res;
   }
+  if (res.error) throw new Error(`gate-enrich: reading scans failed: ${res.error.message}`);
 
-  return NextResponse.json({
-    ok: true,
-    considered: scans.length,
-    matched,
-    unknownToOdoo: scans.length - matched,
-  });
+  const rows = (res.data ?? []) as { id: string; barcode: string; enriched_at: string | null; task_checked_at?: string | null }[];
+  if (rows.length === 0) return NextResponse.json({ ok: true, considered: 0, dtReady });
+
+  const outcome = await enrichScans(db, rows.map((r) => ({
+    id: r.id, barcode: r.barcode,
+    needsFacts: !r.enriched_at,
+    needsTask: dtReady && !r.task_checked_at,
+  })));
+
+  return NextResponse.json({ ok: outcome.failed.length === 0, dtReady, ...outcome });
 });
