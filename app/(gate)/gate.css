@@ -138,6 +138,14 @@
   border-bottom:1px solid var(--rule); font-size:15px; align-items:center; }
 .gkv:last-child { border-bottom:none; }
 .gtag { font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px; }
+
+/* A refused entry. What it was and the way to send it again share a row; the
+   reason goes underneath, because it is a sentence rather than a tag and three
+   things in one flex row wrapped "Spare part" down the middle of the word. */
+.grefused { padding:9px 0; border-bottom:1px solid var(--rule); }
+.grefused:last-child { border-bottom:none; }
+.grefused .gkv { padding:0 0 7px; border-bottom:none; }
+.grefused .gtag { display:inline-block; white-space:normal; line-height:1.5; }
 .gtag.ok { background:var(--okbg); color:var(--okfg); }
 .gtag.warn { background:var(--warnbg); color:var(--warnfg); }
 

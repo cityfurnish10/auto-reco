@@ -107,13 +107,11 @@ const ALLOWED: { file: string; snippet: string; why: string }[] = [
   },
   {
     file: "app/(gate)/scan/scan-app.tsx",
-    snippet: "{i.payload.barcode ?",
-    why: "LABEL, and correct: the raw QR payload of a row still waiting in the queue.",
-  },
-  {
-    file: "app/(gate)/scan/scan-app.tsx",
-    snippet: "r.payload.barcode ?? r.payload.serialNo",
-    why: "LABEL, and correct: the raw payload of a rejected row, shown so a guard can find it.",
+    snippet: "const id = (i.payload.barcode ?? i.payload.serialNo)",
+    why: "LABEL, and correct: queueLabel names a queued or refused row for the guard, "
+       + "and the raw QR payload is what they pointed the camera at. Replaces two "
+       + "separate reads — the waiting list and the refused list — which is also why "
+       + "a hand-entered spare part used to render as the bare word 'scan'.",
   },
   {
     file: "app/(gate)/scan/scan-app.tsx",

@@ -111,10 +111,21 @@ await ctx.route("**/api/gate/fleet", (route) => json(route, {
   source: "dt",
 }));
 
+// A REFUSAL THE SERVER CAN BE TOLD TO MAKE. Everything was stored here, so the
+// walkthrough never once saw what a guard sees when the server says no — and
+// for the whole life of the app the server said no to every manual item added
+// to an outward trip. Flipped from "refuse" to "accept" below, which is what
+// applying 0041 does in production.
+let refuseManual = false;
 await ctx.route("**/api/gate/sync", async (route) => {
   const body = route.request().postDataJSON() ?? {};
   posted.push(body);
-  const done = (arr, key) => (arr ?? []).map((x) => ({ clientId: x[key], status: "stored", id: "srv" }));
+  const done = (arr, key) => (arr ?? []).map((x) =>
+    (refuseManual && x.entryMethod === "manual")
+      ? { clientId: x[key], status: "rejected",
+          reason: 'new row for relation "gate_scans" violates check constraint '
+                + '"gate_scans_outward_scan_required"' }
+      : { clientId: x[key], status: "stored", id: "srv" });
   await json(route, {
     ok: true,
     trips: done(body.trips, "clientTripId"),
@@ -891,6 +902,109 @@ step("The app opens with no network (service worker)");
     else bad("the dashboard loaded offline — the service worker is caching it");
   } finally {
     await swCtx.close();
+  }
+}
+
+/* ── A refused item can be read, and sent again ───────────────────────── */
+//
+// THE BUG THIS PINS. Every manual entry on an outward trip was refused by the
+// database from the day the app shipped until 0041 — two on 11 Sep 2026 at
+// Delhi alone, both with photos, neither reaching the register while the trip
+// header counted them. The guard was told nothing on the screen they were
+// using, and Settings showed the Postgres sentence beside the bare word "scan",
+// because a spare part carries neither a barcode nor a serial to label it with.
+//
+// Three things have to hold, and none of them held before:
+//   1. a refused item says WHAT it was, in the guard's language;
+//   2. there is a way to send it again, because the refusal was the rule's
+//      fault and the item is still correct;
+//   3. sending it again actually reaches the server and clears the phone.
+step("A refused entry can be read and re-sent");
+{
+  const ID = "smoke-refused-1";
+  const inQueue = () => page.evaluate((id) => new Promise((res) => {
+    const rq = indexedDB.open("gate-outbox");
+    rq.onsuccess = () => {
+      const r = rq.result.transaction("items", "readonly").objectStore("items").get(id);
+      r.onsuccess = () => res(r.result ? { rejected: r.result.rejected ?? null } : null);
+      r.onerror = () => res(null);
+    };
+    rq.onerror = () => res(null);
+  }), ID);
+
+  refuseManual = true;
+  await page.evaluate((id) => new Promise((res) => {
+    const rq = indexedDB.open("gate-outbox");
+    rq.onsuccess = () => {
+      const tx = rq.result.transaction("items", "readwrite");
+      // A spare part leaving by hand: no barcode, no serial, a photo taken.
+      // Exactly the shape of the two items refused at Delhi.
+      tx.objectStore("items").put({
+        clientId: id, kind: "scan", createdAt: Date.now(), attempts: 0,
+        payload: { clientScanId: id, clientTripId: "smoke-trip", barcode: null,
+                   serialNo: null, entryMethod: "manual", itemKind: "spare_part",
+                   quantity: 2, hasPhoto: true, scannedAt: new Date().toISOString() },
+      });
+      tx.oncomplete = () => res(null);
+      tx.onerror = () => res(null);
+    };
+    rq.onerror = () => res(null);
+  }), ID);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(5000);
+
+  const afterRefusal = await inQueue();
+  if (afterRefusal?.rejected) ok("a refused item is kept on the phone, marked");
+  else bad("a refused item was not kept and marked — the movement is gone");
+
+  // Into Settings, where a guard is told to look.
+  const gear = page.getByRole("button", { name: "Settings", exact: true }).first();
+  if (!(await gear.count())) {
+    bad("no Settings button — cannot reach the refused list");
+  } else {
+    await gear.click();
+    await page.waitForTimeout(1200);
+
+    // Settings counts them; the list itself is one tap further in. That door is
+    // the only way to a refused item on the phone, so a walkthrough that stops
+    // at the count proves nothing about what the guard actually reads.
+    const door = page.getByRole("button", { name: /Needs attention/i }).first();
+    if (!(await door.count())) {
+      bad("Settings does not offer a way into the refused items");
+    } else {
+      await door.click();
+      await page.waitForTimeout(1200);
+    }
+
+    if (await seen("Spare part")) ok("the refused item says what it is, not the word 'scan'");
+    else bad("the refused item is unlabelled — a guard cannot tell their manager which one it was");
+
+    // The reason must be a sentence, not the constraint that produced it.
+    const body = await page.locator("body").innerText().catch(() => "");
+    if (/violates check constraint/i.test(body)) {
+      bad("the guard is shown the raw Postgres error");
+    } else ok("the guard is not shown raw database text");
+
+    const retry = page.getByRole("button", { name: /Try again/i }).first();
+    if (!(await retry.count())) {
+      bad("no way to send a refused item again — it can only be re-entered by hand");
+    } else {
+      // 0041 applied: the server now accepts what it used to refuse.
+      refuseManual = false;
+      const before = posted.length;
+      await retry.click();
+      await page.waitForTimeout(3000);
+
+      const resent = posted.slice(before).some((b) =>
+        (b.scans ?? []).some((x) => x.clientScanId === ID));
+      if (resent) ok("Try again puts the item back on the wire");
+      else bad("Try again did not re-send the item");
+
+      const after = await inQueue();
+      if (after === null) ok("once the server takes it, it leaves the phone");
+      else bad(`the item is still queued after being accepted (rejected=${after.rejected})`);
+    }
   }
 }
 

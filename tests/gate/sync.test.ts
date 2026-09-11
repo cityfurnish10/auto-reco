@@ -4,8 +4,8 @@
 // building and is indistinguishable from a real second dispatch afterwards.
 
 import { describe, expect, it } from "vitest";
-import { applyBatch, type InCompleteness, type InScan, type InTrip,
-         type InVoid } from "../../lib/gate/sync";
+import { applyBatch, readableDbError, type InCompleteness, type InScan,
+         type InTrip, type InVoid } from "../../lib/gate/sync";
 import type { GateIdentity } from "../../lib/gate/auth";
 
 const WHO: GateIdentity = {
@@ -23,9 +23,51 @@ const scan = (o: Partial<InScan> = {}): InScan => ({
 });
 
 /**
+ * The CHECK constraints on gate_scans, as Postgres would apply them.
+ *
+ * ADDED AFTER THEY COST US EVERY MANUAL OUTWARD ENTRY. The stub enforced the
+ * two unique constraints and nothing else, so a row the real database would
+ * refuse was stored here without complaint. For the whole life of the gate app
+ * a guard adding a spare part to an outward trip had it silently dropped —
+ * 833 tests green, two refusals a day in production — because the rule that
+ * refused it lived only in 0023 and no test could see it.
+ *
+ * Returning 23514 with the constraint name matters as much as the refusal: the
+ * name is what readableDbError turns into a sentence a guard can act on, so a
+ * generic "rejected" here would pass a test that proves nothing.
+ *
+ * Kept in step with supabase/migrations by hand, which is the same deal the
+ * migrations themselves are on. A rule that is not here is a rule that can
+ * break production while this file is green.
+ */
+const COUNTED = ["spare_part", "consumable", "pp_box", "sample"];
+const CHECKS: [string, (r: Record<string, unknown>) => boolean][] = [
+  // 0023, narrowed by 0041: outward must be scanned, unless it is a kind that
+  // never had a sticker, or it states why it left by hand.
+  ["gate_scans_outward_scan_required", (r) =>
+    r.direction !== "OUT"
+    || r.entry_method === "scan"
+    || COUNTED.includes(r.item_kind as string)
+    || (r.exception_reason != null && r.photo_path != null)],
+  ["gate_scans_manual_needs_photo", (r) =>
+    r.entry_method !== "manual" || r.photo_path != null],
+  ["gate_scans_override_needs_proof", (r) =>
+    r.override_reason == null || r.photo_path != null],
+];
+
+const checkViolation = (row: Record<string, unknown>) => {
+  const hit = CHECKS.find(([, ok]) => !ok(row));
+  return hit
+    ? { error: { code: "23514", message:
+        `new row for relation "gate_scans" violates check constraint "${hit[0]}"` },
+        data: null }
+    : null;
+};
+
+/**
  * Stub Postgres. Enforces the two unique constraints that carry the design —
  * client ids, and one barcode per trip — because those are precisely what the
- * replay behaviour depends on.
+ * replay behaviour depends on, plus the CHECK constraints above.
  */
 function stubDb(opts: { existingTrips?: Record<string, string> } = {}) {
   const tripsByClient = new Map<string, string>(Object.entries(opts.existingTrips ?? {}));
@@ -120,6 +162,8 @@ function stubDb(opts: { existingTrips?: Record<string, string> } = {}) {
                 const bcKey = `${row.trip_id}|${row.barcode}`;
                 if (scanIds.has(cid)) return dup;
                 if (row.barcode && perTripBarcodes.has(bcKey)) return dup;
+                const bad = checkViolation(row);
+                if (bad) return bad;
                 scanIds.add(cid);
                 if (row.barcode) perTripBarcodes.add(bcKey);
                 scanRows.push(row);
@@ -268,6 +312,64 @@ describe("applyBatch — the control rules", () => {
     expect(r.scans[0].status).toBe("stored");
     expect(scanRows[0].quantity).toBe(12);
     expect(scanRows[0].barcode).toBeNull();
+  });
+
+  // ── The outward manual entries that never existed ──────────────────────
+  //
+  // Reported 11 Sep 2026: items added by hand to an outward trip do not appear
+  // in the register. Measured: two refused that day at Delhi (12:45 spare part,
+  // 12:59 consumable, both with photos), one manual entry stored in the whole
+  // of history, and it inward. The database demanded exception_reason on any
+  // outward non-scan; nothing in the app has ever set it.
+  //
+  // The suite already CLAIMED this worked — "lets a counted item through with
+  // NO identifier at all" runs a consumable through an outward trip and expects
+  // it stored. It passed while production refused the same row, because the
+  // stub knew about unique constraints and not CHECK ones. That gap is closed
+  // above; these pin the behaviour itself.
+
+  for (const kind of ["spare_part", "consumable", "pp_box", "sample"] as const) {
+    it(`stores a ${kind} added by hand to an outward trip`, async () => {
+      const { db, scanRows } = stubDb();
+      const r = await applyBatch(db, WHO, {
+        trips: [trip({ direction: "OUT" })],
+        scans: [scan({ barcode: null, entryMethod: "manual", itemKind: kind,
+                       hasPhoto: true })],
+      });
+      expect(r.scans[0].status).toBe("stored");
+      // No reason invented on its way in. The row is honest about being a
+      // hand-entered count with a photograph behind it, which is all it is.
+      expect(scanRows[0].exception_reason).toBeNull();
+      expect(scanRows[0].photo_path).toBeTruthy();
+    });
+  }
+
+  it("still refuses an identified item leaving by hand with no reason", async () => {
+    // What 0023 was actually written about: a unit whose sticker was destroyed.
+    // The escape hatch stays expensive.
+    const { db, scanRows } = stubDb();
+    const r = await applyBatch(db, WHO, {
+      trips: [trip({ direction: "OUT" })],
+      scans: [scan({ barcode: "FUL5ZA24120009", entryMethod: "manual",
+                     itemKind: "unit", hasPhoto: true })],
+    });
+    expect(r.scans[0].status).toBe("rejected");
+    // Refused in words, BEFORE the database — so the guard reads a sentence
+    // rather than the constraint that produced it.
+    expect(r.scans[0]).toMatchObject({ reason: expect.stringMatching(/stated reason/i) });
+    expect(scanRows).toHaveLength(0);
+  });
+
+  it("lets an identified item leave by hand when it says why", async () => {
+    const { db, scanRows } = stubDb();
+    const r = await applyBatch(db, WHO, {
+      trips: [trip({ direction: "OUT" })],
+      scans: [scan({ barcode: "FUL5ZA24120009", entryMethod: "manual",
+                     itemKind: "unit", hasPhoto: true,
+                     exceptionReason: "sticker torn off in the van" })],
+    });
+    expect(r.scans[0].status).toBe("stored");
+    expect(scanRows[0].exception_reason).toBe("sticker torn off in the van");
   });
 
   it("will not let vendor goods leave", async () => {
@@ -549,5 +651,32 @@ describe("applyBatch — a trip with no agent still records", () => {
     const { db, tripRows } = stubDb();
     await applyBatch(db, WHO, { trips: [trip({ driverName: "  Sudhir Kumar " })] });
     expect([...tripRows.values()][0].driver_name).toBe("Sudhir Kumar");
+  });
+});
+
+// A refusal is read by a guard in Settings and by whoever opens the Reviews
+// tab. Neither can act on `new row for relation "gate_scans" violates check
+// constraint "gate_scans_outward_scan_required"`, which is what both were shown
+// for every manual outward entry the app produced.
+describe("saying why the database refused a row", () => {
+  it("turns a constraint into a sentence, keeping the name for an engineer", () => {
+    const said = readableDbError(
+      'new row for relation "gate_scans" violates check constraint "gate_scans_manual_needs_photo"'
+    );
+    expect(said).toBe("an item added by hand needs a photo (gate_scans_manual_needs_photo)");
+  });
+
+  it("leaves an unfamiliar refusal exactly as Postgres said it", () => {
+    // A refusal nobody predicted is when the database's own words are worth
+    // more than a tidy guess.
+    const raw = 'null value in column "city" violates not-null constraint';
+    expect(readableDbError(raw)).toBe(raw);
+  });
+
+  it("matches on the constraint name, not the sentence around it", () => {
+    // A Postgres upgrade rewording its message must not drop us back to
+    // showing that message.
+    expect(readableDbError('... constraint "gate_trips_agent_named" ...'))
+      .toMatch(/delivery agent/);
   });
 });

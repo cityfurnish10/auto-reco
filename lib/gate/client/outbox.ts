@@ -159,6 +159,32 @@ export async function markRejected(clientId: string, reason: string) {
   await tx(ITEMS, "readwrite", (s) => s.put({ ...cur, rejected: reason, attempts: cur.attempts + 1 }));
 }
 
+/**
+ * Put a refused entry back in the queue.
+ *
+ * A refusal is not always about the entry. Every manual item added to an
+ * outward trip was refused between the gate app shipping and 0041, because the
+ * database demanded a reason the app had no way to send — the entries were
+ * correct, the rule was unsatisfiable, and the items are still here. Once the
+ * server would accept them, the honest move is to send them again rather than
+ * ask a guard to remember what crossed the gate hours ago.
+ *
+ * Clearing the flag is all it takes: `pending()` hides a rejected entry from
+ * the drain and nothing else does. The payload, its photo and its client id are
+ * untouched, so it lands in the trip it always belonged to — the server accepts
+ * a scan for a closed trip on purpose, because an offline phone sends the close
+ * before the scans that preceded it.
+ *
+ * `attempts` is deliberately not reset. How many times a row has been refused
+ * is the history, and a retry is another attempt, not a fresh start.
+ */
+export async function retry(clientId: string) {
+  const cur = await tx<OutboxItem | undefined>(ITEMS, "readonly", (s) => s.get(clientId));
+  if (!cur?.rejected) return;
+  const { rejected: _was, ...rest } = cur;
+  await tx(ITEMS, "readwrite", (s) => s.put(rest));
+}
+
 export async function bumpAttempts(ids: string[]) {
   for (const id of ids) {
     const cur = await tx<OutboxItem | undefined>(ITEMS, "readonly", (s) => s.get(id));

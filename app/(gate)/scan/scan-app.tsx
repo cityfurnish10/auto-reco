@@ -1185,9 +1185,7 @@ export default function GateApp() {
                 <h3 className="ghead">{t("stillToSend")}</h3>
                 {pendingItems.map((i) => (
                   <div key={i.clientId} className="gkv">
-                    <span>{t(KIND_LABEL[i.kind])}
-                      {i.payload.barcode ? <span className="mono"> · {String(i.payload.barcode)}</span> : null}
-                    </span>
+                    <span>{queueLabel(i, t)}</span>
                     <span className="gsub">{when(i.createdAt)}</span>
                   </div>
                 ))}
@@ -1200,10 +1198,24 @@ export default function GateApp() {
                   <h3><Icon name="warning" size={17} /> {t("someRefused")}</h3>
                   <p>{t("someRefusedWhy")}</p>
                 </div>
+                {/* TRY AGAIN, because a refusal is not always about the entry.
+                    Every manual item added to an outward trip was refused until
+                    0041 — the entries were right and the rule was impossible to
+                    satisfy. Those items are still on the phone with their
+                    photos, and re-sending one puts it back in the trip it
+                    belongs to, which is better than asking a guard to remember
+                    what crossed the gate this morning. */}
                 {rejected.map((r) => (
-                  <div key={r.clientId} className="gkv">
-                    <span className="mono">{String((r.payload.barcode ?? r.payload.serialNo ?? r.kind) as string)}</span>
-                    <span className="gtag warn">{r.rejected}</span>
+                  <div key={r.clientId} className="grefused">
+                    <div className="gkv">
+                      <span>{queueLabel(r, t)}</span>
+                      <button className="gbtn sm ghost" onClick={async () => {
+                        await outbox.retry(r.clientId);
+                        await refreshQueue();
+                        void sync();
+                      }}>{t("tryAgain")}</button>
+                    </div>
+                    <span className="gtag warn">{refusalText(r.rejected, t)}</span>
                   </div>
                 ))}
               </>
@@ -1996,6 +2008,55 @@ export default function GateApp() {
 }
 
 /* ── small pieces ────────────────────────────────────────────────────── */
+
+/**
+ * What a queued row IS, said the way the guard entered it.
+ *
+ * The refused list fell back through barcode, then serial, then the queue kind,
+ * and the four kinds that can be added by hand on an outward trip carry neither
+ * a barcode nor a serial — so every one of them rendered as the bare word
+ * "scan", beside a Postgres sentence. A guard being asked to show their manager
+ * a refusal could not tell which item it was.
+ *
+ * A barcode is still the best label when there is one: it is what the guard
+ * pointed the camera at, and it is what a manager will search for.
+ */
+const ITEM_LABEL: Record<string, string> = Object.fromEntries(
+  [...CATS.IN, ...CATS.OUT].map(([id, key]) => [id, key])
+);
+
+/**
+ * What to show a guard about a refusal.
+ *
+ * The server says why in words (readableDbError), and that is the sentence a
+ * guard should read. But it passes an unfamiliar refusal through as Postgres
+ * wrote it — right for the Reviews tab, where an engineer is looking, and wrong
+ * on a phone at a gate: "new row for relation gate_scans violates check
+ * constraint" is not actionable, not translated, and is exactly what a guard
+ * was shown for every manual outward entry until 0041.
+ *
+ * So the phone has the last word. Nothing is lost by hiding it here — the same
+ * refusal is written to gate_sync_rejections with its full text, which is where
+ * the manager this message points to will actually read it.
+ */
+const DB_SPEAK = /violates|constraint|relation "|null value in column/i;
+
+function refusalText(reason: string | undefined, t: (k: string) => string): string {
+  if (!reason) return t("refusedUnclear");
+  return DB_SPEAK.test(reason) ? t("refusedUnclear") : reason;
+}
+
+function queueLabel(i: outbox.OutboxItem, t: (k: string) => string): string {
+  const id = (i.payload.barcode ?? i.payload.serialNo) as string | null;
+  if (id) return id;
+  const kind = i.payload.itemKind as string | undefined;
+  if (kind && ITEM_LABEL[kind]) {
+    const qty = Number(i.payload.quantity ?? 1);
+    return qty > 1 ? `${t(ITEM_LABEL[kind])} × ${qty}` : t(ITEM_LABEL[kind]);
+  }
+  return t(KIND_LABEL[i.kind]);
+}
+
 const KIND_LABEL: Record<outbox.Kind, string> = {
   trip: "kindTrip", scan: "kindScan", shift: "kindShift", face: "kindFace",
   void: "removed",

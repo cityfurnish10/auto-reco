@@ -146,6 +146,40 @@ const bad = (clientId: string, reason: string): ItemOutcome =>
   ({ clientId, status: "rejected", reason });
 
 /**
+ * Say why the database refused a row, in words.
+ *
+ * A refusal is read in two places by two people who cannot act on Postgres: the
+ * guard, in Settings on the phone, and whoever opens the Reviews tab. Both were
+ * being shown `new row for relation "gate_scans" violates check constraint
+ * "gate_scans_outward_scan_required"` — which is precise, unactionable, and for
+ * a guard reading the app in Hindi or Telugu, not even in their language.
+ *
+ * Mapped by CONSTRAINT NAME rather than by parsing the sentence around it:
+ * the name is the stable part, and a Postgres upgrade that rewords the message
+ * must not silently drop us back to showing it.
+ *
+ * The raw text is kept on anything unrecognised. A refusal nobody predicted is
+ * exactly when the database's own words are worth more than a tidy guess.
+ */
+const CONSTRAINT_REASONS: Record<string, string> = {
+  gate_scans_outward_scan_required:
+    "an identified item leaving by hand needs a stated reason and a photo",
+  gate_scans_manual_needs_photo: "an item added by hand needs a photo",
+  gate_scans_override_needs_proof: "an override needs a reason and a photo",
+  gate_scans_identifier_present:
+    "this item needs a barcode, serial, order or ticket to identify it",
+  gate_trips_agent_named: "a trip needs the delivery agent's name",
+};
+
+export function readableDbError(message: string): string {
+  const m = message.match(/constraint "([^"]+)"/);
+  const known = m ? CONSTRAINT_REASONS[m[1]] : undefined;
+  // The constraint name travels with the sentence so an engineer reading the
+  // Reviews tab still knows exactly which rule fired.
+  return known && m ? `${known} (${m[1]})` : message;
+}
+
+/**
  * Write a refusal down where somebody other than the guard can read it.
  *
  * Every rejection already travels back to the phone, which marks it and keeps
@@ -373,7 +407,7 @@ export async function applyBatch(
         }
         report.trips.push({ clientId: t.clientTripId, status: "duplicate" });
       } else {
-        report.trips.push(bad(t.clientTripId, ins.error.message));
+        report.trips.push(bad(t.clientTripId, readableDbError(ins.error.message)));
       }
       continue;
     }
@@ -432,6 +466,20 @@ export async function applyBatch(
     // row proves anything, so the photo is not optional.
     if ((sc.entryMethod === "manual" || sc.overrideReason) && !sc.hasPhoto) {
       report.scans.push(bad(sc.clientScanId, "a photo is required for manual entries and overrides")); continue;
+    }
+    // Mirrors gate_scans_outward_scan_required (0023, narrowed by 0041). The
+    // constraint is the control and stays the control — a phone ships in
+    // versions and an old build lingers for weeks. This exists so a refusal
+    // arrives as a sentence a guard can act on instead of the Postgres one,
+    // which is what both the phone and the Reviews tab showed for every manual
+    // outward entry the app has ever produced.
+    //
+    // A counted kind has no sticker to scan, so the rule does not reach it;
+    // its photo is demanded above.
+    if (direction === "OUT" && sc.entryMethod !== "scan" && !counted
+        && !sc.exceptionReason?.trim()) {
+      report.scans.push(bad(sc.clientScanId,
+        "an identified item leaving by hand needs a stated reason")); continue;
     }
     if (!counted && !sc.barcode?.trim() &&
         !(direction === "IN" && (sc.serialNo || sc.soNumber || sc.ticketId))) {
@@ -508,7 +556,7 @@ export async function applyBatch(
         // a queue that never drains.
         report.scans.push({ clientId: sc.clientScanId, status: "duplicate" });
       } else {
-        report.scans.push(bad(sc.clientScanId, ins.error.message));
+        report.scans.push(bad(sc.clientScanId, readableDbError(ins.error.message)));
       }
       continue;
     }
