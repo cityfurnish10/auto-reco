@@ -11,8 +11,10 @@
 --
 -- The code now matches a task to the scan by date (lib/gate/enrich.ts,
 -- taskForScan). This migration:
---   1. adds task_date, so a manager — and the next person debugging this — can
---      see which day the attached task was for, and
+--   1. adds task_date and task_matched. With no task near the scan date the
+--      unit's latest task is still shown (business decision, 11 Sep 2026) —
+--      but flagged task_matched = false and labelled "last known · <date>" on
+--      screen and in the download, so it is never mistaken for this movement;
 --   2. clears every task lookup made under the old rule, so those rows are
 --      asked again under the new one. Only the derived task_* columns are
 --      touched; nothing the guard recorded, nothing the reconciliation reads.
@@ -21,12 +23,15 @@
 -- every row the old rule wrote and none the new rule writes with a match.
 
 ALTER TABLE gate_scans
-  ADD COLUMN IF NOT EXISTS task_date DATE;
+  ADD COLUMN IF NOT EXISTS task_date    DATE,
+  -- true  = the task IS this movement (scheduled within a few days of the scan)
+  -- false = no such task; the unit's LATEST task is shown, labelled last known
+  -- null  = nothing attached
+  ADD COLUMN IF NOT EXISTS task_matched BOOLEAN;
 
 COMMENT ON COLUMN gate_scans.task_date IS
-  'IST date the matched DT task was scheduled for. Set only when a task within '
-  'a few days of the scan was found; null with task_checked_at set means DT had '
-  'no task for this movement.';
+  'IST date the attached DT task was scheduled for — this movement''s task when '
+  'task_matched, otherwise the unit''s latest task.';
 
 UPDATE gate_scans
    SET task_ticket = NULL, task_job_type = NULL, task_customer = NULL,

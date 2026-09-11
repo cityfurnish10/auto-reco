@@ -52,7 +52,8 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
     if (direction) q = q.eq("direction", direction);
     return q;
   };
-  let scans = scansQuery(SCAN_COLS + TASK_COLS);
+  const MATCH_COLS = ",task_date,task_matched";
+  let scans = scansQuery(SCAN_COLS + TASK_COLS + MATCH_COLS);
 
   if (city) trips = trips.eq("city", city);
   if (guardId) trips = trips.eq("guard_id", guardId);
@@ -73,6 +74,7 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
   let [tr, sc, rm] = await Promise.all([trips, scans, removed]);
   // 0039 applied by hand, possibly not yet: without its columns, show what 0037
   // gave rather than failing the whole Activity page over a lookup.
+  if (sc.error?.code === "42703") { scans = scansQuery(SCAN_COLS + TASK_COLS); sc = await scans; }
   if (sc.error?.code === "42703") { scans = scansQuery(SCAN_COLS + ",enriched_at"); sc = await scans; }
   if (sc.error?.code === "42703") { scans = scansQuery(SCAN_COLS); sc = await scans; }
   if (tr.error) return NextResponse.json({ error: tr.error.message }, { status: 500 });
@@ -165,6 +167,11 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
           // is the exception — what a unit IS does not go out of date.
           itemName: (r.product as string) ?? (r.unit_product as string) ?? null,
           soDisplay: (r.so_number as string) ?? (r.task_so as string) ?? null,
+          // Whether the task details are THIS movement's or the unit's last
+          // known ones (no task near the scan date). Rows written before 0040
+          // carry no flag and are treated as unlabelled — they are reset by it.
+          taskDate: (r.task_date as string) ?? null,
+          lastKnown: r.task_matched === false,
           ticket: (r.ticket_id as string) ?? (r.task_ticket as string) ?? null,
           customer: (r.customer as string) ?? (r.task_customer as string) ?? null,
           jobType: (r.task_job_type as string) ?? null,

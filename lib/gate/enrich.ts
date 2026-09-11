@@ -154,13 +154,14 @@ export async function fetchUnitFacts(serials: string[]): Promise<Map<string, Uni
 // scanned inward at Delhi on 11 Sep 2026 and the screen said "Pickup and
 // Refund, CHARUVI AGARWAL, ticket 1099165" — a pickup from 8 March, two
 // movements ago (the unit left Gurgaon on an internal transfer on 22 March,
-// which has no DT task at all). Six-month-old context in a row labelled with
-// today's trip reads as a fact about today, and is worse than a blank.
+// which has no DT task at all). Unlabelled, six-month-old context in a row for
+// today's trip reads as a fact about today.
 //
-// So a task is attached only when it plausibly IS this movement: scheduled
-// within TASK_WINDOW of the scan, preferring the kind that matches the gate
-// direction (a delivery goes OUT, a pickup comes IN), then the nearest date.
-// No such task → the columns stay empty, which is the truth.
+// So a task counts as THIS movement only when it is scheduled within
+// TASK_WINDOW of the scan, preferring the kind that matches the gate direction
+// (a delivery goes OUT, a pickup comes IN), then the nearest date. With no such
+// task the unit's latest one is shown instead, labelled as last known with its
+// date — see chooseTask.
 //
 // Still closer to the plan than the Odoo half, and still acceptable only
 // because of where the answer goes — gate_scans.task_*, which a manager reads
@@ -298,4 +299,29 @@ export function taskWindowClosed(scannedAt: string, now: Date = new Date()): boo
   const today = utcToIstDate(now);
   if (!scanDay || !today) return true;
   return dayDiff(today, scanDay) > TASK_WINDOW.daysAfterScan + 1;
+}
+
+/** The unit's newest task by scheduled date, whatever its age. */
+export function latestTask(tasks: UnitTask[]): UnitTask | null {
+  return [...tasks].filter((t) => t.date).sort((a, b) => b.date!.localeCompare(a.date!))[0] ?? null;
+}
+
+/**
+ * What to attach to a scan, and whether that answer is final.
+ *
+ * A task matching this movement wins. Without one, the unit's LATEST task is
+ * shown instead — a business decision (11 Sep 2026): a manager chasing a unit
+ * is better served by "last seen with this customer on this ticket" than by a
+ * blank. It is recorded as matched = false with its own date, and the screen
+ * says "last known · <date>", because an unlabelled March pickup in a row for
+ * a September trip is exactly what was reported as wrong.
+ *
+ * Final only once matched, or once the window has closed: until then a task
+ * for this movement may still be entered, and would replace the last-known one.
+ */
+export function chooseTask(tasks: UnitTask[], scannedAt: string, direction: string | null, now: Date = new Date()):
+  { task: UnitTask | null; matched: boolean; final: boolean } {
+  const match = taskForScan(tasks, scannedAt, direction);
+  if (match) return { task: match, matched: true, final: true };
+  return { task: latestTask(tasks), matched: false, final: taskWindowClosed(scannedAt, now) };
 }

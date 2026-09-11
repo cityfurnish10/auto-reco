@@ -7,7 +7,7 @@
 // everything nobody opened.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchUnitFacts, fetchUnitTasks, taskForScan, taskWindowClosed } from "./enrich";
+import { chooseTask, fetchUnitFacts, fetchUnitTasks } from "./enrich";
 
 export interface ScanToEnrich {
   id: string;
@@ -73,28 +73,32 @@ export async function enrichScans(db: SupabaseClient, scans: ScanToEnrich[]): Pr
       patch.enriched_at = now;
     }
     if (s.needsTask && tasks) {
-      const t = taskForScan(tasks.get(key) ?? [], s.scannedAt, s.direction);
+      const { task: t, matched, final } = chooseTask(tasks.get(key) ?? [], s.scannedAt, s.direction);
       if (t) {
         Object.assign(patch, {
           task_ticket: t.ticket, task_job_type: t.jobType, task_customer: t.customer,
-          task_so: t.so, task_city: t.city, task_date: t.date,
+          task_so: t.so, task_city: t.city, task_date: t.date, task_matched: matched,
         });
-        out.dtMatched++;
-        patch.task_checked_at = now;
-      } else if (taskWindowClosed(s.scannedAt)) {
-        // Only now is "DT has no task for this movement" an answer. Before it,
-        // the task may simply not have been entered yet.
-        patch.task_checked_at = now;
+        if (matched) out.dtMatched++;
       }
+      // Not final while a task for this movement could still be entered: the
+      // row stays unstamped, is asked again, and a match replaces last-known.
+      if (final) patch.task_checked_at = now;
     }
     if (Object.keys(patch).length === 0) continue;
     // One row failing must not abandon the rest; it is picked up next run.
     const up = await db.from("gate_scans").update(patch).eq("id", s.id);
-    // task_date arrives with 0040, applied by hand. Until then, write the rest
-    // rather than losing the whole row's answer over one column.
+    // task_date / task_matched arrive with 0040, applied by hand. Until then,
+    // write the rest rather than losing the whole row's answer.
     if (isMissingColumn(up.error) && "task_date" in patch) {
+      // Without 0040 there is no way to label a last-known task as such, and an
+      // unlabelled one is the reported bug. Keep only a genuine match.
       delete patch.task_date;
-      await db.from("gate_scans").update(patch).eq("id", s.id);
+      if (patch.task_matched === false) {
+        for (const k of ["task_ticket", "task_job_type", "task_customer", "task_so", "task_city"]) delete patch[k];
+      }
+      delete patch.task_matched;
+      if (Object.keys(patch).length) await db.from("gate_scans").update(patch).eq("id", s.id);
     }
   }
   return out;

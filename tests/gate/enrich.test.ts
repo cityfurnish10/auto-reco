@@ -6,7 +6,7 @@
 // and the separation of derived columns from witnessed ones.
 
 import { describe, expect, it } from "vitest";
-import { taskForScan, taskWindowClosed, unitFactsSql, unitTaskPipeline, type UnitTask } from "../../lib/gate/enrich";
+import { chooseTask, latestTask, taskForScan, taskWindowClosed, unitFactsSql, unitTaskPipeline, type UnitTask } from "../../lib/gate/enrich";
 
 const sql = unitFactsSql(["FUL5ZA24120009", "APC7VY19041490"]);
 
@@ -134,6 +134,36 @@ describe("matching a DT task to the scan it explains", () => {
     const scan = "2026-09-11T09:50:30Z";
     expect(taskWindowClosed(scan, new Date("2026-09-12T10:00:00Z"))).toBe(false);
     expect(taskWindowClosed(scan, new Date("2026-09-14T10:00:00Z"))).toBe(true);
+  });
+});
+
+describe("with no task for this movement, the latest one — labelled", () => {
+  const task = (kind: "pickup" | "delivery", date: string, ticket: string): UnitTask => ({
+    serial: "S", kind, date, ticket, jobType: null, customer: null, so: null, city: null,
+  });
+  const history = [task("delivery", "2025-09-07", "938667"), task("pickup", "2026-03-08", "1099165")];
+  const scan = "2026-09-11T09:50:30.622Z"; // the reported Delhi inward scan
+
+  it("shows the reported unit's latest task, marked as NOT this movement", () => {
+    const c = chooseTask(history, scan, "IN", new Date("2026-09-11T11:00:00Z"));
+    expect(c.task?.ticket).toBe("1099165");
+    expect(c.matched).toBe(false);
+  });
+
+  it("keeps asking while a real match could still appear, so it can replace last-known", () => {
+    expect(chooseTask(history, scan, "IN", new Date("2026-09-11T11:00:00Z")).final).toBe(false);
+    expect(chooseTask(history, scan, "IN", new Date("2026-09-15T11:00:00Z")).final).toBe(true);
+    const later = [...history, task("pickup", "2026-09-10", "NEW")];
+    expect(chooseTask(later, scan, "IN")).toMatchObject({ matched: true, final: true, task: { ticket: "NEW" } });
+  });
+
+  it("latest means by task date, not the order DT returned them", () => {
+    expect(latestTask(history)?.ticket).toBe("1099165");
+    expect(latestTask([])).toBeNull();
+  });
+
+  it("a unit DT has never seen still gets nothing", () => {
+    expect(chooseTask([], scan, "IN").task).toBeNull();
   });
 });
 

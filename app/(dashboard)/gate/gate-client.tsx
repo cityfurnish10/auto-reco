@@ -88,6 +88,10 @@ interface TripItem {
    *  up by barcode from Odoo and DT after the scan — see migration 0039. */
   itemName: string | null; soDisplay: string | null; ticket: string | null;
   customer: string | null; jobType: string | null;
+  /** True when no DT task sits near the scan date and the unit's latest one is
+   *  shown instead — labelled on screen and in the file, never passed off as
+   *  this movement's. */
+  lastKnown: boolean; taskDate: string | null;
   /** A lookup is still owed; a dash here would read as "nothing to find". */
   lookupPending: boolean;
 }
@@ -445,6 +449,12 @@ function TripModal({ trip, onClose, onLookedUp }: {
                       <td key={c.label}
                           className={`px-3 py-2 whitespace-nowrap ${c.mono ? "font-mono" : ""} ${v ? "" : "text-text-muted"}`}>
                         {v ?? (c.lookedUp && it.lookupPending && lookup === "running" ? "…" : "—")}
+                        {c.label === "Ticket ID" && v && it.lastKnown && (
+                          <span className="badge badge-medium ml-2 font-sans"
+                                title="No DT task within a few days of this scan. Showing the unit's most recent task instead.">
+                            last known{it.taskDate ? ` · ${shortDate(it.taskDate)}` : ""}
+                          </span>
+                        )}
                       </td>
                     );
                   })}
@@ -515,15 +525,25 @@ const REGISTER_COLUMNS: {
  * with an apostrophe: a barcode comes from a sticker anyone can print, and a
  * spreadsheet treats "=HYPERLINK(...)" in a cell as a formula to run.
  */
+/** "2026-03-08" → "8 Mar 2026". Parsed as a plain date: no timezone shift. */
+const shortDate = (d: string) => {
+  const [y, m, day] = d.slice(0, 10).split("-").map(Number);
+  return `${day} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m - 1]} ${y}`;
+};
+
 function downloadTripCsv(trip: Trip) {
   const cell = (v: string | null | undefined) => {
     let s = v ?? "";
     if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const header = [...REGISTER_COLUMNS.map((c) => c.label), "Entry", "Scanned At"];
+  // "Details From" travels with the file: a spreadsheet row loses the badge,
+  // and a March ticket in a September export must still say it is last known.
+  const header = [...REGISTER_COLUMNS.map((c) => c.label), "Details From", "Entry", "Scanned At"];
   const lines = trip.items.map((it) => [
     ...REGISTER_COLUMNS.map((c) => c.value(trip, it)),
+    !it.ticket && !it.jobType && !it.customer ? ""
+      : it.lastKnown ? `Last known task${it.taskDate ? ` (${shortDate(it.taskDate)})` : ""}` : "This movement",
     it.entryMethod,
     new Date(it.scannedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
   ].map(cell).join(","));
