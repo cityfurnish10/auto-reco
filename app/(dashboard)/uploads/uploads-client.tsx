@@ -295,7 +295,16 @@ function RealUploadsClient({ user }: { user: SessionUser }) {
               type="file"
               accept="application/pdf"
               className="hidden"
-              onChange={(e) => handleFiles(e.target.files)}
+              onChange={(e) => {
+                // THE SAME FILE, TWICE. An input keeps its value, so choosing
+                // the file you just chose fires no change event at all — and
+                // "let me try that once more" is exactly what somebody does
+                // after a rejected upload. Cleared AFTER the call: handleFiles
+                // takes files[0] before its first await, so the File it is
+                // working on survives the reset.
+                void handleFiles(e.target.files);
+                e.target.value = "";
+              }}
             />
             {uploading || processing ? (
               <div className="flex flex-col items-center">
@@ -576,7 +585,16 @@ function DemoUploadsClient({ user }: { user: SessionUser }) {
               type="file"
               accept=".xlsx"
               className="hidden"
-              onChange={(e) => handleFiles(e.target.files)}
+              onChange={(e) => {
+                // THE SAME FILE, TWICE. An input keeps its value, so choosing
+                // the file you just chose fires no change event at all — and
+                // "let me try that once more" is exactly what somebody does
+                // after a rejected upload. Cleared AFTER the call: handleFiles
+                // takes files[0] before its first await, so the File it is
+                // working on survives the reset.
+                void handleFiles(e.target.files);
+                e.target.value = "";
+              }}
             />
             {uploading ? (
               <div className="flex flex-col items-center">

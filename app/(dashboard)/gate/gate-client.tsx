@@ -759,18 +759,76 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
     return () => { live = false; streamRef.current?.getTracks().forEach((t) => t.stop()); };
   }, []);
 
+  /**
+   * A photo chosen from disk, rather than taken here.
+   *
+   * THE FAILURE THIS IS WRITTEN AROUND. An image the browser cannot decode
+   * reached the face detector and killed the handler without saying anything:
+   * the old code awaited a promise that `onload` and `onerror` BOTH resolved,
+   * so a failed decode carried on to describe() as a zero-dimension image and
+   * face-api threw `Dimensions.constructor - expected width and height to be
+   * valid numbers`. setErr never ran, so the form went on quietly reading
+   * "Needs a photo" and a manager had nothing to act on.
+   *
+   * A try/catch here does NOT save it — measured. face-api throws that one
+   * from inside its own task chain, off a promise this caller never awaits, so
+   * it arrives as an uncaught page error no matter what wraps the call. The
+   * only reliable place to stop it is BEFORE the detector: an image that
+   * decoded has a natural size, and one that did not has zero.
+   *
+   * HEIC is the case that will actually happen. The picker takes `image/*`,
+   * which on an iPhone or a Mac offers HEIC, and no browser but Safari decodes
+   * it. It is refused with its name in the message rather than converted —
+   * a decision taken on 12 Sep 2026 — because the manager can re-export or
+   * switch the phone to "Most Compatible" in seconds, and carrying a decoder
+   * for it would be a permanent dependency serving one file format.
+   *
+   * The catch stays anyway, for everything that is not that: a corrupt file, a
+   * model that failed to load, an out-of-memory on a very large image. Silence
+   * is the one outcome this function is not allowed to produce.
+   */
   async function readPhotoFile(file: File) {
     setBusy(true); setErr(null);
+    let objectUrl: string | null = null;
     try {
       const { describe, toArray } = await import("@/lib/gate/client/face");
+      const { compress } = await import("@/lib/gate/client/media");
       const img = document.createElement("img");
-      img.src = URL.createObjectURL(file);
-      await new Promise((r) => { img.onload = r; img.onerror = r; });
+      objectUrl = URL.createObjectURL(file);
+      img.src = objectUrl;
+      const decoded = await new Promise<boolean>((r) => {
+        img.onload = () => r(true);
+        img.onerror = () => r(false);
+      });
+
+      // Zero dimensions mean the bytes never became an image, whatever the
+      // event said. Checked as well as the event because a browser can fire
+      // load on a file it then fails to rasterise.
+      if (!decoded || !img.naturalWidth || !img.naturalHeight) {
+        setErr(`${file.name} could not be opened as an image. iPhone photos are often HEIC, `
+             + `which browsers cannot read — export it as JPG, or set Camera → Formats → `
+             + `"Most Compatible" on the phone.`);
+        return;
+      }
+
       const d = await describe(img);
-      URL.revokeObjectURL(img.src);
       if (!d) { setErr("No face found in that photo. Try one taken straight on, in good light."); return; }
-      keepShot(file, toArray(d));
-    } finally { setBusy(false); }
+
+      // Shrunk to match what the camera path stores. An uploaded file went to
+      // storage at its original size, so a 4MB phone photo was kept whole for
+      // a 32px avatar. The DESCRIPTOR is still computed from the full-size
+      // image above, where the detail is worth having.
+      const small = await compress(img, 640, 0.8).catch(() => file);
+      keepShot(small, toArray(d));
+    } catch (e) {
+      setErr(e instanceof Error ? `That photo could not be read: ${e.message}`
+                                : "That photo could not be read.");
+    } finally {
+      // In a finally because the old revoke sat on the success path and leaked
+      // one object URL for every photo that failed.
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setBusy(false);
+    }
   }
 
   async function capture() {
@@ -899,11 +957,30 @@ function AddGuard({ user, onDone }: { user: SessionUser; onDone: (msg: string) =
             {model === "loading" ? "Preparing…" : busy ? "Reading face…"
               : shot ? "Retake photo" : "Take photo"}
           </button>
-          <label className={`btn btn-secondary ${busy ? "opacity-60" : "cursor-pointer"}`}>
-            <Icon name="cloud_upload" size={17} />Upload photo
+          {/* THE LABEL HAS TO SAY WHAT THE INPUT INSIDE IT IS DOING.
+              A disabled <input> inside a <label> swallows the click and opens
+              no file dialog — measured in WebKit and Chromium — so while the
+              6.7MB model loaded, this looked completely ready, did nothing at
+              all when pressed, and left the form still reading "Needs a photo".
+              The button above it said "Preparing…" through the same window,
+              which is what made the pair actively misleading rather than
+              merely slow. Now both wear the same state. */}
+          <label className={`btn btn-secondary ${busy || model === "loading"
+            ? "opacity-60 pointer-events-none" : "cursor-pointer"}`}
+            aria-disabled={busy || model === "loading"}>
+            <Icon name="cloud_upload" size={17} />
+            {model === "loading" ? "Preparing…" : busy ? "Reading face…" : "Upload photo"}
             <input type="file" accept="image/*" className="hidden"
               disabled={busy || model === "loading"}
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) void readPhotoFile(f); }} />
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                // Cleared so picking the SAME file again still fires a change.
+                // Without this, "let me just try that once more" was a click
+                // that could not possibly do anything — the worst thing to
+                // hand someone whose first attempt already failed silently.
+                e.target.value = "";
+                if (f) void readPhotoFile(f);
+              }} />
           </label>
         </div>
       </div>
