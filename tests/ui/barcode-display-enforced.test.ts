@@ -87,8 +87,13 @@ const ALLOWED: { file: string; snippet: string; why: string }[] = [
   },
   {
     file: "app/(gate)/scan/scan-app.tsx",
-    snippet: "if (i.payload.barcode) seenRef",
-    why: "KEY — the same set, rebuilt from the outbox after a reload.",
+    snippet: "barcode: x.barcode ?? \"\",",
+    why: "LABEL — a gate scan's raw QR payload, from the server's copy when a trip is rebuilt after a reload. Never folded.",
+  },
+  {
+    file: "app/(gate)/scan/scan-app.tsx",
+    snippet: "rawBarcode: x.entryMethod === \"scan\" ? x.barcode : null,",
+    why: "KEY — the already-scanned set, rebuilt after a reload from the server's copy as well as the queue.",
   },
   {
     file: "app/(gate)/scan/scan-app.tsx",

@@ -138,7 +138,28 @@ await ctx.route("**/api/gate/sync", async (route) => {
   });
 });
 
-await ctx.route("**/api/gate/history*", (route) => json(route, { trips: [] }));
+// What the server holds, built from what the phone actually posted — so a
+// reload mid-trip can be checked against the real rebuild, which reads the
+// server's copy as well as the queue.
+await ctx.route("**/api/gate/history*", (route) => {
+  const scans = posted.flatMap((b) => b.scans ?? []);
+  const voided = new Set(posted.flatMap((b) => (b.voids ?? []).map((v) => v.clientScanId)));
+  const byTrip = new Map();
+  for (const sc of scans) {
+    if (voided.has(sc.clientScanId)) continue;
+    const list = byTrip.get(sc.clientTripId) ?? [];
+    if (!list.some((x) => x.clientScanId === sc.clientScanId)) {
+      list.push({ clientScanId: sc.clientScanId, barcode: sc.barcode ?? sc.serialNo ?? null, notes: null,
+                  itemKind: sc.itemKind ?? "unit", quantity: sc.quantity ?? 1,
+                  entryMethod: sc.entryMethod ?? "scan", override: false, scannedAt: sc.scannedAt });
+    }
+    byTrip.set(sc.clientTripId, list);
+  }
+  return json(route, { date: "2026-08-25", totals: { trips: byTrip.size, items: scans.length },
+    trips: [...byTrip].map(([id, items]) => ({ id, clientTripId: id, direction: "OUT", vehicleNo: "HR26DK8337",
+      driverName: null, openedAt: new Date().toISOString(), closedAt: null, status: "open",
+      itemCount: items.length, items })) });
+});
 
 // The on-demand expected list. Counted, because the point of the change is
 // WHEN it is asked for: at trip start and on the way into the close screen,

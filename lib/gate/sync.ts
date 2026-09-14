@@ -17,13 +17,13 @@
 //   PARTIAL     one bad row must not reject the batch. Each item gets its own
 //               verdict and the phone clears only what landed.
 //   AUTHORITY   the device proposes; the server decides business date, city,
-//               site, geofence and photo sampling. A phone is the least
+//               site and geofence. A phone is the least
 //               trustworthy thing in the system and the easiest to tamper with.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { GateIdentity } from "./auth";
 import { resolveBusinessDate } from "./business-date";
-import { geoOk, isCounted, loadSite, INWARD_ONLY_KINDS, OUTWARD_PHOTO_SAMPLE_RATE,
+import { geoOk, isCounted, loadSite, INWARD_ONLY_KINDS,
          type GateSite } from "./config";
 import type { Direction } from "../engine/types";
 import type { GateItemKind } from "../db/schema";
@@ -120,7 +120,9 @@ export interface InFaceCheck {
 
 export type ItemOutcome =
   | { clientId: string; status: "stored"; id: string; photoUploadPath?: string }
-  | { clientId: string; status: "duplicate" }
+  // A replay may still owe its photo: the first upload can fail after the row
+  // was stored, and the phone keeps the image until one succeeds.
+  | { clientId: string; status: "duplicate"; photoUploadPath?: string }
   | { clientId: string; status: "rejected"; reason: string };
 
 export interface SyncReport {
@@ -236,10 +238,6 @@ async function logRejections(
  * and the whole value of a spot-check is that the person being checked cannot
  * predict it.
  */
-function drawPhotoSample(direction: Direction, entryMethod: string): boolean {
-  if (direction !== "OUT" || entryMethod !== "scan") return false;
-  return Math.random() < OUTWARD_PHOTO_SAMPLE_RATE;
-}
 
 /**
  * The completeness columns, from what the phone reported.
@@ -497,9 +495,14 @@ export async function applyBatch(
     // Looked up on the FOLD so a confusable character does not lose the match.
     const match = sc.barcode ? known.get(canonicalize(sc.barcode.trim())) : undefined;
 
-    const sampled = drawPhotoSample(direction, sc.entryMethod);
-    const needsPhoto = !!sc.hasPhoto || sampled;
-    const photoPath = needsPhoto
+    // A photo path only for a photo the phone actually took. This used to add
+    // a random 10% sample of outward scans on top — decided HERE, after the
+    // scan, with nothing on the phone told to take one. Measured 14 Sep 2026:
+    // 16 of 16 sampled rows had a photo recorded and no file in storage, and
+    // the manager's camera icon on each led to "missing". A spot-check photo
+    // has to be asked for at the gate, before the item leaves, or it is not a
+    // spot-check.
+    const photoPath = sc.hasPhoto
       ? `${who.city}/${d.businessDate}/${sc.clientScanId}.jpg` : null;
 
     // An untagged customer return is an anomaly, not a routine arrival: the
@@ -532,7 +535,7 @@ export async function applyBatch(
       ticket_id: sc.ticketId?.trim() || (match?.ticket_id as string) || null,
       customer: sc.customer?.trim() || (match?.customer as string) || null,
       photo_path: photoPath,
-      photo_sampled: sampled,
+      photo_sampled: false,
       lat: sc.lat ?? null,
       lng: sc.lng ?? null,
       accuracy_m: sc.accuracyM ?? null,
@@ -554,7 +557,19 @@ export async function applyBatch(
         // trip. Both are "already accounted for" from the phone's side, and
         // both must clear from its outbox — a row it keeps retrying forever is
         // a queue that never drains.
-        report.scans.push({ clientId: sc.clientScanId, status: "duplicate" });
+        //
+        // A REPLAY of a scan with a photo is handed its upload link again. The
+        // phone now holds the image until an upload succeeds, and this is how
+        // a second attempt gets one. Looked up by this scan's own id, so a
+        // different scan of the same barcode never gets another row's link.
+        let replayPath: string | undefined;
+        if (sc.hasPhoto) {
+          const { data: prior } = await admin.from("gate_scans")
+            .select("photo_path").eq("client_scan_id", sc.clientScanId).maybeSingle();
+          replayPath = (prior?.photo_path as string | null) ?? undefined;
+        }
+        report.scans.push({ clientId: sc.clientScanId, status: "duplicate",
+                            ...(replayPath ? { photoUploadPath: replayPath } : {}) });
       } else {
         report.scans.push(bad(sc.clientScanId, readableDbError(ins.error.message)));
       }
@@ -691,9 +706,20 @@ export async function applyBatch(
     }).select("id").maybeSingle();
 
     if (ins.error) {
-      report.faceChecks.push(ins.error.code === "23505"
-        ? { clientId: f.clientCheckId, status: "duplicate" }
-        : bad(f.clientCheckId, ins.error.message));
+      if (ins.error.code === "23505") {
+        // Same as a scan replay: a selfie whose first upload failed gets its
+        // link again.
+        let replayPath: string | undefined;
+        if (f.hasSelfie) {
+          const { data: prior } = await admin.from("guard_face_checks")
+            .select("selfie_path").eq("client_check_id", f.clientCheckId).maybeSingle();
+          replayPath = (prior?.selfie_path as string | null) ?? undefined;
+        }
+        report.faceChecks.push({ clientId: f.clientCheckId, status: "duplicate",
+                                 ...(replayPath ? { photoUploadPath: replayPath } : {}) });
+      } else {
+        report.faceChecks.push(bad(f.clientCheckId, ins.error.message));
+      }
       continue;
     }
     report.faceChecks.push({

@@ -46,7 +46,7 @@ export interface PhotoSlot { clientId: string; path: string; token?: string; err
  *
  * Best-effort per photo: a storage hiccup must not fail the sync that already
  * stored the movements. A row whose link failed simply has no link, the phone
- * keeps the image queued, and the next sync asks again.
+ * keeps the image queued, and the next sync — a replay — is given one again.
  */
 export async function signPhotoUploads(
   admin: SupabaseClient,
@@ -57,9 +57,12 @@ export async function signPhotoUploads(
   await ensureBuckets(admin);
   const out: PhotoSlot[] = [];
   for (const w of wanted) {
+    // upsert: a retry may follow an upload that reached storage but whose
+    // answer never reached the phone. Refusing "already exists" would leave
+    // the phone retrying forever for a photo that is safely stored.
     const { data, error } = await admin.storage
       .from(bucket)
-      .createSignedUploadUrl(w.path);
+      .createSignedUploadUrl(w.path, { upsert: true });
     out.push(
       error || !data
         ? { ...w, error: error?.message ?? "could not create upload link" }

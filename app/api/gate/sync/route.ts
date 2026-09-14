@@ -76,7 +76,7 @@ export const POST = jsonRoute("gate/sync", async (req: NextRequest) => {
   const photos = await signPhotoUploads(
     admin,
     report.scans.flatMap((s) =>
-      s.status === "stored" && s.photoUploadPath
+      (s.status === "stored" || s.status === "duplicate") && s.photoUploadPath
         ? [{ clientId: s.clientId, path: s.photoUploadPath }] : []
     )
   );
@@ -85,7 +85,7 @@ export const POST = jsonRoute("gate/sync", async (req: NextRequest) => {
   const selfies = await signPhotoUploads(
     admin,
     report.faceChecks.flatMap((f) =>
-      f.status === "stored" && f.photoUploadPath
+      (f.status === "stored" || f.status === "duplicate") && f.photoUploadPath
         ? [{ clientId: f.clientId, path: f.photoUploadPath }] : []
     ),
     ATTENDANCE_BUCKET

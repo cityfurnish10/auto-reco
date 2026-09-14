@@ -232,7 +232,37 @@ export interface SyncResult {
  * order-independent on the server; then photos, because a record without its
  * image is still a record, while an image without its record is nothing.
  */
-export async function drain(): Promise<SyncResult> {
+/**
+ * ONE SEND AT A TIME.
+ *
+ * Nothing stopped two drains overlapping, and plenty starts one: the 20s
+ * timer, returning to the app, reconnecting, and every single scan. On a busy
+ * trip the second drain posted the same items before the first had finished
+ * uploading their photos, got "duplicate", and deleted the queued image out
+ * from under the first — measured 14 Sep 2026 at Delhi, where every lost
+ * hand-entry photo belonged to an item sent in overlapping batches.
+ *
+ * A call arriving mid-drain does not start another; it asks for one more pass
+ * when the current one ends, so work queued in between is still sent promptly.
+ */
+let inFlight: Promise<SyncResult> | null = null;
+let again = false;
+export function drain(): Promise<SyncResult> {
+  if (inFlight) { again = true; return inFlight; }
+  inFlight = (async () => {
+    let r: SyncResult;
+    do { again = false; r = await drainOnce(); } while (again && !r.offline);
+    return r;
+  })().finally(() => { inFlight = null; });
+  return inFlight;
+}
+
+/** After this many failed uploads the photo is given up and the entry cleared.
+ *  The movement itself is already stored; only the image is lost, and a queue
+ *  that can never empty is worse. */
+const MAX_PHOTO_ATTEMPTS = 30;
+
+async function drainOnce(): Promise<SyncResult> {
   const empty: SyncResult = { sent: 0, stored: 0, duplicate: 0, rejected: 0, photosUploaded: 0, offline: false };
   // NO PAIRING, NO SEND. An unpaired phone used to post its whole queue with an
   // empty bearer token. The real server refuses that, so nothing was lost — but
@@ -279,11 +309,19 @@ export async function drain(): Promise<SyncResult> {
 
   const res: SyncResult = { ...empty, sent: items.length };
   const answered = pairReplies(items, json);
+  const byId = new Map(items.map((i) => [i.clientId, i]));
+  // Accepted entries that are done once their reply is in, and accepted
+  // entries that still owe a photo. The second group is only cleared by a
+  // successful upload — a record without its image is still a record, but the
+  // image is the only evidence a hand entry carries.
   const confirmed: string[] = [];
+  const owesPhoto: string[] = [];
   for (const { queueId, reply } of answered) {
-    if (reply.status === "stored") { res.stored++; confirmed.push(queueId); }
-    else if (reply.status === "duplicate") { res.duplicate++; await outbox.remove(queueId); }
-    else { res.rejected++; await outbox.markRejected(queueId, reply.reason ?? "rejected"); }
+    if (reply.status === "stored" || reply.status === "duplicate") {
+      if (reply.status === "stored") res.stored++; else res.duplicate++;
+      const p = byId.get(queueId)?.payload as Record<string, unknown> | undefined;
+      if (p?.hasPhoto || p?.hasSelfie) owesPhoto.push(queueId); else confirmed.push(queueId);
+    } else { res.rejected++; await outbox.markRejected(queueId, reply.reason ?? "rejected"); }
   }
 
   // Images last, and each one on its own: a failed upload must not lose the
@@ -292,22 +330,42 @@ export async function drain(): Promise<SyncResult> {
     ...(json.photos ?? []).map((p) => ({ ...p, bucket: json.bucket! })),
     ...(json.selfies ?? []).map((p) => ({ ...p, bucket: json.selfieBucket! })),
   ];
-  const { getSupabaseClient } = await import("../../supabase/client");
-  for (const slot of slots) {
-    if (!slot.token) continue;
-    const blob = await outbox.getBlob(slot.clientId);
-    if (!blob) continue;
-    try {
-      const sb = getSupabaseClient();
-      const { error } = await sb.storage.from(slot.bucket)
-        .uploadToSignedUrl(slot.path, slot.token, blob);
-      if (!error) res.photosUploaded++;
-    } catch { /* retried on the next drain */ }
+  const uploaded = new Set<string>();
+  const noImage = new Set<string>();
+  if (owesPhoto.length) {
+    const { getSupabaseClient } = await import("../../supabase/client");
+    const owed = new Set(owesPhoto);
+    for (const slot of slots) {
+      if (!owed.has(slot.clientId)) continue;
+      const blob = await outbox.getBlob(slot.clientId);
+      if (!blob) { noImage.add(slot.clientId); continue; }
+      if (!slot.token) continue;
+      try {
+        const { error } = await getSupabaseClient().storage.from(slot.bucket)
+          .uploadToSignedUrl(slot.path, slot.token, blob);
+        if (!error) { res.photosUploaded++; uploaded.add(slot.clientId); }
+      } catch { /* kept, and retried on the next drain */ }
+    }
+    for (const queueId of owesPhoto) {
+      if (!slots.some((x) => x.clientId === queueId) && !(await outbox.getBlob(queueId))) noImage.add(queueId);
+    }
   }
 
   // Only now clear what the server confirmed. Doing this before the images
   // would drop the blob a moment before we tried to upload it.
   for (const queueId of confirmed) await outbox.remove(queueId);
+  const retry: string[] = [];
+  for (const queueId of owesPhoto) {
+    const attempts = byId.get(queueId)?.attempts ?? 0;
+    if (uploaded.has(queueId) || noImage.has(queueId) || attempts + 1 >= MAX_PHOTO_ATTEMPTS) {
+      await outbox.remove(queueId);
+    } else {
+      retry.push(queueId);
+    }
+  }
+  // Still owed: kept, with the image. The next drain re-sends the entry, the
+  // server answers "duplicate" with a fresh upload link, and it tries again.
+  if (retry.length) await outbox.bumpAttempts(retry);
 
   return res;
 }
@@ -361,10 +419,11 @@ export function pairReplies(
 }
 
 export interface HistoryTrip {
-  id: string; direction: "IN" | "OUT"; vehicleNo: string;
+  id: string; clientTripId: string; direction: "IN" | "OUT"; vehicleNo: string;
   driverName: string | null; openedAt: string; closedAt: string | null;
   status: string; itemCount: number;
-  items: { barcode: string | null; itemKind: string; quantity: number;
+  items: { barcode: string | null; clientScanId: string; notes: string | null;
+           itemKind: string; quantity: number;
            entryMethod: string; override: boolean; scannedAt: string }[];
 }
 

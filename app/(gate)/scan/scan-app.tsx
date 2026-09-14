@@ -158,6 +158,8 @@ export default function GateApp() {
    * double tap.
    */
   const pickerSettling = useRef(0);
+  const manualLock = useRef(false);
+  const [savingManual, setSavingManual] = useState(false);
   const openPickerSafely = useCallback((id: string | null, fromChoice = false) => {
     if (!fromChoice && Date.now() < pickerSettling.current) return;
     if (fromChoice) pickerSettling.current = Date.now() + 450;
@@ -344,21 +346,53 @@ export default function GateApp() {
           setDir(b.openTrip.direction);
           setVeh(b.openTrip.vehicle_no);
         }
-        // Rebuild the open trip's item list from the outbox, so a reload shows
-        // the scans already made rather than an empty trip that looks lost.
+        // Rebuild the open trip's item list, so a reload shows the scans already
+        // made rather than an empty trip that looks lost.
+        //
+        // FROM THE SERVER AND THE QUEUE, not the queue alone. It used to read
+        // only what was still waiting to send — so anything already sent
+        // vanished from the guard's screen on a reload, and a trip of three
+        // showed one. The guard then closes it counting one. Sending got
+        // faster (one drain at a time, straight after each scan), which made a
+        // reload after sending the normal case rather than the lucky one.
         if (b.openTrip) {
-          const queued = (await outbox.all()).filter(
-            (i) => i.kind === "scan" && i.payload.clientTripId === b.openTrip!.client_trip_id
-          );
-          setLines(queued.reverse().map((i) => ({
-            clientId: i.clientId,
-            barcode: String(i.payload.barcode ?? i.payload.serialNo ?? ""),
-            label: String(i.payload.product ?? ""),
-            flagged: !!i.payload.overrideReason || i.payload.entryMethod === "manual",
-            rawBarcode: (i.payload.barcode as string | null) ?? null,
-          })));
-          for (const i of queued) {
-            if (i.payload.barcode) seenRef.current.add(String(i.payload.barcode));
+          const trip = b.openTrip;
+          const all = await outbox.all();
+          const queued = all.filter((i) => i.kind === "scan" && i.payload.clientTripId === trip.client_trip_id);
+          // A removal not yet sent must not come back from the server's copy.
+          const voiding = new Set(all.filter((i) => i.kind === "void").map((i) => String(i.payload.clientScanId)));
+          let sent: HistoryTrip["items"] = [];
+          try {
+            const h = await history(tripBusinessDate(trip.opened_at));
+            sent = h.trips.find((x) => x.clientTripId === trip.client_trip_id)?.items ?? [];
+          } catch { /* offline: the queue is all there is, and it is still right */ }
+          const queuedIds = new Set(queued.map((i) => i.clientId));
+          const rebuilt = [
+            ...queued.map((i) => ({
+              at: String(i.payload.scannedAt ?? ""),
+              line: {
+                clientId: i.clientId,
+                barcode: String(i.payload.barcode ?? i.payload.serialNo ?? ""),
+                label: String(i.payload.product ?? ""),
+                flagged: !!i.payload.overrideReason || i.payload.entryMethod === "manual",
+                rawBarcode: (i.payload.barcode as string | null) ?? null,
+              },
+            })),
+            ...sent.filter((x) => x.clientScanId && !queuedIds.has(x.clientScanId) && !voiding.has(x.clientScanId))
+              .map((x) => ({
+                at: x.scannedAt,
+                line: {
+                  clientId: x.clientScanId,
+                  barcode: x.barcode ?? "",
+                  label: "",
+                  flagged: x.override || x.entryMethod === "manual",
+                  rawBarcode: x.entryMethod === "scan" ? x.barcode : null,
+                },
+              })),
+          ].sort((a, b2) => b2.at.localeCompare(a.at));
+          setLines(rebuilt.map((r) => r.line));
+          for (const r of rebuilt) {
+            if (r.line.rawBarcode) seenRef.current.add(r.line.rawBarcode);
           }
         }
         // WHERE A RELOAD LANDS.
@@ -1668,8 +1702,17 @@ export default function GateApp() {
               <button className="gbtn ghost narrow"
                       onClick={() => { clearItemPhoto(); setScreen(manualFrom); }}>{t("cancel")}</button>
               <button className="gbtn primary"
-                disabled={!photo || (!COUNTED.includes(cat) && mId.trim().length < 4)}
+                disabled={savingManual || !photo || (!COUNTED.includes(cat) && mId.trim().length < 4)}
                 onClick={async () => {
+                  // ONE ENTRY PER ITEM. addScan waits up to four seconds for a
+                  // GPS fix before anything on screen changes, so a guard taps
+                  // again — and every tap was saved. Delhi, 13 Sep: one mattress
+                  // recorded three times within 3ms, another item twice. A ref,
+                  // not only the disabled state, because a second tap can land
+                  // before React re-renders the button.
+                  if (manualLock.current) return;
+                  manualLock.current = true; setSavingManual(true);
+                  try {
                   const counted = COUNTED.includes(cat);
                   const label = t(CATS[dir ?? "OUT"].find((c) => c[0] === cat)![1]);
                   await addScan({
@@ -1681,7 +1724,8 @@ export default function GateApp() {
                   }, counted ? `${label} × ${mQty}` : label, true, photo);
                   setCat(null); clearItemPhoto(); setMId(""); setMQty(1); setMNote("");
                   setScreen(manualFrom);
-                }}>{t("add")}</button>
+                  } finally { manualLock.current = false; setSavingManual(false); }
+                }}>{savingManual ? "…" : t("add")}</button>
             </div>
           )}
         </>
@@ -2123,6 +2167,16 @@ function SignOutBtn({ onClick }: { onClick: () => void }) {
     </button>
   );
 }
+/**
+ * The gate business day a trip was opened on: 15:00 IST to 15:00 IST, dated by
+ * the day it started. The history lookup is per business day, and a trip opened
+ * at 14:50 and reloaded at 15:10 belongs to the day it was opened on.
+ */
+function tripBusinessDate(openedAt: string): string {
+  const IST_MS = 5.5 * 3600_000, CUTOFF_MS = 15 * 3600_000;
+  return new Date(Date.parse(openedAt) + IST_MS - CUTOFF_MS).toISOString().slice(0, 10);
+}
+
 /**
  * A labelled field. `group` for anything holding BUTTONS rather than one input.
  *
