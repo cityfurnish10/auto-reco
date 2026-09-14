@@ -441,8 +441,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
       </div>
 
       {/* Items in transit — not losses, so above the loss tiles and the chase list. */}
-      <InTransitSection city={cityTab} date={dateF} onOpen={(v) => setDetail(v)}
-        onViewAll={() => { setBucket("INFO"); setVarianceName(VARIANCE.ODOO_OUT_PENDING); setStatus("ALL"); setPage(1); }} />
+      <InTransitSection city={cityTab} date={dateF} onOpen={(v) => setDetail(v)} />
 
       {/* KPI cards — loss-only. Posting-lag / hygiene (INFO) rows are kept in the
           DB for audit but excluded from these counts (see the hidden-count note). */}

@@ -338,8 +338,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
       {/* The figures could not be read. Every tile below shows an em dash rather
           than a zero (see statFigure); this says why, and offers the retry. */}
       {/* Items in transit — not losses, so above the loss tiles and the chase list. */}
-      <InTransitSection city={city} date={dateF} onOpen={(v) => setDetail(v)}
-        onViewAll={() => { setBucket("INFO"); setVarianceName(VARIANCE.ODOO_OUT_PENDING); setPage(1); }} />
+      <InTransitSection city={city} date={dateF} onOpen={(v) => setDetail(v)} />
       {statsError && (
         <ErrorState what="the figures" detail={statsError} onRetry={refetchStats} compact />
       )}
