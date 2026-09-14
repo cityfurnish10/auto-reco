@@ -37,6 +37,14 @@ export interface SourceEvidence {
    * rather than presenting an absence as fact.
    */
   canonicalDegraded: boolean;
+  /**
+   * Rows for this barcode in the OTHER direction, left out of bySource. An
+   * outward variance was showing Odoo's INWARD receipt from the day before
+   * under "Odoo · 1 record" — the engine never used it (it compares per
+   * direction), but the screen presented it as the evidence. Counted so the
+   * panel can say they exist without passing them off as this movement's.
+   */
+  otherDirection: number;
   loading: boolean;
   error: string | null;
 }
@@ -58,12 +66,16 @@ export function useSourceRows(opts: {
   runId: string | null;
   barcode: string | null;
   city: string | null;
+  /** The movement's direction. Omit to show both — "same unit in and out"
+   *  is a variance where both directions ARE the evidence. */
+  direction?: string | null;
   enabled: boolean;
 }): SourceEvidence {
-  const { runId, barcode, city, enabled } = opts;
+  const { runId, barcode, city, direction = null, enabled } = opts;
   const [bySource, setBySource] = useState(emptyBySource);
   const [coverage, setCoverage] = useState(zeroCoverage);
   const [canonicalDegraded, setCanonicalDegraded] = useState(false);
+  const [otherDirection, setOtherDirection] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const seq = useRef(0); // a newer request supersedes this one
@@ -99,10 +111,13 @@ export function useSourceRows(opts: {
       .then(([rowsRes, ...counts]) => {
         if (seq.current !== mine) return;
         const grouped = emptyBySource();
+        let other = 0;
         for (const row of (rowsRes.data ?? []) as SourceRowDB[]) {
           const s = row.source as EvidenceSource;
+          if (direction && row.direction && row.direction !== direction) { other++; continue; }
           if (grouped[s]) grouped[s].push(row);
         }
+        setOtherDirection(other);
         const cov = zeroCoverage();
         EVIDENCE_SOURCES.forEach((s, i) => {
           cov[s] = (counts[i] as { total?: number })?.total ?? 0;
@@ -126,8 +141,8 @@ export function useSourceRows(opts: {
       });
 
     return () => ctrl.abort();
-  }, [runId, barcode, city, enabled]);
+  }, [runId, barcode, city, direction, enabled]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  return { bySource, coverage, canonicalDegraded, loading, error };
+  return { bySource, coverage, canonicalDegraded, otherDirection, loading, error };
 }

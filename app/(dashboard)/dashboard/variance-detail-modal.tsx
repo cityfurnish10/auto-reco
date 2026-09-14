@@ -21,6 +21,7 @@ import type { SessionUser } from "@/lib/demo-auth";
 import type { SourceRowDB, VarianceDB } from "@/lib/db/schema";
 import { VARIANCE_META } from "@/lib/engine/buckets";
 import { patchVariance } from "@/lib/hooks/use-dashboard-data";
+import { VARIANCE } from "@/lib/engine/variance-names";
 import {
   EVIDENCE_SOURCES,
   SOURCE_LABEL,
@@ -119,10 +120,14 @@ export default function VarianceDetailModal({
   const [confirming, setConfirming] = useState<"close" | "reject" | "submit" | null>(null);
   const toast = useToast();
 
-  const { bySource, coverage, canonicalDegraded, loading: evidenceLoading } = useSourceRows({
+  const { bySource, coverage, canonicalDegraded, otherDirection, loading: evidenceLoading } = useSourceRows({
     runId: v?.run_id ?? null,
     barcode: v?.barcode ?? null,
     city: v?.city ?? null,
+    // Only this movement's direction — the engine compares per direction, so
+    // that is the evidence. Both directions for the one variance that is
+    // ABOUT a unit going in and out.
+    direction: v && v.variance_name !== VARIANCE.REPLACEMENT_CONFIRM ? v.direction : null,
     enabled: !!v,
   });
 
@@ -289,8 +294,14 @@ export default function VarianceDetailModal({
         {/* B — evidence */}
         <section>
           <h4 className="font-headline text-sm text-text-primary">
-            What each system recorded for this unit
+            What each system recorded for this {v.direction === "IN" ? "inward" : v.direction === "OUT" ? "outward" : ""} movement
           </h4>
+          {!evidenceLoading && otherDirection > 0 && (
+            <p className="text-xs text-text-muted mt-1">
+              {otherDirection} record{otherDirection === 1 ? "" : "s"} for this unit in the other direction
+              {otherDirection === 1 ? " is" : " are"} not shown — they are a different movement and were not used here.
+            </p>
+          )}
           {nothingRetained ? (
             <p className="text-xs text-text-muted mt-2 bg-surface-elevated border border-border rounded-control p-3">
               Raw source rows for this run are no longer available — they are kept for 7 days.
