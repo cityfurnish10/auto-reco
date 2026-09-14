@@ -85,6 +85,10 @@ export default function GateApp() {
 
   // trip
   const [dir, setDir] = useState<"IN" | "OUT" | null>(null);
+  // Yesterday's calendar date when the guard is recording a truck that went
+  // unrecorded the day before; null for today. Only those two are offered, and
+  // the server accepts nothing earlier (0044).
+  const [tripDate, setTripDate] = useState<string | null>(null);
   const [veh, setVeh] = useState("");
   const [drv, setDrv] = useState("");
   const [tripId, setTripId] = useState<string | null>(null);
@@ -355,6 +359,10 @@ export default function GateApp() {
           setTripId(b.openTrip.client_trip_id);
           setDir(b.openTrip.direction);
           setVeh(b.openTrip.vehicle_no);
+          try {
+            const saved = JSON.parse(localStorage.getItem("gate.tripDate") ?? "null");
+            setTripDate(saved?.tripId === b.openTrip.client_trip_id ? saved.date ?? null : null);
+          } catch { /* blocked */ }
         }
         // Rebuild the open trip's item list, so a reload shows the scans already
         // made rather than an empty trip that looks lost.
@@ -373,8 +381,14 @@ export default function GateApp() {
           const voiding = new Set(all.filter((i) => i.kind === "void").map((i) => String(i.payload.clientScanId)));
           let sent: HistoryTrip["items"] = [];
           try {
-            const h = await history(istDateOf(trip.opened_at));
-            sent = h.trips.find((x) => x.clientTripId === trip.client_trip_id)?.items ?? [];
+            // A trip recorded for yesterday is filed under yesterday, so both
+            // days are asked before concluding nothing was sent.
+            const opened = istDateOf(trip.opened_at);
+            for (const day of [opened, shiftIstDate(opened, -1)]) {
+              const h = await history(day);
+              const found = h.trips.find((x) => x.clientTripId === trip.client_trip_id);
+              if (found) { sent = found.items; break; }
+            }
           } catch { /* offline: the queue is all there is, and it is still right */ }
           const queuedIds = new Set(queued.map((i) => i.clientId));
           const rebuilt = [
@@ -931,8 +945,11 @@ export default function GateApp() {
         vehicleNo: veh.trim().toUpperCase(),
         driverName: drv.trim() || null,
         openedAt: new Date().toISOString(), status: "open",
+        movementDate: tripDate,
       },
     });
+    // Kept beside the trip so a reload still shows it is being recorded late.
+    try { localStorage.setItem("gate.tripDate", JSON.stringify({ tripId: clientId, date: tripDate })); } catch { /* blocked */ }
     setTripId(clientId); setLines([]); seenRef.current = new Set();
     // Not awaited: the scanner opens now. The first scan of a trip is seconds
     // away and the list will be there for it; blocking the camera on Metabase
@@ -953,6 +970,7 @@ export default function GateApp() {
         clientTripId: tripId, direction: dir, vehicleNo: veh.trim().toUpperCase(),
         openedAt: new Date(t0 || Date.now()).toISOString(),
         closedAt: new Date().toISOString(), status: "closed",
+        movementDate: tripDate,
         // THE GAP TRAVELS WITH THE CLOSE, whether or not the guard was shown
         // it. Recording only the warnings a guard saw would measure the
         // false-alarm rate against people who were never warned — which is the
@@ -980,7 +998,8 @@ export default function GateApp() {
     setTrips((n) => { const v = n + 1; saveDay(v, itemsToday + lines.length); return v; });
     setItemsToday((n) => n + lines.length);
     try { localStorage.removeItem("gate.t0"); } catch { /* storage blocked */ }
-    setTripId(null); setDir(null); setVeh(""); setDrv("");
+    setTripId(null); setDir(null); setVeh(""); setDrv(""); setTripDate(null);
+    try { localStorage.removeItem("gate.tripDate"); } catch { /* blocked */ }
     setLines([]); seenRef.current = new Set();
     await refreshQueue(); void sync();
     // The shift was closed on the server while this truck was being worked:
@@ -1571,7 +1590,7 @@ export default function GateApp() {
               // Re-read the fleet on the way in. The copy fetched when the app
               // opened may be hours old by now, and this is the one screen
               // where being out of date costs the guard a typed truck number.
-              setVehTyped(false); setDrvTyped(false);
+              setVehTyped(false); setDrvTyped(false); setTripDate(null);
               pickerSettling.current = 0; setOpenPicker("veh");
               void loadFleet();
               setScreen("newtrip");
@@ -1586,6 +1605,19 @@ export default function GateApp() {
         <>
           <Bar t={t} title={t("startTrip")} left={<BackBtn onClick={() => setScreen("today")} />} />
           <div className="gbody">
+            {/* WHICH DAY. Today unless the guard says otherwise; yesterday is
+                for a truck that went unrecorded, and is marked late wherever it
+                is shown. Nothing earlier is offered, or accepted. */}
+            <div className="gdatepick" role="group" aria-label={t("tripDate")}>
+              <button className="gdatebtn" aria-pressed={!tripDate} onClick={() => setTripDate(null)}>
+                <b>{t("forToday")}</b><span>{fmtDay(istToday())}</span>
+              </button>
+              <button className="gdatebtn" aria-pressed={!!tripDate}
+                      onClick={() => setTripDate(shiftIstDate(istToday(), -1))}>
+                <b>{t("forYesterday")}</b><span>{fmtDay(shiftIstDate(istToday(), -1))}</span>
+              </button>
+            </div>
+            {tripDate && <p className="gnote glate">{t("lateNote")}</p>}
             <div className="gbig2">
               <button className="gdir" aria-pressed={dir === "IN"} onClick={() => setDir("IN")}>
                 <Icon name="arrow_down" size={30} />{t("inward")}</button>
@@ -1634,7 +1666,7 @@ export default function GateApp() {
 
       {screen === "scan" && (
         <>
-          <Bar t={t} title={dir === "IN" ? t("inward") : t("outward")}
+          <Bar t={t} title={`${dir === "IN" ? t("inward") : t("outward")}${tripDate ? ` · ${t("forYesterday")}` : ""}`}
                left={<BackBtn onClick={() => { stampElapsed(); void loadExpected(); setScreen("closetrip"); }} />}
                right={<span className="gsub mono">{veh}</span>} />
           <div className="gscan">
@@ -1832,6 +1864,8 @@ export default function GateApp() {
           <div className="gbody">
             <div className="gcard col">
               <div className="gkv"><span>{t("direction")}</span><b>{dir === "IN" ? t("inward") : t("outward")}</b></div>
+              <div className="gkv"><span>{t("tripDate")}</span>
+                <b>{tripDate ? `${t("forYesterday")} · ${fmtDay(tripDate)}` : `${t("forToday")} · ${fmtDay(istToday())}`}</b></div>
               <div className="gkv"><span>{t("vehicleNo")}</span><b className="mono">{veh}</b></div>
               <div className="gkv"><span>{t("itemsScanned")}</span><b>{lines.length}</b></div>
               <div className="gkv"><span>{t("flagged")}</span><b>{lines.filter((l) => l.flagged).length}</b></div>
@@ -2276,6 +2310,12 @@ function SignOutBtn({ onClick }: { onClick: () => void }) {
       <Icon name="logout" size={20} />
     </button>
   );
+}
+
+/** "2026-09-13" → "13 Sep". Parsed as a plain date: no timezone shift. */
+function fmtDay(d: string): string {
+  const [, m, day] = d.split("-").map(Number);
+  return `${day} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m - 1]}`;
 }
 
 /**

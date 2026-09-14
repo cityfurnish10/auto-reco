@@ -8,6 +8,7 @@
 export interface RegisterTrip {
   city: string; direction: string; driverName: string | null; vehicleNo: string;
   guardName?: string; openedAt?: string; closedAt?: string | null;
+  recordedLate?: boolean;
 }
 export interface RegisterItem {
   soDisplay: string | null; ticket: string | null; customer: string | null; jobType: string | null;
@@ -73,7 +74,7 @@ const istDateTime = (iso: string) =>
 
 /** The columns a FILE carries after the register: what a spreadsheet row cannot
  *  show as a badge or a greyed-out line has to be written out. */
-export const FILE_HEADER = [...REGISTER_COLUMNS.map((c) => c.label), "Details From", "Duplicate", "Entry", "Guard", "Scanned At"];
+export const FILE_HEADER = [...REGISTER_COLUMNS.map((c) => c.label), "Details From", "Duplicate", "Entry", "Guard", "Recorded Late", "Scanned At"];
 
 export function fileRow(trip: RegisterTrip, it: RegisterItem): (string | null)[] {
   return [
@@ -84,6 +85,9 @@ export function fileRow(trip: RegisterTrip, it: RegisterItem): (string | null)[]
     it.duplicateOf ? `Yes — ${it.duplicateOf.reason} as the ${istTime(it.duplicateOf.ofScannedAt)} entry; not counted` : "",
     it.entryMethod,
     trip.guardName ?? "",
+    // The day it counts on is the day of the file; the scan time shows when
+    // it was actually typed in.
+    trip.recordedLate ? "Yes — entered a day late" : "",
     istDateTime(it.scannedAt),
   ];
 }

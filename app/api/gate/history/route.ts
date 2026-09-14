@@ -30,12 +30,20 @@ export const GET = jsonRoute("gate/history", async (req: NextRequest) => {
   const date = isIsoDate(qd) ? qd : istToday();
   const { from, to } = istDayRange(date);
 
-  const trips = await admin.from("gate_trips")
-    .select("id,client_trip_id,direction,vehicle_no,driver_name,opened_at,closed_at,status")
-    .eq("guard_id", who.guardId).gte("opened_at", from).lt("opened_at", to)
+  // Same rule as Activity: a trip recorded for yesterday (0044) is on yesterday.
+  const base = "id,client_trip_id,direction,vehicle_no,driver_name,opened_at,closed_at,status";
+  let trips = await admin.from("gate_trips")
+    .select(base + ",movement_date,recorded_late")
+    .eq("guard_id", who.guardId)
+    .or(`and(opened_at.gte.${from},opened_at.lt.${to},movement_date.is.null),movement_date.eq.${date}`)
     .order("opened_at", { ascending: false });
+  if (trips.error?.code === "42703") {
+    trips = await admin.from("gate_trips").select(base)
+      .eq("guard_id", who.guardId).gte("opened_at", from).lt("opened_at", to)
+      .order("opened_at", { ascending: false }) as typeof trips;
+  }
   if (trips.error) return NextResponse.json({ error: trips.error.message }, { status: 500 });
-  const tripIds = (trips.data ?? []).map((t) => (t as Record<string, unknown>).id as string);
+  const tripIds = (trips.data ?? []).map((t) => (t as unknown as Record<string, unknown>).id as string);
   const scans = tripIds.length
     ? await admin.from("gate_scans")
         .select("id,client_scan_id,trip_id,barcode,serial_no,item_kind,quantity,entry_method,override_reason,notes,scanned_at")
@@ -48,7 +56,7 @@ export const GET = jsonRoute("gate/history", async (req: NextRequest) => {
     date,
     totals: { trips: (trips.data ?? []).length, items: rows.length },
     trips: (trips.data ?? []).map((t) => {
-      const x = t as Record<string, unknown>;
+      const x = t as unknown as Record<string, unknown>;
       const items = rows.filter((r) => r.trip_id === x.id);
       return {
         id: x.id, clientTripId: x.client_trip_id, direction: x.direction, vehicleNo: x.vehicle_no,

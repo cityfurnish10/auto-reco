@@ -28,6 +28,7 @@ import { geoOk, isCounted, loadSite, INWARD_ONLY_KINDS,
 import type { Direction } from "../engine/types";
 import type { GateItemKind } from "../db/schema";
 import { canonicalize } from "../engine/barcode";
+import { istDateOf, isIsoDate, shiftIstDate } from "./calendar";
 
 /** What the completeness check found, sent with the trip's close. */
 export interface InCompleteness {
@@ -53,6 +54,9 @@ export interface InTrip {
   status?: "open" | "closed" | "abandoned";
   notes?: string | null;
   completeness?: InCompleteness | null;
+  /** Set when the guard chose YESTERDAY for this trip (0044). Accepted only
+   *  as the calendar day before openedAt; anything else is ignored. */
+  movementDate?: string | null;
 }
 
 export interface InScan {
@@ -361,6 +365,11 @@ export async function applyBatch(
     // recorded with the gap named in the field itself, so nobody mistakes it
     // for a real agent and nothing is lost.
     const agent = t.driverName?.trim() || null;
+    // RECORDED LATE: for yesterday, and nothing earlier. Checked here rather
+    // than trusted from the phone, which only offers the two choices — a day
+    // any further back is recorded as today, not refused, so the movement is
+    // never lost over the date it claimed.
+    const late = isIsoDate(t.movementDate) && t.movementDate === shiftIstDate(istDateOf(t.openedAt), -1);
     const row = {
       client_trip_id: t.clientTripId,
       city: who.city,
@@ -370,8 +379,10 @@ export async function applyBatch(
       driver_name: agent ?? NO_AGENT_RECORDED,
       carrier_ref: t.carrierRef?.trim() || null,
       opened_at: t.openedAt,
+      ...(late ? { movement_date: t.movementDate, recorded_late: true } : {}),
       closed_at: t.closedAt ?? null,
-      business_date: d.businessDate,
+      // Counted on the day it moved, not the day it was typed in.
+      business_date: late ? t.movementDate! : d.businessDate,
       guard_id: who.guardId,
       device_id: who.deviceId,
       status: t.status ?? "open",
@@ -379,7 +390,16 @@ export async function applyBatch(
       ...completenessColumns(t.completeness),
     };
 
-    const ins = await admin.from("gate_trips").insert(row).select("id").maybeSingle();
+    let ins = await admin.from("gate_trips").insert(row).select("id").maybeSingle();
+    // 0044 applied by hand, possibly not yet. Without its columns a late trip
+    // could not be MARKED late, and backdating without the mark is the one
+    // thing this feature must never do — so it is recorded on its own day.
+    if (ins.error?.code === "42703" && late) {
+      const { movement_date: _m, recorded_late: _r, ...plain } = row as typeof row & { movement_date?: unknown; recorded_late?: unknown };
+      void _m; void _r;
+      ins = await admin.from("gate_trips").insert({ ...plain, business_date: d.businessDate }).select("id").maybeSingle();
+      report.clockWarnings.push(`trip ${t.clientTripId}: recorded for yesterday, stored as today — migration 0044 not applied`);
+    }
     if (ins.error) {
       // 23505 = the client id is already stored, i.e. this is a replay. Look up
       // what we kept last time so the scans in this batch still resolve — a
@@ -438,8 +458,12 @@ export async function applyBatch(
       tripId = data.id as string;
       tripIds.set(sc.clientTripId, tripId);
     }
-    const { data: trip } = await admin.from("gate_trips")
-      .select("direction, business_date").eq("id", tripId).maybeSingle();
+    let tripRead = await admin.from("gate_trips")
+      .select("direction, business_date, recorded_late").eq("id", tripId).maybeSingle();
+    if (tripRead.error?.code === "42703") {
+      tripRead = await admin.from("gate_trips").select("direction, business_date").eq("id", tripId).maybeSingle() as typeof tripRead;
+    }
+    const trip = tripRead.data as { direction: string; business_date: string; recorded_late?: boolean } | null;
     if (!trip) { report.scans.push(bad(sc.clientScanId, "unknown trip")); continue; }
     const direction = trip.direction as Direction;
 
@@ -518,7 +542,9 @@ export async function applyBatch(
       city: who.city,
       site_code: who.siteCode,
       direction,
-      business_date: d.businessDate,
+      // A trip recorded for yesterday carries its scans with it (0044).
+      business_date: trip.recorded_late ? trip.business_date : d.businessDate,
+      ...(trip.recorded_late ? { recorded_late: true } : {}),
       // Stored EXACTLY as the QR returned it. Never folded — the fold is why
       // 57% of items display a barcode matching nothing in any system.
       barcode: sc.barcode?.trim() || null,

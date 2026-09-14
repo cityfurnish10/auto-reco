@@ -36,7 +36,7 @@ export function buildActivityWorkbook(data: ActivityPayload): ExcelJS.Workbook {
     for (const trip of trips.filter((t) => t.direction === dir)) {
       const t = {
         city: String(trip.city ?? ""), direction: String(trip.direction), driverName: (trip.driverName as string) ?? null,
-        vehicleNo: String(trip.vehicleNo ?? ""), guardName: trip.guardName,
+        vehicleNo: String(trip.vehicleNo ?? ""), guardName: trip.guardName, recordedLate: !!trip.recordedLate,
       };
       for (const it of [...trip.items].sort((a, b) => String(a.scannedAt).localeCompare(String(b.scannedAt)))) {
         const cells = fileRow(t, {

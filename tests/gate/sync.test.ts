@@ -112,7 +112,7 @@ function stubDb(opts: { existingTrips?: Record<string, string> } = {}) {
                               : { data: null, error: null };
                   }
                   const row = tripRows.get(val);
-                  return { data: row ? { direction: row.direction, business_date: row.business_date } : { direction: "OUT", business_date: "2026-08-21" }, error: null };
+                  return { data: row ? { direction: row.direction, business_date: row.business_date, recorded_late: row.recorded_late ?? false } : { direction: "OUT", business_date: "2026-08-21" }, error: null };
                 },
               };
               return self;
@@ -185,6 +185,36 @@ describe("applyBatch — replay safety", () => {
     expect(r.trips[0].status).toBe("stored");
     expect(r.scans[0].status).toBe("stored");
     expect(scanRows).toHaveLength(1);
+  });
+
+  // ── Recorded for yesterday (0044) ────────────────────────────────────────
+  // A guard may choose yesterday for a truck that went unrecorded, and nothing
+  // earlier. The items count on that day and are marked late; the real scan
+  // times stay as they were.
+  it("a trip recorded for yesterday counts on yesterday and is marked late — and so are its scans", async () => {
+    const { db, scanRows, tripRows } = stubDb();
+    // Opened 14 Sep 10:00 IST, for 13 Sep.
+    const r = await applyBatch(db, WHO, {
+      trips: [trip({ openedAt: "2026-09-14T04:30:00Z", movementDate: "2026-09-13" })],
+      scans: [scan({ scannedAt: "2026-09-14T04:31:00Z" })],
+    }, new Date("2026-09-14T04:32:00Z"));
+    expect(r.trips[0].status).toBe("stored");
+    const t = [...tripRows.values()][0];
+    expect(t).toMatchObject({ business_date: "2026-09-13", movement_date: "2026-09-13", recorded_late: true });
+    expect(scanRows[0]).toMatchObject({ business_date: "2026-09-13", recorded_late: true, scanned_at: "2026-09-14T04:31:00Z" });
+  });
+
+  it("any date other than the day before is ignored — recorded on its own day, never lost", async () => {
+    const { db, tripRows, scanRows } = stubDb();
+    const r = await applyBatch(db, WHO, {
+      trips: [trip({ openedAt: "2026-09-14T04:30:00Z", movementDate: "2026-09-10" })],
+      scans: [scan({ scannedAt: "2026-09-14T04:31:00Z" })],
+    }, new Date("2026-09-14T04:32:00Z"));
+    expect(r.trips[0].status).toBe("stored");
+    const t = [...tripRows.values()][0];
+    expect(t.recorded_late).toBeUndefined();
+    expect(t.business_date).not.toBe("2026-09-10");
+    expect(scanRows[0].recorded_late).toBeUndefined();
   });
 
   it("re-sending the SAME batch books nothing twice", async () => {

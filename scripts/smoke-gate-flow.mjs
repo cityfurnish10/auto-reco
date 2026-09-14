@@ -269,8 +269,19 @@ if (await seen("Start trip")) {
   else bad("Today still shows the sync panel — the guard is being asked to manage sending");
 }
 if (!(await seen("Start trip"))) await tap("Start trip");
+
 await tap("Start trip");
 await page.waitForTimeout(1200);
+// WHICH DAY. Today by default; yesterday is offered, says it will be marked
+// late, and choosing Today again takes the note away.
+if ((await page.locator('.gdatebtn[aria-pressed="true"]').innerText().catch(() => "")).includes("Today")) ok("the trip date defaults to today");
+else bad("the trip date does not default to today");
+await page.locator(".gdatebtn").nth(1).click();
+await page.waitForTimeout(300);
+if (await seen("marked as entered late")) ok("choosing yesterday says it will be marked as entered late");
+else bad("choosing yesterday gave no warning that it is marked late");
+await page.locator(".gdatebtn").nth(0).click();
+await page.waitForTimeout(300);
 
 if (await seen("HR26DK8337")) ok("the vehicle list arrived from DT and rendered");
 else bad("no vehicle list — the picker fell back to a text box");
@@ -345,6 +356,11 @@ else bad("still disabled after choosing direction, vehicle and agent");
 
 await startScan.click();
 await page.waitForTimeout(1500);
+{
+  const opened = posted.flatMap((b) => b.trips ?? []).filter((x) => x.status === "open").pop();
+  if (opened && (opened.movementDate === null || opened.movementDate === undefined)) ok("a trip for today is sent with no late date");
+  else if (opened) bad(`a trip for today was sent with movementDate ${opened.movementDate}`);
+}
 
 /* ── 4. scan, then remove — the double confirm ───────────────────────── */
 step("Removing a scanned item");

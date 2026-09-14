@@ -24,16 +24,27 @@ export async function loadActivity(admin: SupabaseClient, opts: ActivityOptions)
   const date = isIsoDate(opts.date) ? opts.date : istToday();
   const { from, to } = istDayRange(date);
 
-  let trips = admin.from("gate_trips")
-    .select("id,client_trip_id,city,site_code,direction,vehicle_no,driver_name,carrier_ref," +
-            "opened_at,closed_at,status,guard_id,app_users!guard_id(name)," +
-            // What the completeness check found at close. Recorded since 0031
-            // and, until now, visible to nobody — a gap the guard was shown and
-            // a manager could not look up is not a control, it is a nag.
-            "expected_checked_at,expected_total,expected_scanned,expected_missing," +
-            "unplanned_count,expected_warned")
-    .gte("opened_at", from).lt("opened_at", to)
-    .order("opened_at", { ascending: false });
+  const TRIP_COLS = "id,client_trip_id,city,site_code,direction,vehicle_no,driver_name,carrier_ref," +
+    "opened_at,closed_at,status,guard_id,app_users!guard_id(name)," +
+    // What the completeness check found at close. Recorded since 0031
+    // and, until now, visible to nobody — a gap the guard was shown and
+    // a manager could not look up is not a control, it is a nag.
+    "expected_checked_at,expected_total,expected_scanned,expected_missing," +
+    "unplanned_count,expected_warned";
+  // A trip belongs to the day it was OPENED — unless the guard recorded it for
+  // yesterday (0044), when it belongs to that day instead and not to today.
+  const tripsFor = (late: boolean) => {
+    let q = admin.from("gate_trips").select(TRIP_COLS + (late ? ",movement_date,recorded_late" : ""));
+    q = late
+      ? q.or(`and(opened_at.gte.${from},opened_at.lt.${to},movement_date.is.null),movement_date.eq.${date}`)
+      : q.gte("opened_at", from).lt("opened_at", to);
+    if (city) q = q.eq("city", city);
+    return q.order("opened_at", { ascending: false });
+  };
+  let tr = await tripsFor(true);
+  // 0044 applied by hand, possibly not yet.
+  if (tr.error?.code === "42703") tr = await tripsFor(false);
+  if (tr.error) throw new Error(tr.error.message);
   // unit_* and last_* are DERIVED (migration 0037) — Odoo's answer to "what is
   // this serial". task_* are DERIVED too (0039) — the unit's latest DT task,
   // which is where ticket, job type and the real customer live. All shown so a
@@ -41,12 +52,6 @@ export async function loadActivity(admin: SupabaseClient, opts: ActivityOptions)
   // separate from product/so_number, which are the gate's own testimony.
   const SCAN_COLS = "id,trip_id,city,direction,business_date,barcode,serial_no,product,so_number,ticket_id,customer,item_kind,quantity,entry_method,override_reason,exception_reason,barcode_pending,geo_ok,photo_path,scanned_at,guard_id,notes,unit_product,unit_sku,last_customer,last_so,last_moved_at";
   const TASK_COLS = ",task_ticket,task_job_type,task_customer,task_so,task_city,task_checked_at,enriched_at";
-  // The day's trips first — ALL of them in the city. Guard and direction are
-  // applied afterwards, because a duplicate is judged against the whole day and
-  // the entry it repeats may sit on another guard's trip.
-  if (city) trips = trips.eq("city", city);
-  const tr = await trips;
-  if (tr.error) throw new Error(tr.error.message);
   const dayTrips = (tr.data ?? []) as unknown as Record<string, unknown>[];
   const dayTripIds = dayTrips.map((t) => t.id as string);
   const NONE = "00000000-0000-0000-0000-000000000000";
@@ -106,10 +111,13 @@ export async function loadActivity(admin: SupabaseClient, opts: ActivityOptions)
   const keptTrips = new Set(tripRows.map((t) => t.id));
   const narrowed = !!(vehicle || agent);
   const dayScans = (sc.data ?? []) as unknown as Record<string, unknown>[];
+  const tripDay = new Map(dayTrips.filter((t) => t.movement_date).map((t) => [t.id as string, t.movement_date as string]));
   const duplicates = findDuplicates(dayScans.map((r) => ({
     id: r.id as string, tripId: (r.trip_id as string) ?? null, city: (r.city as string) ?? null,
-    // Same calendar day as everything else on this screen.
-    businessDate: istDateOf(r.scanned_at as string), direction: (r.direction as string) ?? null,
+    // Same calendar day as everything else on this screen — the day a late
+    // trip was recorded FOR, not the day it was typed in.
+    businessDate: (tripDay.get(r.trip_id as string) ?? null) ?? istDateOf(r.scanned_at as string),
+    direction: (r.direction as string) ?? null,
     barcode: (r.barcode as string) ?? null, serialNo: (r.serial_no as string) ?? null,
     soNumber: (r.so_number as string) ?? null, ticketId: (r.ticket_id as string) ?? null,
     itemKind: (r.item_kind as string) ?? null, quantity: (r.quantity as number) ?? null,
@@ -163,6 +171,8 @@ export async function loadActivity(admin: SupabaseClient, opts: ActivityOptions)
         : null;
       return {
         id: x.id, direction: x.direction, vehicleNo: x.vehicle_no,
+        // Entered on a later day than it happened (0044) — counted on movementDate.
+        recordedLate: !!x.recorded_late, movementDate: (x.movement_date as string) ?? null,
         transportKey: transportKey(x.vehicle_no as string),
         driverName: x.driver_name, carrierRef: x.carrier_ref,
         city: x.city, siteCode: x.site_code,

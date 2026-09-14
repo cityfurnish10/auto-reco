@@ -122,6 +122,8 @@ interface Trip {
   guardName: string; itemCount: number; overrides: number; manual: number; items: TripItem[];
   duplicates: number;
   removed: RemovedItem[];
+  /** Entered on a later day than it happened; counted on movementDate (0044). */
+  recordedLate: boolean; movementDate: string | null;
   completeness: TripCompleteness | null;
 }
 interface ActivityData {
@@ -214,6 +216,9 @@ function Activity({ user }: { user: SessionUser }) {
                             count to the left, and not in the reconciliation. */}
                         {tr.duplicates > 0 && (
                           <span className="badge badge-high ml-2">{tr.duplicates} duplicate</span>
+                        )}
+                        {tr.recordedLate && (
+                          <span className="badge badge-medium ml-2" title="The guard recorded this trip the next day, for this day">recorded late</span>
                         )}
                         {/* Typed rather than scanned. No barcode was read, so
                             the row rests entirely on the guard and the photo
@@ -453,7 +458,7 @@ export function TripModal({ trip, onClose, onLookedUp }: {
   return (
     <Modal open onClose={onClose}
       title={`${trip.vehicleNo} · ${trip.direction === "OUT" ? "Outward" : "Inward"}`}
-      subtitle={`${trip.guardName} · ${trip.city}`} size="wide">
+      subtitle={`${trip.guardName} · ${trip.city}${trip.recordedLate ? " · recorded late, the next day" : ""}`} size="wide">
       <div className="grid sm:grid-cols-2 gap-x-8 mb-5">
         <Row k="Guard" v={trip.guardName || "—"} />
         <Row k="Delivery agent" v={trip.driverName ?? "—"} />
