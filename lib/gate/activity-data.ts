@@ -33,8 +33,8 @@ export async function loadActivity(admin: SupabaseClient, opts: ActivityOptions)
     "unplanned_count,expected_warned";
   // A trip belongs to the day it was OPENED — unless the guard recorded it for
   // yesterday (0044), when it belongs to that day instead and not to today.
-  const tripsFor = (late: boolean) => {
-    let q = admin.from("gate_trips").select(TRIP_COLS + (late ? ",movement_date,recorded_late" : ""));
+  const tripsFor = (late: boolean, vehicle = true) => {
+    let q = admin.from("gate_trips").select(TRIP_COLS + (late ? ",movement_date,recorded_late" : "") + (vehicle ? ",vehicle_photo_path" : ""));
     q = late
       ? q.or(`and(opened_at.gte.${from},opened_at.lt.${to},movement_date.is.null),movement_date.eq.${date}`)
       : q.gte("opened_at", from).lt("opened_at", to);
@@ -42,8 +42,9 @@ export async function loadActivity(admin: SupabaseClient, opts: ActivityOptions)
     return q.order("opened_at", { ascending: false });
   };
   let tr = await tripsFor(true);
-  // 0044 applied by hand, possibly not yet.
-  if (tr.error?.code === "42703") tr = await tripsFor(false);
+  // 0045 and 0044 are applied by hand, possibly not yet — newest first.
+  if (tr.error?.code === "42703") tr = await tripsFor(true, false);
+  if (tr.error?.code === "42703") tr = await tripsFor(false, false);
   if (tr.error) throw new Error(tr.error.message);
   // unit_* and last_* are DERIVED (migration 0037) — Odoo's answer to "what is
   // this serial". task_* are DERIVED too (0039) — the unit's latest DT task,
@@ -173,6 +174,9 @@ export async function loadActivity(admin: SupabaseClient, opts: ActivityOptions)
         id: x.id, direction: x.direction, vehicleNo: x.vehicle_no,
         // Entered on a later day than it happened (0044) — counted on movementDate.
         recordedLate: !!x.recorded_late, movementDate: (x.movement_date as string) ?? null,
+        // How the stock sat in the vehicle (0045) — before unloading inward,
+        // after loading outward.
+        hasVehiclePhoto: !!x.vehicle_photo_path,
         transportKey: transportKey(x.vehicle_no as string),
         driverName: x.driver_name, carrierRef: x.carrier_ref,
         city: x.city, siteCode: x.site_code,

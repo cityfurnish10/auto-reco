@@ -577,6 +577,31 @@ if (await page.locator(".gfinal").count()) {
   else bad(`final list shows ${listed} but the close button confirms ${onButton}`);
 } else bad("no final list section on the close screen");
 
+// THE VEHICLE PHOTO. An outward trip closes only after the loaded vehicle is
+// photographed. A headless browser has no camera, so this checks the gate is in
+// place: Confirm & close opens the photo step, nothing is saved without a photo,
+// and no close is sent.
+{
+  const closesBefore = posted.flatMap((b) => b.trips ?? []).filter((x) => x.status === "closed").length;
+  await closeBtn.click();
+  await page.waitForTimeout(900);
+  if (await seen("Vehicle photo")) ok("closing an outward trip first asks for a photo of the loaded vehicle");
+  else bad("closing an outward trip did not ask for a vehicle photo");
+  const save = page.locator(".gfoot").getByRole("button", { name: /Save and close trip/i }).first();
+  if (await save.count()) {
+    (await save.isDisabled().catch(() => false)) ? ok("the trip cannot close until the vehicle is photographed")
+                                                  : bad("Save and close is tappable with no vehicle photo");
+  } else bad("no Save and close button on the vehicle photo step");
+  await page.waitForTimeout(1200);
+  const closesAfter = posted.flatMap((b) => b.trips ?? []).filter((x) => x.status === "closed").length;
+  if (closesAfter === closesBefore) ok("no close was sent without the vehicle photo");
+  else bad("the trip close was sent before any vehicle photo");
+  const back = page.locator(".gbar button, .gtopbar button").first();
+  if (await back.count()) { await back.click().catch(() => {}); await page.waitForTimeout(800); }
+  if (await seen("Final list")) ok("backing out of the photo returns to the close screen");
+  else bad("backing out of the vehicle photo did not return to the close screen");
+}
+
 const addManually = page.getByRole("button", { name: /Add manually/i }).first();
 if (await addManually.count()) {
   await addManually.click();

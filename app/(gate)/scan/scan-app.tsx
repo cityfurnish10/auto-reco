@@ -18,7 +18,7 @@ import * as outbox from "@/lib/gate/client/outbox";
 import { bootstrap, clearGuardId, drain, shiftState, expectedNow, fleet as fetchFleet, getGuardId, loadToken, requestPersistence,
          history, rosterFor, signIn, type Bootstrap, type ExpectedItem, type Fleet,
          type GuardOption, type HistoryTrip } from "@/lib/gate/client/api";
-import { click, compress, feedback, position } from "@/lib/gate/client/media";
+import { click, compress, feedback, photoQuality, position } from "@/lib/gate/client/media";
 import { istToday, shiftIstDate, istDateOf } from "@/lib/gate/calendar";
 import { decodeFrame, initScanner, openCamera, stopCamera } from "@/lib/gate/client/scanner";
 import { canonicalize } from "@/lib/engine/barcode";
@@ -30,7 +30,10 @@ type Screen =
   | "newtrip" | "scan" | "resolve" | "manual" | "closetrip" | "settings"
   // The two that decide whether a guard trusts the app when it is not
   // behaving: what went wrong, and what is still waiting to be sent.
-  | "problem" | "queue" | "profile" | "history" | "randomcheck";
+  | "problem" | "queue" | "profile" | "history" | "randomcheck"
+  // How the stock sits in the vehicle: before unloading (inward), after
+  // loading (outward). See saveVehiclePhoto.
+  | "vehicle";
 
 interface ScanLine {
   clientId: string; barcode: string; label: string; flagged: boolean;
@@ -89,6 +92,12 @@ export default function GateApp() {
   // unrecorded the day before; null for today. Only those two are offered, and
   // the server accepts nothing earlier (0044).
   const [tripDate, setTripDate] = useState<string | null>(null);
+  // The vehicle photo for the open trip is taken and held on the phone (the
+  // blob is kept in the outbox under `${tripId}-vehicle`, so it survives a
+  // reload) until the trip closes and it travels with the close.
+  const [vehicleShot, setVehicleShot] = useState(false);
+  const [vehicleCheck, setVehicleCheck] = useState<{ dark: boolean; blurry: boolean } | null>(null);
+  const [vehicleTries, setVehicleTries] = useState(0);
   const [veh, setVeh] = useState("");
   const [drv, setDrv] = useState("");
   const [tripId, setTripId] = useState<string | null>(null);
@@ -359,6 +368,7 @@ export default function GateApp() {
           setTripId(b.openTrip.client_trip_id);
           setDir(b.openTrip.direction);
           setVeh(b.openTrip.vehicle_no);
+          setVehicleShot(!!(await outbox.getBlob(`${b.openTrip.client_trip_id}-vehicle`).catch(() => undefined)));
           try {
             const saved = JSON.parse(localStorage.getItem("gate.tripDate") ?? "null");
             setTripDate(saved?.tripId === b.openTrip.client_trip_id ? saved.date ?? null : null);
@@ -935,6 +945,28 @@ export default function GateApp() {
     };
   }, [shiftId, checkShiftStillOpen]);
 
+  function openVehiclePhoto() {
+    clearItemPhoto(); setVehicleCheck(null); setVehicleTries(0);
+    setScreen("vehicle");
+  }
+
+  async function checkVehiclePhoto(blob: Blob) {
+    const q = await photoQuality(blob);
+    setVehicleCheck(q);
+    if (q.dark || q.blurry) setVehicleTries((n) => n + 1);
+  }
+
+  /** Keep the vehicle photo for this trip, then carry on: into the scanner
+   *  (inward) or through the close (outward). */
+  async function saveVehiclePhoto() {
+    if (!tripId || !photo) return;
+    await outbox.putBlob(`${tripId}-vehicle`, photo);
+    setVehicleShot(true);
+    clearItemPhoto(); setVehicleCheck(null);
+    if (dir === "IN") { setScreen("scan"); return; }
+    await closeTrip(true);
+  }
+
   async function startTrip() {
     if (tripMissing.length > 0) return;
     const clientId = uid();
@@ -959,11 +991,23 @@ export default function GateApp() {
     setT0(started);
     try { localStorage.setItem("gate.t0", String(started)); } catch { /* storage blocked */ }
     await refreshQueue(); void sync();
+    setVehicleShot(false);
+    // INWARD: the vehicle is photographed BEFORE anything comes off it, so the
+    // way the stock arrived is on record before the first scan changes it.
+    if (dir === "IN") { openVehiclePhoto(); return; }
     setScreen("scan");
   }
 
-  async function closeTrip() {
+  async function closeTrip(photoJustTaken = false) {
     if (!tripId) return;
+    // OUTWARD: the loaded vehicle is photographed when loading is done, as
+    // the last step before the trip closes. A trip that somehow reaches the
+    // close without one (started before this existed) is asked for it too.
+    if (!vehicleShot && !photoJustTaken) { openVehiclePhoto(); return; }
+    // The photo travels with the close: moved under the close entry's key,
+    // which is what the send loop uploads against.
+    const vehicleBlob = await outbox.getBlob(`${tripId}-vehicle`);
+    if (vehicleBlob) await outbox.putBlob(`${tripId}-close`, vehicleBlob);
     await outbox.enqueue({
       clientId: `${tripId}-close`, kind: "trip",
       payload: {
@@ -971,6 +1015,7 @@ export default function GateApp() {
         openedAt: new Date(t0 || Date.now()).toISOString(),
         closedAt: new Date().toISOString(), status: "closed",
         movementDate: tripDate,
+        hasPhoto: !!vehicleBlob, hasVehiclePhoto: !!vehicleBlob,
         // THE GAP TRAVELS WITH THE CLOSE, whether or not the guard was shown
         // it. Recording only the warnings a guard saw would measure the
         // false-alarm rate against people who were never warned — which is the
@@ -998,7 +1043,8 @@ export default function GateApp() {
     setTrips((n) => { const v = n + 1; saveDay(v, itemsToday + lines.length); return v; });
     setItemsToday((n) => n + lines.length);
     try { localStorage.removeItem("gate.t0"); } catch { /* storage blocked */ }
-    setTripId(null); setDir(null); setVeh(""); setDrv(""); setTripDate(null);
+    await outbox.remove(`${tripId}-vehicle`).catch(() => {});
+    setTripId(null); setDir(null); setVeh(""); setDrv(""); setTripDate(null); setVehicleShot(false);
     try { localStorage.removeItem("gate.tripDate"); } catch { /* blocked */ }
     setLines([]); seenRef.current = new Set();
     await refreshQueue(); void sync();
@@ -1586,7 +1632,10 @@ export default function GateApp() {
           </div>
           <div className="gfoot">
             <button className="gbtn primary" onClick={() => {
-              if (tripId) { setScreen("scan"); return; }
+              if (tripId) {
+                if (dir === "IN" && !vehicleShot) { openVehiclePhoto(); return; }
+                setScreen("scan"); return;
+              }
               // Re-read the fleet on the way in. The copy fetched when the app
               // opened may be hours old by now, and this is the one screen
               // where being out of date costs the guard a typed truck number.
@@ -1858,6 +1907,51 @@ export default function GateApp() {
         </>
       )}
 
+      {/* ── The vehicle photo ─────────────────────────────────────────────
+          How the stock is kept in the vehicle, as a clear photo: before
+          unloading an inward truck, after loading an outward one. Stored with
+          the trip and shown to managers in the trip's header on the portal. */}
+      {screen === "vehicle" && (
+        <>
+          <Bar t={t} title={t("vehiclePhoto")}
+               left={<BackBtn onClick={() => { closeItemCamera(); clearItemPhoto(); setScreen(dir === "IN" ? "today" : "closetrip"); }} />}
+               right={<span className="gsub mono">{veh}</span>} />
+          <div className="gbody">
+            <p className="gnote" style={{ textAlign: "left" }}>{dir === "IN" ? t("vehicleBeforeWhy") : t("vehicleAfterWhy")}</p>
+            <PhotoBox t={t} photo={photo} url={itemUrl} cam={itemCam} videoRef={itemVidRef}
+              onOpen={openItemCamera}
+              onShoot={async () => {
+                const v = itemVidRef.current;
+                if (!v?.videoWidth) return;
+                // Larger than an item photo: a whole truck bed has to be legible.
+                const blob = await compress(v, 1400, 0.8);
+                setPhoto(blob);
+                setItemUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob); });
+                closeItemCamera();
+                await checkVehiclePhoto(blob);
+              }}
+              onRetake={async () => { setVehicleCheck(null); await retakePhoto(); }} />
+            {photo && vehicleCheck?.dark && <p className="gnote glate">{t("photoTooDark")}</p>}
+            {photo && !vehicleCheck?.dark && vehicleCheck?.blurry && <p className="gnote glate">{t("photoBlurry")}</p>}
+          </div>
+          <div className="gfoot">
+            {(() => {
+              const unclear = !!vehicleCheck && (vehicleCheck.dark || vehicleCheck.blurry);
+              // Two tries, then the guard may keep what they have: a photo is
+              // never allowed to stand between a guard and a truck that must go.
+              const allowAnyway = unclear && vehicleTries >= 2;
+              return (
+                <button className={`gbtn ${photo && (!unclear || allowAnyway) ? "primary" : "ghost"}`}
+                        disabled={!photo || !vehicleCheck || (unclear && !allowAnyway)}
+                        onClick={() => void saveVehiclePhoto()}>
+                  {allowAnyway ? t("useAnyway") : dir === "IN" ? t("savePhotoScan") : t("savePhotoClose")}
+                </button>
+              );
+            })()}
+          </div>
+        </>
+      )}
+
       {screen === "closetrip" && (
         <>
           <Bar t={t} title={t("closeTrip")} left={<BackBtn onClick={() => setScreen("scan")} />} />
@@ -1942,7 +2036,7 @@ export default function GateApp() {
 
           <div className="gfoot">
             <button className="gbtn ghost narrow" onClick={() => setScreen("scan")}>{t("back")}</button>
-            <button className="gbtn ok" onClick={closeTrip}>
+            <button className="gbtn ok" onClick={() => void closeTrip()}>
               {t("confirmClose")} · {lines.length}
             </button>
           </div>

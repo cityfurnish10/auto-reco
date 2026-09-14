@@ -33,20 +33,23 @@ export const GET = jsonRoute("gate/photo", async (req: NextRequest) => {
   const admin = createAdminClient();
   const scanId = req.nextUrl.searchParams.get("scanId");
   const checkId = req.nextUrl.searchParams.get("checkId");
-  if (!scanId && !checkId) {
-    return NextResponse.json({ error: "scanId or checkId required" }, { status: 400 });
+  // A trip's vehicle photo (0045) — how the stock was kept in the vehicle.
+  const tripId = req.nextUrl.searchParams.get("tripId");
+  if (!scanId && !checkId && !tripId) {
+    return NextResponse.json({ error: "scanId, checkId or tripId required" }, { status: 400 });
   }
 
   // An item photo and a check-in selfie live in different buckets on purpose:
   // different retention (90 days against 45) and a different audience.
-  const table = scanId ? "gate_scans" : "guard_face_checks";
-  const column = scanId ? "photo_path" : "selfie_path";
-  const bucket = scanId ? EVIDENCE_BUCKET : ATTENDANCE_BUCKET;
+  // A vehicle photo sits with item photos: the same evidence, the same retention.
+  const table = scanId ? "gate_scans" : tripId ? "gate_trips" : "guard_face_checks";
+  const column = scanId ? "photo_path" : tripId ? "vehicle_photo_path" : "selfie_path";
+  const bucket = scanId || tripId ? EVIDENCE_BUCKET : ATTENDANCE_BUCKET;
 
   const { data, error } = await admin
     .from(table)
     .select(`${column}, city`)
-    .eq("id", scanId ?? checkId)
+    .eq("id", scanId ?? tripId ?? checkId)
     .maybeSingle();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

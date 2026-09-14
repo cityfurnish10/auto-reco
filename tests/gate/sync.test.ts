@@ -120,7 +120,7 @@ function stubDb(opts: { existingTrips?: Record<string, string> } = {}) {
           }),
           update(u: Record<string, unknown>) {
             updates.push(u);
-            const self = { eq: () => self, then: (r: (v: unknown) => void) => r({ error: null }) };
+            const self = { eq: () => self, is: () => self, then: (r: (v: unknown) => void) => r({ error: null }) };
             return self;
           },
         };
@@ -215,6 +215,27 @@ describe("applyBatch — replay safety", () => {
     expect(t.recorded_late).toBeUndefined();
     expect(t.business_date).not.toBe("2026-09-10");
     expect(scanRows[0].recorded_late).toBeUndefined();
+  });
+
+  // ── The vehicle photo (0045) ─────────────────────────────────────────────
+  it("a trip carrying a vehicle photo is pointed at it and handed an upload link", async () => {
+    const { db, tripRows } = stubDb();
+    const r = await applyBatch(db, WHO, { trips: [trip({ hasVehiclePhoto: true })] });
+    expect(r.trips[0]).toMatchObject({ status: "stored", photoUploadPath: expect.stringMatching(/vehicle-ct-1\.jpg$/) });
+    expect([...tripRows.values()][0].vehicle_photo_path).toMatch(/vehicle-ct-1\.jpg$/);
+  });
+
+  it("the close of a trip already stored still gets the photo's link — that is the normal path", async () => {
+    const { db, updates } = stubDb({ existingTrips: { "ct-1": "trip-existing" } });
+    const r = await applyBatch(db, WHO, { trips: [trip({ status: "closed", closedAt: "2026-08-21T11:00:00Z", hasVehiclePhoto: true })] });
+    expect(r.trips[0]).toMatchObject({ status: "duplicate", photoUploadPath: expect.stringMatching(/vehicle-ct-1\.jpg$/) });
+    expect(updates.some((u) => typeof u.vehicle_photo_path === "string")).toBe(true);
+  });
+
+  it("a trip without one asks for nothing", async () => {
+    const { db } = stubDb();
+    const r = await applyBatch(db, WHO, { trips: [trip()] });
+    expect((r.trips[0] as { photoUploadPath?: string }).photoUploadPath).toBeUndefined();
   });
 
   it("re-sending the SAME batch books nothing twice", async () => {

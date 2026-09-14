@@ -75,7 +75,8 @@ export const POST = jsonRoute("gate/sync", async (req: NextRequest) => {
   // its own.
   const photos = await signPhotoUploads(
     admin,
-    report.scans.flatMap((s) =>
+    // Item photos and vehicle photos (0045) — the same bucket and retention.
+    [...report.scans, ...report.trips].flatMap((s) =>
       (s.status === "stored" || s.status === "duplicate") && s.photoUploadPath
         ? [{ clientId: s.clientId, path: s.photoUploadPath }] : []
     )

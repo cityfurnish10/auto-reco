@@ -316,10 +316,15 @@ async function drainOnce(): Promise<SyncResult> {
   // image is the only evidence a hand entry carries.
   const confirmed: string[] = [];
   const owesPhoto: string[] = [];
+  // Queue entry → the record id its upload link is named by. The same for a
+  // scan or a selfie; different for a trip close ("<trip>-close" vs "<trip>"),
+  // which carries the vehicle photo.
+  const recordOf = new Map<string, string>();
   for (const { queueId, reply } of answered) {
     if (reply.status === "stored" || reply.status === "duplicate") {
       if (reply.status === "stored") res.stored++; else res.duplicate++;
       const p = byId.get(queueId)?.payload as Record<string, unknown> | undefined;
+      recordOf.set(queueId, reply.clientId);
       if (p?.hasPhoto || p?.hasSelfie) owesPhoto.push(queueId); else confirmed.push(queueId);
     } else { res.rejected++; await outbox.markRejected(queueId, reply.reason ?? "rejected"); }
   }
@@ -334,20 +339,17 @@ async function drainOnce(): Promise<SyncResult> {
   const noImage = new Set<string>();
   if (owesPhoto.length) {
     const { getSupabaseClient } = await import("../../supabase/client");
-    const owed = new Set(owesPhoto);
-    for (const slot of slots) {
-      if (!owed.has(slot.clientId)) continue;
-      const blob = await outbox.getBlob(slot.clientId);
-      if (!blob) { noImage.add(slot.clientId); continue; }
-      if (!slot.token) continue;
+    for (const queueId of owesPhoto) {
+      const recordId = recordOf.get(queueId) ?? queueId;
+      const slot = slots.find((x) => x.clientId === recordId);
+      const blob = await outbox.getBlob(queueId);
+      if (!blob) { noImage.add(queueId); continue; }
+      if (!slot?.token) continue;
       try {
         const { error } = await getSupabaseClient().storage.from(slot.bucket)
           .uploadToSignedUrl(slot.path, slot.token, blob);
-        if (!error) { res.photosUploaded++; uploaded.add(slot.clientId); }
+        if (!error) { res.photosUploaded++; uploaded.add(queueId); }
       } catch { /* kept, and retried on the next drain */ }
-    }
-    for (const queueId of owesPhoto) {
-      if (!slots.some((x) => x.clientId === queueId) && !(await outbox.getBlob(queueId))) noImage.add(queueId);
     }
   }
 

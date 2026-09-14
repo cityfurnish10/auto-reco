@@ -72,3 +72,44 @@ export function feedback(ok: boolean) {
   } catch { /* audio is a nicety; never let it break a scan */ }
   navigator.vibrate?.(ok ? 18 : [30, 50, 30]);
 }
+
+/**
+ * Is a photo clear enough to show how stock sits in a vehicle?
+ *
+ * Two cheap checks on a 160px-wide greyscale copy: mean brightness (a truck bed
+ * at night, a lens covered by a thumb) and the variance of a Laplacian — the
+ * standard sharpness measure; a smeared frame has almost no edges. The limits
+ * are deliberately loose and the caller lets a guard use the photo anyway after
+ * two tries: this is a nudge to retake, never a wall between a guard and a
+ * truck that has to leave.
+ */
+export async function photoQuality(blob: Blob): Promise<{ dark: boolean; blurry: boolean }> {
+  try {
+    const bmp = await createImageBitmap(blob);
+    const w = 160, h = Math.max(1, Math.round((bmp.height / bmp.width) * 160));
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const ctx = c.getContext("2d", { willReadFrequently: true })!;
+    ctx.drawImage(bmp, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data;
+    const g = new Float32Array(w * h);
+    let sum = 0;
+    for (let i = 0; i < w * h; i++) { g[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]; sum += g[i]; }
+    const mean = sum / (w * h);
+    let lsum = 0, lsq = 0, n = 0;
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      const l = g[i - w] + g[i + w] + g[i - 1] + g[i + 1] - 4 * g[i];
+      lsum += l; lsq += l * l; n++;
+    }
+    const variance = n ? lsq / n - (lsum / n) ** 2 : 0;
+    return { dark: mean < QUALITY.minBrightness, blurry: variance < QUALITY.minSharpness };
+  } catch {
+    // An image the browser cannot decode here is not proof of a bad photo.
+    return { dark: false, blurry: false };
+  }
+}
+
+/** Starting limits, to be tuned on real gate photos: 0–255 brightness, and
+ *  Laplacian variance on the 160px copy. */
+export const QUALITY = { minBrightness: 40, minSharpness: 30 };

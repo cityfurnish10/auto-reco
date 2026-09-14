@@ -96,6 +96,23 @@ describe("a hand entry's photo", () => {
   });
 });
 
+describe("the vehicle photo, sent with a trip's close", () => {
+  it("uploads under the TRIP's link although the queue entry is '<trip>-close'", async () => {
+    // The server names the link after the trip; the phone queued the close
+    // under its own key. Matching on the queue key would never upload it.
+    store.items.set("t1-close", { clientId: "t1-close", kind: "trip", attempts: 0,
+      payload: { clientTripId: "t1", status: "closed", hasPhoto: true, hasVehiclePhoto: true } });
+    store.blobs.set("t1-close", new Blob(["jpeg"]));
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({
+      trips: [{ clientId: "t1", status: "duplicate", photoUploadPath: "DELHI/d/vehicle-t1.jpg" }],
+      photos: [{ clientId: "t1", path: "DELHI/d/vehicle-t1.jpg", token: "t" }], selfies: [],
+      bucket: "gate-evidence", selfieBucket: "gate-attendance" }) })));
+    await drain();
+    expect(uploads).toEqual(["DELHI/d/vehicle-t1.jpg"]);
+    expect(store.items.has("t1-close")).toBe(false);
+  });
+});
+
 describe("sends never overlap", () => {
   it("THE DELHI CASE: a burst of triggers posts one batch at a time and loses no photo", async () => {
     handEntry("m1"); handEntry("m2");

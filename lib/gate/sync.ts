@@ -57,6 +57,8 @@ export interface InTrip {
   /** Set when the guard chose YESTERDAY for this trip (0044). Accepted only
    *  as the calendar day before openedAt; anything else is ignored. */
   movementDate?: string | null;
+  /** The phone holds a photo of how the stock sits in the vehicle (0045). */
+  hasVehiclePhoto?: boolean;
 }
 
 export interface InScan {
@@ -370,6 +372,8 @@ export async function applyBatch(
     // any further back is recorded as today, not refused, so the movement is
     // never lost over the date it claimed.
     const late = isIsoDate(t.movementDate) && t.movementDate === shiftIstDate(istDateOf(t.openedAt), -1);
+    const vehiclePhotoPath = t.hasVehiclePhoto
+      ? `${who.city}/${d.businessDate}/vehicle-${t.clientTripId}.jpg` : null;
     const row = {
       client_trip_id: t.clientTripId,
       city: who.city,
@@ -380,6 +384,7 @@ export async function applyBatch(
       carrier_ref: t.carrierRef?.trim() || null,
       opened_at: t.openedAt,
       ...(late ? { movement_date: t.movementDate, recorded_late: true } : {}),
+      ...(vehiclePhotoPath ? { vehicle_photo_path: vehiclePhotoPath } : {}),
       closed_at: t.closedAt ?? null,
       // Counted on the day it moved, not the day it was typed in.
       business_date: late ? t.movementDate! : d.businessDate,
@@ -394,6 +399,13 @@ export async function applyBatch(
     // 0044 applied by hand, possibly not yet. Without its columns a late trip
     // could not be MARKED late, and backdating without the mark is the one
     // thing this feature must never do — so it is recorded on its own day.
+    if (ins.error?.code === "42703" && vehiclePhotoPath && !late) {
+      // 0045 not applied: record the trip; the photo has nowhere to point yet.
+      const { vehicle_photo_path: _v, ...plain } = row as typeof row & { vehicle_photo_path?: unknown };
+      void _v;
+      ins = await admin.from("gate_trips").insert(plain).select("id").maybeSingle();
+      report.clockWarnings.push(`trip ${t.clientTripId}: vehicle photo not stored — migration 0045 not applied`);
+    }
     if (ins.error?.code === "42703" && late) {
       const { movement_date: _m, recorded_late: _r, ...plain } = row as typeof row & { movement_date?: unknown; recorded_late?: unknown };
       void _m; void _r;
@@ -422,15 +434,24 @@ export async function applyBatch(
                         ...completenessColumns(t.completeness) })
               .eq("id", data.id).eq("status", "open");
           }
+          // The vehicle photo arrives with the close, which for a real trip is
+          // this update path. Pointed at once; a replay only re-offers the link.
+          if (vehiclePhotoPath) {
+            await admin.from("gate_trips").update({ vehicle_photo_path: vehiclePhotoPath })
+              .eq("id", data.id).is("vehicle_photo_path", null)
+              .then(() => undefined, () => undefined);
+          }
         }
-        report.trips.push({ clientId: t.clientTripId, status: "duplicate" });
+        report.trips.push({ clientId: t.clientTripId, status: "duplicate",
+                            ...(vehiclePhotoPath ? { photoUploadPath: vehiclePhotoPath } : {}) });
       } else {
         report.trips.push(bad(t.clientTripId, readableDbError(ins.error.message)));
       }
       continue;
     }
     tripIds.set(t.clientTripId, ins.data!.id as string);
-    report.trips.push({ clientId: t.clientTripId, status: "stored", id: ins.data!.id as string });
+    report.trips.push({ clientId: t.clientTripId, status: "stored", id: ins.data!.id as string,
+                        ...(vehiclePhotoPath ? { photoUploadPath: vehiclePhotoPath } : {}) });
   }
 
   // ── 2. Scans ─────────────────────────────────────────────────────────────

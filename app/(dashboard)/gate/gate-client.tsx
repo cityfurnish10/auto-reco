@@ -124,6 +124,7 @@ interface Trip {
   removed: RemovedItem[];
   /** Entered on a later day than it happened; counted on movementDate (0044). */
   recordedLate: boolean; movementDate: string | null;
+  hasVehiclePhoto: boolean;
   completeness: TripCompleteness | null;
 }
 interface ActivityData {
@@ -232,6 +233,9 @@ function Activity({ user }: { user: SessionUser }) {
                       <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap tabular-nums">{took(tr.durationSec)}</td>
                       <td className="px-4 py-2.5">
                         <span className={`badge ${tr.status === "closed" ? "badge-done" : "badge-info"}`}>{tr.status}</span>
+                      </td>
+                      <td className="px-4 py-2.5 text-text-muted" title={tr.hasVehiclePhoto ? "Vehicle photo taken — open the trip to view" : "No vehicle photo"}>
+                        {tr.hasVehiclePhoto ? <Icon name="camera" size={16} /> : "—"}
                       </td>
                       <td className="px-2 text-text-muted"><Icon name="chevron_right" size={17} /></td>
                     </tr>
@@ -354,7 +358,7 @@ function Activity({ user }: { user: SessionUser }) {
               <table className="w-full text-sm">
                 <thead>
                   <tr>
-                    {["Guard", "Vehicle", "Direction", "Items", "Opened", "Time at gate", "Status"].map((h) => (
+                    {["Guard", "Vehicle", "Direction", "Items", "Opened", "Time at gate", "Status", "Photo"].map((h) => (
                       <th key={h} className="text-left px-4 py-2.5 text-xs uppercase tracking-wide text-text-muted whitespace-nowrap">{h}</th>
                     ))}
                     <th className="w-10" />
@@ -404,6 +408,9 @@ function Activity({ user }: { user: SessionUser }) {
                           </td>
                           <td className="px-4 py-2.5" />
                           <td className="px-4 py-2.5" />
+                          <td className="px-4 py-2.5 text-text-muted">
+                            {v.trips.some((x) => x.hasVehiclePhoto) ? <Icon name="camera" size={16} /> : null}
+                          </td>
                           <td className="px-2 text-text-muted">
                             <Icon name={isOpen ? "expand_less" : "expand_more"} size={17} />
                           </td>
@@ -429,7 +436,7 @@ function Activity({ user }: { user: SessionUser }) {
 export function TripModal({ trip, onClose, onLookedUp }: {
   trip: Trip | null; onClose: () => void; onLookedUp: () => void;
 }) {
-  const [photo, setPhoto] = useState<{ scanId: string; label: string } | null>(null);
+  const [photo, setPhoto] = useState<{ scanId?: string; tripId?: string; label: string } | null>(null);
   const [lookup, setLookup] = useState<"idle" | "running" | "failed">("idle");
   const asked = useRef<string | null>(null);
 
@@ -468,6 +475,19 @@ export function TripModal({ trip, onClose, onLookedUp }: {
             gap between the guard starting the trip and closing it — how long
             the vehicle was at the gate. */}
         <Row k="Time at gate" v={took(trip.durationSec)} mono />
+        {/* How the stock was kept in the vehicle: photographed before
+            unloading an inward truck, after loading an outward one. */}
+        <div className="flex justify-between items-center py-2 border-b border-border text-sm">
+          <span className="text-text-secondary">Vehicle photo</span>
+          {trip.hasVehiclePhoto ? (
+            <button className="btn btn-compact btn-secondary"
+                    onClick={() => setPhoto({ tripId: trip.id, label: `${trip.vehicleNo} · ${trip.direction === "OUT" ? "after loading" : "before unloading"}` })}>
+              <Icon name="camera" size={15} /> View vehicle photo
+            </button>
+          ) : (
+            <span className="text-text-muted">{trip.status === "open" ? "taken when the trip closes" : "none"}</span>
+          )}
+        </div>
         <Row k="Items" v={`${trip.itemCount}${trip.manual ? ` · ${trip.manual} typed` : ""}${trip.duplicates ? ` · ${trip.duplicates} duplicate not counted` : ""}`} />
         {trip.completeness && (
           <Row k="Against the plan"
@@ -658,7 +678,7 @@ function downloadTripCsv(trip: Trip) {
  */
 function PhotoViewer({ photo, onClose }: {
   /** An item photo (scanId) or an attendance selfie (checkId). */
-  photo: { scanId?: string; checkId?: string; label: string } | null; onClose: () => void;
+  photo: { scanId?: string; checkId?: string; tripId?: string; label: string } | null; onClose: () => void;
 }) {
   const [url, setUrl] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -666,7 +686,8 @@ function PhotoViewer({ photo, onClose }: {
   useEffect(() => {
     if (!photo) return;
     let alive = true;
-    const q = photo.checkId ? `checkId=${encodeURIComponent(photo.checkId)}` : `scanId=${encodeURIComponent(photo.scanId ?? "")}`;
+    const q = photo.tripId ? `tripId=${encodeURIComponent(photo.tripId)}`
+      : photo.checkId ? `checkId=${encodeURIComponent(photo.checkId)}` : `scanId=${encodeURIComponent(photo.scanId ?? "")}`;
     fetch(`/api/gate/photo?${q}`, { credentials: "same-origin" })
       .then((r) => r.json())
       .then((j) => {
