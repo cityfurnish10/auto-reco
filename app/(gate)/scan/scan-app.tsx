@@ -93,6 +93,10 @@ export default function GateApp() {
   // reasoning as removing an item, and for the same reason: it is the other
   // thing in this app a stray tap should not be able to do.
   const [confirmEndShift, setConfirmEndShift] = useState(false);
+  // The selfie screen serves two moments: arriving (check-in) and leaving
+  // (end of shift). Same camera, same face check, different record.
+  const [selfieMode, setSelfieMode] = useState<"in" | "out">("in");
+  const pendingQuiet = useRef(false);
   // Signing out of a shared phone. Distinct from ending a shift: one hands the
   // handset to a colleague, the other closes the attendance record.
   const [confirmSignOut, setConfirmSignOut] = useState(false);
@@ -1060,7 +1064,35 @@ export default function GateApp() {
   async function endShift(quiet = false) {
     if (!shiftId) { setScreen("who"); return; }
     setConfirmEndShift(false);
-    await handOver(quiet);
+    // A FACE AT THE END AS WELL AS THE START. Attendance shows first sign-in
+    // and last sign-out per guard per day, each with the face that did it —
+    // a check-out tapped by whoever holds the phone proves nothing about when
+    // that guard actually left.
+    pendingQuiet.current = quiet;
+    setPhoto(null); setFaceScore(null); setFaceVerdict(null);
+    setShotUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    setSelfieCam("starting"); setSelfieNonce((n) => n + 1);
+    setSelfieMode("out");
+    setScreen("checkin");
+  }
+
+  async function doCheckOut() {
+    if (!shiftId || !photo || blocksEntry(faceVerdict)) return;
+    const pos = await position();
+    const faceId = uid();
+    await outbox.enqueue({
+      clientId: faceId, kind: "face",
+      payload: {
+        clientCheckId: faceId, clientShiftId: shiftId, trigger: "check_out",
+        capturedAt: new Date().toISOString(),
+        verdict: faceVerdict ?? "review",
+        matchScore: faceScore,
+        hasSelfie: true, lat: pos?.coords.latitude ?? null, lng: pos?.coords.longitude ?? null,
+      },
+    });
+    await outbox.putBlob(faceId, photo);
+    setPhoto(null); setFaceScore(null); setFaceVerdict(null); setSelfieMode("in");
+    await handOver(pendingQuiet.current);
   }
 
   async function handOver(quiet = false) {
@@ -1288,7 +1320,10 @@ export default function GateApp() {
             </div>
           </div>
           <div className="gfoot">
-            <button className="gbtn ghost narrow" onClick={() => void handOver()}>{t("switchGuard")}</button>
+            {/* Handing over ends this guard's shift, so it takes the same face
+                photo as ending it outright — otherwise "switch guard" would be
+                the way to sign out without one. */}
+            <button className="gbtn ghost narrow" onClick={() => void endShift()}>{t("switchGuard")}</button>
             <button className="gbtn warn" onClick={() => setConfirmEndShift(true)}>
               <Icon name="logout" size={17} />{t("endShift")}
             </button>
@@ -1375,7 +1410,10 @@ export default function GateApp() {
 
       {screen === "checkin" && (
         <>
-          <Bar t={t} title={t("checkIn")} />
+          <Bar t={t} title={selfieMode === "out" ? t("checkOutPhoto") : t("checkIn")}
+               left={selfieMode === "out"
+                 ? <BackBtn onClick={() => { setSelfieMode("in"); setPhoto(null); setFaceVerdict(null); setFaceScore(null); setScreen("today"); }} />
+                 : undefined} />
           <div className="gbody">
             <div className="gselfiewrap">
               <video ref={selfieRef} playsInline muted autoPlay
@@ -1409,7 +1447,7 @@ export default function GateApp() {
               <p>{faceVerdict === "pass" ? t("faceOk")
                  : faceVerdict === "fail" ? t("faceNotYou")
                  : faceVerdict === "no_face" ? t("faceNone")
-                 : faceVerdict ? t("faceReview") : t("selfieWhy")}</p>
+                 : faceVerdict ? t("faceReview") : selfieMode === "out" ? t("selfieOutWhy") : t("selfieWhy")}</p>
             </div>
             <GeoCard t={t} boot={boot} />
           </div>
@@ -1426,7 +1464,9 @@ export default function GateApp() {
                   tap it, and the guard concludes the app is broken. */}
               <button className={`gbtn ${(!photo || faceBlocked || matching) ? "ghost" : "primary"}`}
                       disabled={!photo || faceBlocked || matching}
-                      onClick={doCheckIn}>{t("checkIn")}</button>
+                      onClick={selfieMode === "out" ? doCheckOut : doCheckIn}>
+                {selfieMode === "out" ? t("endShift") : t("checkIn")}
+              </button>
             </div>
           </div>
         </>
@@ -1743,19 +1783,34 @@ export default function GateApp() {
               <div className="gkv"><span>{t("timeTaken")}</span><b className="mono">{elapsed}</b></div>
 
             </div>
-            {lines.map((l) => (
-              <div key={l.clientId} className="gkv">
-                <span className="mono">{l.barcode}</span>
-                <span className="growend">
-                  <span className={`gtag ${l.flagged ? "warn" : "ok"}`}>
-                    <Icon name={l.flagged ? "warning" : "check"} size={12} /></span>
-                  <button className="gx" aria-label={`${t("remove")} ${l.barcode}`}
-                          onClick={() => setConfirmRemove(l)}>
-                    <Icon name="close" size={15} />
-                  </button>
-                </span>
+            {/* THE FINAL LIST, as its own section. Closing a trip is the
+                guard's statement of what went on (or came off) the truck; it
+                should be made looking at every line, numbered, not past a
+                loose run of barcodes under a summary. */}
+            <div className="gcard col gfinal">
+              <div className="gfinalhead">
+                <h3>{t("finalList")} <span className="gcount">{lines.length}</span></h3>
+                <p className="gnote">{t("finalListWhy")}</p>
               </div>
-            ))}
+              {lines.length === 0 && <p className="gnote">{t("nothingOnTrip")}</p>}
+              <ol className="gfinallist">
+                {[...lines].reverse().map((l, i) => (
+                  <li key={l.clientId} className={l.flagged ? "flag" : ""}>
+                    <span className="gfinalno">{i + 1}</span>
+                    <span className="gfinalwhat">
+                      <b>{l.label || t("scannedItem")}</b>
+                      {l.barcode && l.barcode !== l.label && <span className="mono">{l.barcode}</span>}
+                    </span>
+                    <span className={`gtag ${l.flagged ? "warn" : "ok"}`}>
+                      <Icon name={l.flagged ? "warning" : "check"} size={12} /></span>
+                    <button className="gx" aria-label={`${t("remove")} ${l.barcode}`}
+                            onClick={() => setConfirmRemove(l)}>
+                      <Icon name="close" size={15} />
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </div>
           </div>
           {/* ── Nothing has left the phone yet ──────────────────────────
               THE MOMENT IT MATTERS. Mid-scan, offline is a fact. At close it
@@ -1798,7 +1853,9 @@ export default function GateApp() {
 
           <div className="gfoot">
             <button className="gbtn ghost narrow" onClick={() => setScreen("scan")}>{t("back")}</button>
-            <button className="gbtn ok" onClick={closeTrip}>{t("closeTrip")}</button>
+            <button className="gbtn ok" onClick={closeTrip}>
+              {t("confirmClose")} · {lines.length}
+            </button>
           </div>
         </>
       )}

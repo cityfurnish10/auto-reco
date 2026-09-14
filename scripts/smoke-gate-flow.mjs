@@ -539,12 +539,22 @@ if ((await page.locator(".gmissrow").count()) === 0) ok("no missing-items list i
 else bad("a missing-items list is on the close screen");
 
 // And it must never stand between a guard and closing the trip.
-const closeBtn = page.getByRole("button", { name: /^Close trip$/i }).first();
+// The close button now states what is being confirmed: "Confirm & close · N".
+const closeBtn = page.getByRole("button", { name: /^Confirm & close/i }).first();
 if (await closeBtn.count()) {
   const blocked = await closeBtn.isDisabled().catch(() => false);
   blocked ? bad("Close trip is DISABLED by the warning — a guard who cannot close stops using the app")
           : ok("the trip can still be closed — warn, let it go, record the gap");
 } else bad("no Close trip button");
+
+// THE FINAL LIST. Closing is the guard's statement of what went on the truck;
+// it has to be made looking at a numbered list of every item.
+if (await page.locator(".gfinal").count()) {
+  const listed = await page.locator(".gfinallist li").count();
+  const onButton = Number((await closeBtn.innerText().catch(() => "")).match(/(\d+)\s*$/)?.[1] ?? -1);
+  if (listed === onButton) ok(`the final list shows every item (${listed}), and the button says how many it confirms`);
+  else bad(`final list shows ${listed} but the close button confirms ${onButton}`);
+} else bad("no final list section on the close screen");
 
 const addManually = page.getByRole("button", { name: /Add manually/i }).first();
 if (await addManually.count()) {
@@ -762,6 +772,40 @@ await page.waitForTimeout(5000);
 const left = await queued();
 if (seeded === 3 && left === 0) ok("a close, a sign-out and a removal leave the queue once the server has them");
 else bad(`queued ${seeded}, still on the phone after syncing: ${left} — they will show as "not sent" forever`);
+
+step("Ending a shift asks for a face first");
+// Attendance shows last sign-out per guard with the face that made it, so the
+// shift must not close on a tap. A headless browser has no camera, so this
+// checks the gate is in place: the selfie screen opens and no check-out is sent.
+{
+  const postedBefore = posted.length;
+  const shiftClosesBefore = posted.flatMap((b) => b.shifts ?? []).filter((x) => x.checkedOutAt).length;
+  // End my shift lives on the guard's own screen, opened from their name.
+  const who = page.locator("button.who").first();
+  if (await who.count()) { await who.click().catch(() => {}); await page.waitForTimeout(700); }
+  const endBtn = page.getByRole("button", { name: /End my shift/i }).first();
+  if (await endBtn.count()) {
+    await endBtn.click();
+    await page.waitForTimeout(600);
+    const confirm = page.locator(".gsheetbox").getByRole("button", { name: /End my shift/i }).first();
+    if (await confirm.count()) await confirm.click();
+    await page.waitForTimeout(1200);
+    if (await seen("End shift — photo")) ok("ending a shift opens the face photo screen");
+    else bad("ending a shift did not ask for a face photo");
+    const endDisabled = await page.locator(".gfoot").getByRole("button", { name: /End my shift/i }).first().isDisabled().catch(() => false);
+    endDisabled ? ok("the shift cannot be ended until a photo is taken")
+                : bad("End my shift is tappable with no photo");
+    await page.waitForTimeout(1500);
+    const shiftClosesAfter = posted.flatMap((b) => b.shifts ?? []).filter((x) => x.checkedOutAt).length;
+    if (shiftClosesAfter === shiftClosesBefore) ok("no check-out was sent without the face");
+    else bad("a check-out was sent before any face photo");
+    const back = page.locator(".gbar button, .gtopbar button").first();
+    if (await back.count()) { await back.click().catch(() => {}); await page.waitForTimeout(800); }
+    void postedBefore;
+  } else {
+    bad("no End my shift button found to test");
+  }
+}
 
 step("Signing out actually signs you out");
 // The bug: settings' back button went to the PIN pad, which after a sign-out

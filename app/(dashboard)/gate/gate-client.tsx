@@ -17,10 +17,11 @@ import { CITIES } from "@/lib/sample-data";
 import { groupVisits } from "@/lib/gate/transport";
 import type { SessionUser } from "@/lib/demo-auth";
 
-type Tab = "activity" | "guards" | "devices" | "gates" | "reviews";
+type Tab = "activity" | "guards" | "devices" | "gates" | "reviews" | "attendance";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "activity", label: "Activity", icon: "dashboard" },
+  { id: "attendance", label: "Attendance", icon: "schedule" },
   { id: "guards", label: "Guards", icon: "group" },
   { id: "devices", label: "Devices", icon: "upload_file" },
   { id: "gates", label: "Gates", icon: "location_on" },
@@ -75,6 +76,7 @@ export default function GateClient({ user }: { user: SessionUser }) {
       {tab === "devices" && <Devices user={user} />}
       {tab === "gates" && <Gates />}
       {tab === "reviews" && <Reviews />}
+      {tab === "attendance" && <Attendance user={user} />}
     </section>
   );
 }
@@ -660,8 +662,10 @@ const hhmm = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { timeZo
 /** "customer_return" → "Customer return", plus the guard's note if any. */
 function manualName(i: TripItem): string | null {
   if (i.entryMethod !== "manual") return null;
+  // Operations' names where they differ from the stored kind (14 Sep 2026).
+  const named: Record<string, string> = { vendor_goods: "New PO" };
   const kind = i.itemKind.replace(/_/g, " ");
-  const label = kind.charAt(0).toUpperCase() + kind.slice(1);
+  const label = named[i.itemKind] ?? kind.charAt(0).toUpperCase() + kind.slice(1);
   return i.notes ? `${label} · ${i.notes}` : label;
 }
 
@@ -712,7 +716,8 @@ function downloadTripCsv(trip: Trip) {
  * evidence somebody should know about.
  */
 function PhotoViewer({ photo, onClose }: {
-  photo: { scanId: string; label: string } | null; onClose: () => void;
+  /** An item photo (scanId) or an attendance selfie (checkId). */
+  photo: { scanId?: string; checkId?: string; label: string } | null; onClose: () => void;
 }) {
   const [url, setUrl] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -720,7 +725,8 @@ function PhotoViewer({ photo, onClose }: {
   useEffect(() => {
     if (!photo) return;
     let alive = true;
-    fetch(`/api/gate/photo?scanId=${encodeURIComponent(photo.scanId)}`, { credentials: "same-origin" })
+    const q = photo.checkId ? `checkId=${encodeURIComponent(photo.checkId)}` : `scanId=${encodeURIComponent(photo.scanId ?? "")}`;
+    fetch(`/api/gate/photo?${q}`, { credentials: "same-origin" })
       .then((r) => r.json())
       .then((j) => {
         if (!alive) return;
@@ -744,6 +750,137 @@ function PhotoViewer({ photo, onClose }: {
         <p className="text-sm text-text-muted">Loading…</p>
       )}
     </Modal>
+  );
+}
+
+/* ── Attendance ─────────────────────────────────────────────────────── */
+interface FaceMark { checkId: string; verdict: string; score: number | null; hasSelfie: boolean; review: string | null }
+interface AttendanceRow {
+  guardId: string; name: string; city: string | null; shifts: number;
+  firstIn: { at: string; geoOk: boolean | null; face: FaceMark | null } | null;
+  lastOut: { at: string | null; geoOk: boolean | null; face: FaceMark | null; auto: boolean } | null;
+  onDuty: boolean; minutes: number | null;
+}
+
+const istToday = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
+
+/**
+ * Who came in, when, and whether the face matched — per calendar day.
+ *
+ * First sign-in and last sign-out only, as asked: a guard who steps out and
+ * back in has several shifts, but the attendance question is when the day
+ * started and ended. A sign-out without a face is labelled as such rather than
+ * shown as a pass — it predates the end-of-shift photo, or the nightly sweep
+ * closed it because nobody signed out at all.
+ */
+function Attendance({ user }: { user: SessionUser }) {
+  const [date, setDate] = useState(istToday());
+  const [city, setCity] = useState<string>(user.city ?? "");
+  const [d, setD] = useState<{ date: string; totals: { guards: number; present: number; onDuty: number; signedOutWithoutFace: number; notSignedOut: number }; rows: AttendanceRow[] } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<{ checkId: string; label: string } | null>(null);
+
+  const load = useCallback(() => {
+    const q = new URLSearchParams({ date });
+    if (city) q.set("city", city);
+    fetch(`/api/gate/attendance?${q}`, { credentials: "same-origin" })
+      .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`); return j; })
+      .then((j) => { setErr(null); setD(j); })
+      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+  }, [date, city]);
+  useEffect(() => { load(); }, [load]);
+
+  const faceBadge = (f: FaceMark | null, who: string, when: string) => {
+    if (!f) return <span className="badge badge-medium">no face</span>;
+    const tone = f.verdict === "pass" ? "badge-done" : f.verdict === "fail" ? "badge-high" : "badge-medium";
+    const label = f.verdict === "pass" ? "face matched" : f.verdict === "fail" ? "face mismatch"
+      : f.verdict === "no_face" ? "no face seen" : "needs review";
+    return (
+      <span className="inline-flex items-center gap-1">
+        <span className={`badge ${tone}`} title={f.score !== null ? `match score ${f.score.toFixed(3)} (lower is closer)` : undefined}>{label}</span>
+        {f.hasSelfie && (
+          <button className="btn-icon" title="View photo" onClick={() => setPhoto({ checkId: f.checkId, label: `${who} · ${when}` })}>
+            <Icon name="camera" size={14} />
+          </button>
+        )}
+      </span>
+    );
+  };
+  const hm = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
+  const dur = (m: number | null) => (m === null ? "—" : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`);
+
+  return (
+    <div className="space-y-5">
+      <div className="card p-3 flex flex-wrap gap-2 items-center">
+        <input type="date" value={date} max={istToday()} onChange={(e) => setDate(e.target.value)}
+          className="h-9 px-2 rounded-control border border-border bg-surface-card text-sm" />
+        {!user.city && (
+          <select value={city} onChange={(e) => setCity(e.target.value)}
+            className="h-9 px-2 rounded-control border border-border bg-surface-card text-sm">
+            <option value="">All cities</option>
+            {CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
+        <span className="ml-auto text-xs text-text-muted">Calendar day, IST. A night shift counts on the day it started.</span>
+      </div>
+
+      {err && <ErrorState what="attendance" detail={err} onRetry={load} />}
+      {!d && !err && <p className="text-text-muted text-sm">Loading…</p>}
+
+      {d && !err && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Stat label="Guards" value={d.totals.guards} />
+            <Stat label="Present" value={d.totals.present} />
+            <Stat label="Still on duty" value={d.totals.onDuty} />
+            <Stat label="Did not sign out" value={d.totals.notSignedOut}
+                  tone={d.totals.notSignedOut > 0 ? "warn" : "ok"} />
+          </div>
+
+          {d.rows.length === 0 ? <Empty text="No guards on the roster for this city." /> : (
+            <div className="card overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead className="bg-surface-elevated">
+                  <tr>
+                    {["Guard", "First sign-in", "Face at sign-in", "Last sign-out", "Face at sign-out", "Hours", "Shifts"].map((h) => (
+                      <th key={h} className="text-left px-3 py-2 border border-border text-xs uppercase tracking-wide text-text-muted whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {d.rows.map((r) => (
+                    <tr key={r.guardId} className={r.firstIn ? "" : "text-text-muted"}>
+                      <td className="px-3 py-2 border border-border font-medium whitespace-nowrap">
+                        {r.name}{!user.city && r.city ? <span className="text-xs text-text-muted ml-1">· {r.city}</span> : null}
+                      </td>
+                      <td className="px-3 py-2 border border-border tabular-nums whitespace-nowrap">
+                        {r.firstIn ? hm(r.firstIn.at) : <span className="badge badge-medium">absent</span>}
+                        {r.firstIn?.geoOk === false && <span className="badge badge-medium ml-1" title="Outside the gate's geofence">off-site</span>}
+                      </td>
+                      <td className="px-3 py-2 border border-border whitespace-nowrap">
+                        {r.firstIn ? faceBadge(r.firstIn.face, r.name, `sign-in ${hm(r.firstIn.at)}`) : "—"}
+                      </td>
+                      <td className="px-3 py-2 border border-border tabular-nums whitespace-nowrap">
+                        {r.lastOut?.auto
+                          ? <span className="badge badge-high" title="Nobody signed out. The shift was closed automatically 16 hours after sign-in, so there is no real sign-out time.">not signed out</span>
+                          : r.lastOut?.at ? hm(r.lastOut.at) : r.onDuty ? <span className="badge badge-info">on duty</span> : "—"}
+                        {r.lastOut?.geoOk === false && <span className="badge badge-medium ml-1" title="Outside the gate's geofence">off-site</span>}
+                      </td>
+                      <td className="px-3 py-2 border border-border whitespace-nowrap">
+                        {r.lastOut && !r.lastOut.auto && r.lastOut.at ? faceBadge(r.lastOut.face, r.name, `sign-out ${hm(r.lastOut.at)}`) : "—"}
+                      </td>
+                      <td className="px-3 py-2 border border-border tabular-nums whitespace-nowrap">{dur(r.minutes)}</td>
+                      <td className="px-3 py-2 border border-border tabular-nums">{r.shifts || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+      <PhotoViewer photo={photo} onClose={() => setPhoto(null)} />
+    </div>
   );
 }
 

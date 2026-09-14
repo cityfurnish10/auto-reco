@@ -23,6 +23,14 @@ export type LangId = (typeof LANGS)[number]["id"];
 type Row = Record<LangId, string>;
 
 export const STRINGS: Record<string, Row> = {
+  // Added 14 Sep 2026 — not yet reviewed by native speakers.
+  finalList:{en:"Final list",hi:"अंतिम सूची",mr:"अंतिम यादी",kn:"ಅಂತಿಮ ಪಟ್ಟಿ",te:"తుది జాబితా"},
+  finalListWhy:{en:"Check every item against the truck before closing.",hi:"बंद करने से पहले हर आइटम ट्रक से मिलाएं।",mr:"बंद करण्यापूर्वी प्रत्येक वस्तू ट्रकशी जुळवा.",kn:"ಮುಚ್ಚುವ ಮೊದಲು ಪ್ರತಿ ವಸ್ತುವನ್ನು ಟ್ರಕ್‌ನೊಂದಿಗೆ ಹೊಂದಿಸಿ.",te:"మూసివేసే ముందు ప్రతి వస్తువును ట్రక్‌తో సరిచూడండి."},
+  confirmClose:{en:"Confirm & close",hi:"पक्का करें और बंद करें",mr:"खात्री करा आणि बंद करा",kn:"ಖಚಿತಪಡಿಸಿ ಮುಚ್ಚಿ",te:"నిర్ధారించి మూసివేయండి"},
+  nothingOnTrip:{en:"No items on this trip yet",hi:"इस ट्रिप में अभी कोई आइटम नहीं",mr:"या ट्रिपमध्ये अजून वस्तू नाहीत",kn:"ಈ ಟ್ರಿಪ್‌ನಲ್ಲಿ ಇನ್ನೂ ವಸ್ತುಗಳಿಲ್ಲ",te:"ఈ ట్రిప్‌లో ఇంకా వస్తువులు లేవు"},
+  scannedItem:{en:"Scanned item",hi:"स्कैन किया आइटम",mr:"स्कॅन केलेली वस्तू",kn:"ಸ್ಕ್ಯಾನ್ ಮಾಡಿದ ವಸ್ತು",te:"స్కాన్ చేసిన వస్తువు"},
+  checkOutPhoto:{en:"End shift — photo",hi:"शिफ्ट खत्म — फोटो",mr:"शिफ्ट संपवा — फोटो",kn:"ಪಾಳಿ ಮುಗಿಸಿ — ಫೋಟೋ",te:"షిఫ్ట్ ముగింపు — ఫోటో"},
+  selfieOutWhy:{en:"Confirms it is you ending the shift",hi:"पक्का करता है कि शिफ्ट आप ही खत्म कर रहे हैं",mr:"शिफ्ट तुम्हीच संपवत आहात याची खात्री करते",kn:"ಪಾಳಿ ಮುಗಿಸುತ್ತಿರುವುದು ನೀವೇ ಎಂದು ಖಚಿತಪಡಿಸುತ್ತದೆ",te:"షిఫ్ట్ ముగిస్తున్నది మీరే అని నిర్ధారిస్తుంది"},
   somethingWrong:{en:"Something went wrong",hi:"कुछ गड़बड़ हो गई",mr:"काहीतरी चूक झाली",kn:"ಏನೋ ತಪ್ಪಾಗಿದೆ",te:"ఏదో తప్పు జరిగింది"},
   workIsSafe:{en:"Your work is saved on this phone",hi:"आपका काम इस फोन में सेव है",mr:"तुमचे काम या फोनमध्ये सेव्ह आहे",kn:"ನಿಮ್ಮ ಕೆಲಸ ಈ ಫೋನ್‌ನಲ್ಲಿ ಉಳಿದಿದೆ",te:"మీ పని ఈ ఫోన్‌లో సేవ్ అయింది"},
   deviceRevoked:{en:"This phone is no longer allowed",hi:"इस फोन की अनुमति हटा दी गई है",mr:"या फोनची परवानगी काढली आहे",kn:"ಈ ಫೋನ್‌ಗೆ ಅನುಮತಿ ಇಲ್ಲ",te:"ఈ ఫోన్‌కు అనుమతి లేదు"},
@@ -186,7 +194,10 @@ export const STRINGS: Record<string, Row> = {
   noSticker:{en:"No sticker",hi:"स्टिकर नहीं है",mr:"स्टिकर नाही",kn:"ಸ್ಟಿಕರ್ ಇಲ್ಲ",te:"స్టిక్కర్ లేదు"},
   stickerMissing:{en:"Sticker missing",hi:"स्टिकर गायब है",mr:"स्टिकर गहाळ आहे",kn:"ಸ್ಟಿಕರ್ ಇಲ್ಲ",te:"స్టిక్కర్ లేదు"},
   stickerMissingWhy:{en:"This unit was tagged when it left. Your manager will be told so it can be re-tagged.",hi:"जाते समय इस पर स्टिकर था। मैनेजर को बताया जाएगा ताकि दोबारा लगाया जा सके।",mr:"जाताना यावर स्टिकर होते. मॅनेजरला कळवले जाईल जेणेकरून पुन्हा लावता येईल.",kn:"ಹೋಗುವಾಗ ಇದರ ಮೇಲೆ ಸ್ಟಿಕರ್ ಇತ್ತು. ಮತ್ತೆ ಹಾಕಲು ಮ್ಯಾನೇಜರ್‌ಗೆ ತಿಳಿಸಲಾಗುವುದು.",te:"వెళ్లేటప్పుడు దీనిపై స్టిక్కర్ ఉంది. మళ్లీ వేయడానికి మేనేజర్‌కు తెలియజేయబడుతుంది."},
-  catVendor:{en:"Vendor goods",hi:"वेंडर का सामान",mr:"व्हेंडरचा माल",kn:"ವೆಂಡರ್ ಸರಕು",te:"వెండర్ సరుకు"},
+  // "New PO" by operations' own name for it (14 Sep 2026): stock arriving
+  // against a purchase order. Stored kind is still vendor_goods — only the
+  // label changed, so nothing already recorded needs touching.
+  catVendor:{en:"New PO",hi:"नया PO",mr:"नवीन PO",kn:"ಹೊಸ PO",te:"కొత్త PO"},
   catReturn:{en:"Return from pickup",hi:"पिकअप से वापसी",mr:"पिकअपमधून परत",kn:"ಪಿಕಪ್‌ನಿಂದ ಹಿಂತಿರುಗಿದ್ದು",te:"పికప్ నుండి తిరిగి"},
   catSpare:{en:"Spare part",hi:"स्पेयर पार्ट",mr:"स्पेअर पार्ट",kn:"ಬಿಡಿ ಭಾಗ",te:"స్పేర్ పార్ట్"},
   catConsum:{en:"Consumable",hi:"खर्च होने वाला सामान",mr:"वापरून संपणारे सामान",kn:"ಬಳಕೆಯ ಸಾಮಗ್ರಿ",te:"వినియోగ సామగ్రి"},
