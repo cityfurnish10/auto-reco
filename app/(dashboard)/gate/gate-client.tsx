@@ -9,11 +9,12 @@
 // cities not yet on the app. That makes the pilot legible: a manager can see at
 // a glance which cities scan and which still upload a PDF.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { ErrorState } from "@/components/error-state";
 import { Icon } from "@/components/icon";
 import { Modal } from "@/components/modal";
 import { CITIES } from "@/lib/sample-data";
+import { groupVisits } from "@/lib/gate/transport";
 import type { SessionUser } from "@/lib/demo-auth";
 
 type Tab = "activity" | "guards" | "devices" | "gates" | "reviews";
@@ -122,6 +123,9 @@ interface ActivityData {
             overrides: number; awaitingBarcode: number; scannedShare: number | null;
             removed: number; tripsShort: number; tripsChecked: number };
   guards: { id: string; name: string }[];
+  /** One entry per truck / agent however it was spelled; `key` is what filters. */
+  vehicles: { key: string; label: string; trips: number }[];
+  agents: { key: string; label: string; trips: number }[];
   trips: Trip[];
 }
 
@@ -154,12 +158,23 @@ function Activity({ user }: { user: SessionUser }) {
   const [city, setCity] = useState<string>(user.city ?? "");
   const [guardId, setGuardId] = useState("");
   const [direction, setDirection] = useState("");
+  const [vehicle, setVehicle] = useState("");
+  const [agent, setAgent] = useState("");
+  // Grouping is a way of LOOKING at the day, not a filter: every trip is still
+  // there, gathered under its truck. The gap is the manager's call — a yard
+  // that reloads a truck for forgotten items within the hour reads differently
+  // from one where the evening return is a separate event.
+  const [grouped, setGrouped] = useState(false);
+  const [gapHours, setGapHours] = useState(2);
+  const [openVisits, setOpenVisits] = useState<Set<string>>(new Set());
 
   const load = useCallback(() => {
     const q = new URLSearchParams({ date });
     if (city) q.set("city", city);
     if (guardId) q.set("guardId", guardId);
     if (direction) q.set("direction", direction);
+    if (vehicle) q.set("vehicle", vehicle);
+    if (agent) q.set("agent", agent);
     fetch(`/api/gate/activity?${q}`, { credentials: "same-origin" })
       .then(async (r) => {
         const j = await r.json().catch(() => ({}));
@@ -169,8 +184,50 @@ function Activity({ user }: { user: SessionUser }) {
       .then((j) => { setLoadErr(null); setD(j); })
       .catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
-  }, [date, city, guardId, direction]);
+  }, [date, city, guardId, direction, vehicle, agent]);
   useEffect(() => { load(); }, [load]);
+
+  /** One trip as a table row — on its own, or indented under its visit. */
+  const tripRow = (tr: Trip, nested = false) => (
+                    <tr key={tr.id} onClick={() => setOpen(tr)}
+                        className={`border-t border-border hover:bg-surface-elevated cursor-pointer transition-colors duration-150${nested ? " text-[13px]" : ""}`}>
+                      <td className={`py-2.5 font-medium text-text-primary whitespace-nowrap ${nested ? "pl-9 pr-4" : "px-4"}`}>{tr.guardName || "—"}</td>
+                      <td className="px-4 py-2.5 font-mono whitespace-nowrap">{tr.vehicleNo}</td>
+                      <td className="px-4 py-2.5">
+                        <span className={`badge ${tr.direction === "OUT" ? "badge-medium" : "badge-info"}`}>
+                          {tr.direction === "OUT" ? "Outward" : "Inward"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 tabular-nums">
+                        {tr.itemCount}
+                        {tr.overrides > 0 && <span className="badge badge-high ml-2">{tr.overrides} override</span>}
+                        {/* Two different problems, and a manager scanning this
+                            column needs to tell them apart at a glance: the
+                            truck left short, versus the guard took items back. */}
+                        {tr.completeness && tr.completeness.missing.length > 0 && (
+                          <span className="badge badge-high ml-2">
+                            {tr.completeness.missing.length} short
+                          </span>
+                        )}
+                        {tr.removed.length > 0 && (
+                          <span className="badge badge-medium ml-2">{tr.removed.length} removed</span>
+                        )}
+                        {/* Typed rather than scanned. No barcode was read, so
+                            the row rests entirely on the guard and the photo
+                            they took — which is precisely what a manager is
+                            here to look at. */}
+                        {tr.manual > 0 && (
+                          <span className="badge badge-medium ml-2">{tr.manual} typed</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{clock(tr.openedAt)}</td>
+                      <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap tabular-nums">{took(tr.durationSec)}</td>
+                      <td className="px-4 py-2.5">
+                        <span className={`badge ${tr.status === "closed" ? "badge-done" : "badge-info"}`}>{tr.status}</span>
+                      </td>
+                      <td className="px-2 text-text-muted"><Icon name="chevron_right" size={17} /></td>
+                    </tr>
+  );
 
   return (
     <div className="space-y-5">
@@ -197,11 +254,34 @@ function Activity({ user }: { user: SessionUser }) {
           <option value="IN">Inward</option>
           <option value="OUT">Outward</option>
         </select>
-        {(guardId || direction || (!user.city && city)) && (
+        <select value={vehicle} onChange={(e) => setVehicle(e.target.value)} aria-label="Transport"
+          className="h-9 px-2 rounded-control border border-border bg-surface-card text-sm">
+          <option value="">All transport</option>
+          {(d?.vehicles ?? []).map((v) => <option key={v.key} value={v.key}>{v.label} ({v.trips})</option>)}
+        </select>
+        <select value={agent} onChange={(e) => setAgent(e.target.value)} aria-label="Agent"
+          className="h-9 px-2 rounded-control border border-border bg-surface-card text-sm">
+          <option value="">All agents</option>
+          {(d?.agents ?? []).map((a) => <option key={a.key} value={a.key}>{a.label} ({a.trips})</option>)}
+        </select>
+        {(guardId || direction || vehicle || agent || (!user.city && city)) && (
           <button className="btn btn-compact btn-secondary"
-            onClick={() => { setGuardId(""); setDirection(""); setCity(user.city ?? ""); }}>
+            onClick={() => { setGuardId(""); setDirection(""); setVehicle(""); setAgent(""); setCity(user.city ?? ""); }}>
             Clear
           </button>
+        )}
+        <label className="flex items-center gap-2 text-sm ml-2 cursor-pointer select-none">
+          <input type="checkbox" checked={grouped} onChange={(e) => setGrouped(e.target.checked)} />
+          Group by transport
+        </label>
+        {grouped && (
+          <select value={gapHours} onChange={(e) => setGapHours(Number(e.target.value))} aria-label="New visit after a gap of"
+            className="h-9 px-2 rounded-control border border-border bg-surface-card text-sm"
+            title="Trips on the same truck further apart than this are shown as separate visits">
+            {[0.5, 1, 2, 4, 8].map((h) => (
+              <option key={h} value={h}>new visit after {h < 1 ? "30 min" : `${h} h`} gap</option>
+            ))}
+          </select>
         )}
         <span className="ml-auto text-xs text-text-muted">{d?.businessDate ?? date}</span>
       </div>
@@ -260,46 +340,57 @@ function Activity({ user }: { user: SessionUser }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {d.trips.map((tr) => (
-                    <tr key={tr.id} onClick={() => setOpen(tr)}
-                        className="border-t border-border hover:bg-surface-elevated cursor-pointer transition-colors duration-150">
-                      <td className="px-4 py-2.5 font-medium text-text-primary whitespace-nowrap">{tr.guardName || "—"}</td>
-                      <td className="px-4 py-2.5 font-mono whitespace-nowrap">{tr.vehicleNo}</td>
-                      <td className="px-4 py-2.5">
-                        <span className={`badge ${tr.direction === "OUT" ? "badge-medium" : "badge-info"}`}>
-                          {tr.direction === "OUT" ? "Outward" : "Inward"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 tabular-nums">
-                        {tr.itemCount}
-                        {tr.overrides > 0 && <span className="badge badge-high ml-2">{tr.overrides} override</span>}
-                        {/* Two different problems, and a manager scanning this
-                            column needs to tell them apart at a glance: the
-                            truck left short, versus the guard took items back. */}
-                        {tr.completeness && tr.completeness.missing.length > 0 && (
-                          <span className="badge badge-high ml-2">
-                            {tr.completeness.missing.length} short
-                          </span>
-                        )}
-                        {tr.removed.length > 0 && (
-                          <span className="badge badge-medium ml-2">{tr.removed.length} removed</span>
-                        )}
-                        {/* Typed rather than scanned. No barcode was read, so
-                            the row rests entirely on the guard and the photo
-                            they took — which is precisely what a manager is
-                            here to look at. */}
-                        {tr.manual > 0 && (
-                          <span className="badge badge-medium ml-2">{tr.manual} typed</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{clock(tr.openedAt)}</td>
-                      <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap tabular-nums">{took(tr.durationSec)}</td>
-                      <td className="px-4 py-2.5">
-                        <span className={`badge ${tr.status === "closed" ? "badge-done" : "badge-info"}`}>{tr.status}</span>
-                      </td>
-                      <td className="px-2 text-text-muted"><Icon name="chevron_right" size={17} /></td>
-                    </tr>
-                  ))}
+                  {!grouped && d.trips.map((tr) => tripRow(tr))}
+                  {grouped && groupVisits(d.trips.map((x) => ({ ...x,
+                    lastActivityAt: x.items.reduce<string | null>((m, i) => (!m || i.scannedAt > m ? i.scannedAt : m), null),
+                  })), gapHours * 3600_000).map((v) => {
+                    const id = `${v.key}|${v.start}`;
+                    const isOpen = openVisits.has(id);
+                    const items = v.trips.reduce((n, x) => n + x.itemCount, 0);
+                    const agentsOn = [...new Set(v.trips.map((x) => x.driverName).filter(Boolean))];
+                    const spellings = [...new Set(v.trips.map((x) => x.vehicleNo))];
+                    const dirs = [...new Set(v.trips.map((x) => (x.direction === "OUT" ? "Outward" : "Inward")))];
+                    return (
+                      <Fragment key={id}>
+                        <tr onClick={() => setOpenVisits((s0) => {
+                              const n = new Set(s0); if (n.has(id)) n.delete(id); else n.add(id); return n; })}
+                            className="border-t border-border bg-surface-elevated/60 hover:bg-surface-elevated cursor-pointer">
+                          <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">
+                            {[...new Set(v.trips.map((x) => x.guardName).filter(Boolean))].join(", ") || "—"}
+                          </td>
+                          <td className="px-4 py-2.5 whitespace-nowrap">
+                            <span className="font-mono font-semibold text-text-primary">{v.key}</span>
+                            {/* The spellings actually recorded, so a manager can see
+                                the grouping was not a guess. */}
+                            {spellings.length > 1 && (
+                              <span className="block text-xs text-text-muted" title={spellings.join(" · ")}>
+                                {spellings.length} spellings
+                              </span>
+                            )}
+                            {agentsOn.length > 0 && (
+                              <span className="block text-xs text-text-muted">{agentsOn.join(", ")}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{dirs.join(" + ")}</td>
+                          <td className="px-4 py-2.5 tabular-nums">
+                            {items}
+                            <span className="text-xs text-text-muted ml-2">
+                              in {v.trips.length} trip{v.trips.length === 1 ? "" : "s"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">
+                            {clock(v.start)} – {clock(v.end)}
+                          </td>
+                          <td className="px-4 py-2.5" />
+                          <td className="px-4 py-2.5" />
+                          <td className="px-2 text-text-muted">
+                            <Icon name={isOpen ? "expand_less" : "expand_more"} size={17} />
+                          </td>
+                        </tr>
+                        {isOpen && v.trips.map((tr) => tripRow(tr, true))}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

@@ -9,6 +9,7 @@ import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { currentBusinessDate } from "@/lib/reconcile/cron-dates";
+import { agentKey, commonestSpelling, transportKey } from "@/lib/gate/transport";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +26,10 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
   const city = me.role === "manager" ? me.city : sp.get("city");
   const guardId = sp.get("guardId");
   const direction = sp.get("direction");
+  // Matched on the registration and on the name case-insensitively, never on the
+  // raw text: one truck reached the gate under up to four spellings in a week.
+  const vehicle = sp.get("vehicle");
+  const agent = sp.get("agent");
 
   let trips = admin.from("gate_trips")
     .select("id,client_trip_id,city,site_code,direction,vehicle_no,driver_name,carrier_ref," +
@@ -86,14 +91,37 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
   // Cast once, here. Splitting the trip select across lines to fit the new
   // completeness columns lost Supabase's inferred row type, and casting at each
   // of the four use sites is how one of them quietly gets missed.
-  const tripRows = (tr.data ?? []) as unknown as Record<string, unknown>[];
-  const rows = (sc.data ?? []) as unknown as Record<string, unknown>[];
+  const allTrips = (tr.data ?? []) as unknown as Record<string, unknown>[];
+
+  // Dropdown options come from the day BEFORE the transport and agent filters,
+  // so choosing one truck does not empty the list of the others.
+  const optionList = (pick: (t: Record<string, unknown>) => string | null, keyOf: (v: string) => string) => {
+    const spellings = new Map<string, string[]>();
+    for (const t of allTrips) {
+      const v = pick(t);
+      if (!v || !v.trim()) continue;
+      const k = keyOf(v);
+      if (k) spellings.set(k, [...(spellings.get(k) ?? []), v.trim()]);
+    }
+    return [...spellings].map(([key, all]) => ({ key, label: commonestSpelling(all), trips: all.length }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  };
+  const vehicles = optionList((t) => t.vehicle_no as string, transportKey);
+  const agents = optionList((t) => t.driver_name as string, agentKey);
+
+  const tripRows = allTrips.filter((t) =>
+    (!vehicle || transportKey(t.vehicle_no as string) === vehicle) &&
+    (!agent || agentKey(t.driver_name as string) === agent));
+  const keptTrips = new Set(tripRows.map((t) => t.id));
+  const narrowed = !!(vehicle || agent);
+  const rows = ((sc.data ?? []) as unknown as Record<string, unknown>[])
+    .filter((r) => !narrowed || keptTrips.has(r.trip_id));
   const manual = rows.filter((r) => r.entry_method === "manual").length;
 
   // Who worked this day, for the filter — derived from the data rather than
   // the roster, so the dropdown only offers names that will return something.
   const guards = new Map<string, string>();
-  for (const t of tripRows) {
+  for (const t of allTrips) {
     if (t.guard_id) guards.set(t.guard_id as string, (t.app_users as { name?: string })?.name ?? "");
   }
 
@@ -108,7 +136,7 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
       awaitingBarcode: rows.filter((r) => r.barcode_pending).length,
       // The number the pilot is judged on: how much is scanned rather than typed.
       scannedShare: rows.length ? +(((rows.length - manual) / rows.length) * 100).toFixed(1) : null,
-      removed: removedRows.length,
+      removed: removedRows.filter((r) => !narrowed || keptTrips.has(r.trip_id)).length,
       // How often the plan and the truck disagreed. The figure that decides
       // whether the close-screen warning can be trusted enough to act on.
       tripsShort: tripRows
@@ -116,6 +144,8 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
       tripsChecked: tripRows.filter((t) => t.expected_checked_at).length,
     },
     guards: [...guards].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
+    vehicles,
+    agents,
     trips: tripRows.map((x) => {
       const items = rows.filter((r) => r.trip_id === x.id);
       const secs = x.closed_at
@@ -123,6 +153,7 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
         : null;
       return {
         id: x.id, direction: x.direction, vehicleNo: x.vehicle_no,
+        transportKey: transportKey(x.vehicle_no as string),
         driverName: x.driver_name, carrierRef: x.carrier_ref,
         city: x.city, siteCode: x.site_code,
         openedAt: x.opened_at, closedAt: x.closed_at, status: x.status,

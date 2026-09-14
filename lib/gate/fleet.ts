@@ -111,22 +111,10 @@ export const EMPTY_FLEET: Fleet = { vehicles: [], agents: [], trips: [], source:
  * and then searching finds the plate wherever it sits, and the LAST match is
  * taken because a vendor code sometimes looks plate-ish and always comes first.
  */
-const PLATE_ANYWHERE = /[A-Z]{2}\d{1,2}[A-Z0-9]{0,4}\d{4}/g;
-export const PLATE_RE = /^[A-Z]{2}\d{1,2}[A-Z0-9]{0,4}\d{4}$/;
-
-function plateOrNull(raw: string): string | null {
-  const s = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  let last: string | null = null;
-  let m: RegExpExecArray | null;
-  PLATE_ANYWHERE.lastIndex = 0;
-  while ((m = PLATE_ANYWHERE.exec(s)) !== null) {
-    last = m[0];
-    // Advance by one rather than by the whole match, so an overlapping later
-    // plate is still found.
-    PLATE_ANYWHERE.lastIndex = m.index + 1;
-  }
-  return last;
-}
+// Lives in ./transport so the portal can use it in the browser without
+// pulling this module (and the Metabase connector) into the page bundle.
+export { PLATE_RE } from "./transport";
+import { plateOrNull } from "./transport";
 
 /**
  * Pull the registration out of a DT transport reference.
