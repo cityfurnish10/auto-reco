@@ -45,16 +45,10 @@ const ALLOWED: { file: string; snippet: string; why: string }[] = [
   // scanner returned — stored deliberately unfolded. shownBarcode() exists to
   // recover a true spelling from a folded one; here there is no fold to undo,
   // and passing it through one would be the bug rather than the fix.
-  {
-    file: "app/(dashboard)/gate/gate-client.tsx",
-    snippet: "value: (_, i) => i.barcode ?? i.serialNo",
-    why: "LABEL, and correct: a gate scan's barcode is the raw QR payload, never the canonical fold — shown in the trip table and written to its CSV.",
-  },
-  {
-    file: "app/api/gate/activity/route.ts",
-    snippet: "barcode: (r.barcode as string)",
-    why: "Passing the raw scanned payload straight through to the Gate screen.",
-  },
+  // The trip register's Barcode column and the Activity payload moved into
+  // lib/gate/register.ts and lib/gate/activity-data.ts (14 Sep 2026), outside
+  // this scan's human-facing files. Both still pass the raw QR payload through
+  // unfolded; the entries that pointed at their old homes were removed.
   {
     file: "app/(dashboard)/gate/gate-client.tsx",
     snippet: "{r.barcode ?? \"—\"}",

@@ -16,6 +16,7 @@ import { Modal } from "@/components/modal";
 import { CITIES } from "@/lib/sample-data";
 import { groupVisits } from "@/lib/gate/transport";
 import { istToday } from "@/lib/gate/calendar";
+import { FILE_HEADER, REGISTER_COLUMNS, fileRow, shortDate } from "@/lib/gate/register";
 import type { SessionUser } from "@/lib/demo-auth";
 
 type Tab = "activity" | "guards" | "devices" | "gates" | "reviews" | "attendance";
@@ -272,6 +273,12 @@ function Activity({ user }: { user: SessionUser }) {
             Clear
           </button>
         )}
+        {/* The whole day, whatever the filters say — Outward and Inward sheets. */}
+        <a className="btn btn-compact btn-secondary"
+           href={`/api/gate/activity/export?${new URLSearchParams({ date, ...(city ? { city } : {}) })}`}
+           title="Every outward and inward item on this day, regardless of transport, agent, guard or direction filters">
+          <Icon name="download" size={15} /> Download day (Excel)
+        </a>
         <label className="flex items-center gap-2 text-sm ml-2 cursor-pointer select-none">
           <input type="checkbox" checked={grouped} onChange={(e) => setGrouped(e.target.checked)} />
           Group by transport
@@ -602,43 +609,6 @@ export function TripModal({ trip, onClose, onLookedUp }: {
 }
 
 /**
- * The register row, in the order the paper register and the ops team read it.
- * One list drives both the table and the download, so the file can never
- * quietly disagree with the screen.
- *
- * `lookedUp` marks the columns filled from Odoo/DT by barcode after the scan
- * rather than recorded at the gate — shown as "…" while the lookup runs. A
- * dash afterwards means no DT task matches this movement, which is common and
- * true (vendor stock, internal transfers), not a failure.
- */
-const REGISTER_COLUMNS: {
-  label: string; mono?: boolean; lookedUp?: boolean;
-  /** Free text that may wrap onto a second line rather than widen the table. */
-  wrap?: boolean;
-  value: (trip: Trip, it: TripItem) => string | null;
-}[] = [
-  { label: "City", value: (t) => t.city || null },
-  { label: "SO Number", mono: true, lookedUp: true, value: (_, i) => i.soDisplay },
-  { label: "Ticket ID", mono: true, lookedUp: true, value: (_, i) => i.ticket },
-  { label: "Customer Name", lookedUp: true, wrap: true, value: (_, i) => i.customer },
-  { label: "Job Type", lookedUp: true, wrap: true, value: (_, i) => i.jobType },
-  // A hand entry has no product to look up — a box of spares, a PP box, a
-  // vendor delivery. Its kind and the guard's note ARE the item name, and
-  // showing a dash there made the entry look like it was never recorded.
-  { label: "Item Name", lookedUp: true, wrap: true, value: (_, i) => i.itemName ?? manualName(i) },
-  // Dropped when the register columns replaced the old table, which hid that
-  // "PO-TYUI-BJ900" was ten washing machines.
-  { label: "Qty", value: (_, i) => String(i.quantity) },
-  { label: "Movement Type", value: (t) => (t.direction === "OUT" ? "Outward" : "Inward") },
-  // Raw scanned spelling — never the fold.
-  { label: "Barcode", mono: true, value: (_, i) => i.barcode ?? i.serialNo },
-  { label: "Agent", wrap: true, value: (t) => t.driverName },
-  // Wraps at its own hyphens ("VIPIN-EV-" / "DL1LAT4654"): DT's transport text
-  // is the widest thing in the row and repeats on every line of the trip.
-  { label: "Transport", mono: true, wrap: true, value: (t) => t.vehicleNo },
-];
-
-/**
  * The trip's items as a CSV a manager can open in Excel.
  *
  * Two details that are not decoration. A leading BOM, or Excel reads a Hindi
@@ -651,40 +621,14 @@ const hms = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { timeZon
 /** "11:45" in IST — for tags, where the seconds and AM/PM cost width. */
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
 
-/** "customer_return" → "Customer return", plus the guard's note if any. */
-function manualName(i: TripItem): string | null {
-  if (i.entryMethod !== "manual") return null;
-  // Operations' names where they differ from the stored kind (14 Sep 2026).
-  const named: Record<string, string> = { vendor_goods: "New PO" };
-  const kind = i.itemKind.replace(/_/g, " ");
-  const label = named[i.itemKind] ?? kind.charAt(0).toUpperCase() + kind.slice(1);
-  return i.notes ? `${label} · ${i.notes}` : label;
-}
-
-/** "2026-03-08" → "8 Mar 2026". Parsed as a plain date: no timezone shift. */
-const shortDate = (d: string) => {
-  const [y, m, day] = d.slice(0, 10).split("-").map(Number);
-  return `${day} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m - 1]} ${y}`;
-};
-
 function downloadTripCsv(trip: Trip) {
   const cell = (v: string | null | undefined) => {
     let s = v ?? "";
     if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  // "Details From" travels with the file: a spreadsheet row loses the badge,
-  // and a March ticket in a September export must still say it is last known.
-  const header = [...REGISTER_COLUMNS.map((c) => c.label), "Details From", "Duplicate", "Entry", "Scanned At"];
-  const lines = trip.items.map((it) => [
-    ...REGISTER_COLUMNS.map((c) => c.value(trip, it)),
-    !it.ticket && !it.jobType && !it.customer ? ""
-      : it.lastKnown ? `Last known task${it.taskDate ? ` (${shortDate(it.taskDate)})` : ""}` : "This movement",
-    // A spreadsheet row loses the greyed-out look, so the file says it outright.
-    it.duplicateOf ? `Yes — ${it.duplicateOf.reason} as ${new Date(it.duplicateOf.ofScannedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} entry; not counted` : "",
-    it.entryMethod,
-    new Date(it.scannedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
-  ].map(cell).join(","));
+  const lines = trip.items.map((it) => fileRow(trip, it).map(cell).join(","));
+  const header = FILE_HEADER;
   const csv = "\uFEFF" + [header.map(cell).join(","), ...lines].join("\r\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   const a = document.createElement("a");
