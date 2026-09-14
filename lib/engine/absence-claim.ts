@@ -61,6 +61,8 @@ export const ABSENCE_CLAIM: Record<string, readonly SourceKey[]> = {
   // Odoo already has the unit; the row is about WHEN, and that cannot un-happen.
   [VARIANCE.ODOO_POSTED_NEXT_DAY]: [],
   [VARIANCE.ODOO_POSTED_LATE]: [],
+  // Odoo is not absent — its Out is reserved, just not validated.
+  [VARIANCE.ODOO_OUT_PENDING]: [],
   [VARIANCE.OPS_ODOO_NO_DT]: ["D"],
   [VARIANCE.DT_ODOO_NO_SHEET]: ["S"],
   [VARIANCE.GATE_OPS_ODOO_NO_DT]: ["D"],

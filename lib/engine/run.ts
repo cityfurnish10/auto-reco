@@ -106,7 +106,12 @@ export function runReconciliation(
   // empty in demo/tests. Drives the late-posting demotion: a "not in Odoo"
   // accusation is false when Odoo demonstrably holds the unit and simply posted
   // it a few days after the goods moved. See loadRecentOdooPostings.
-  recentOdoo: ReadonlySet<string> = new Set()
+  recentOdoo: ReadonlySet<string> = new Set(),
+  // Canonical barcodes with an Odoo OUT line reserved against a sale order but
+  // not validated, around the run date — supplied live by the pipeline
+  // (fetchOdooPendingOut), empty in demo/tests. Drives the ODOO_OUT_PENDING
+  // demotion below.
+  pendingOdooOut: ReadonlySet<string> = new Set()
 ): CityRunResult {
   const warnings: string[] = [];
   const rows = allRows;
@@ -613,6 +618,7 @@ export function runReconciliation(
   }
 
   let latePostings = 0;
+  let inTransitCount = 0;
   const classifyViews = (views: Map<string, BarcodeView>, direction: Direction) => {
     for (const v of Array.from(views.values())) {
       const k = `${direction}::${v.canonical}`;
@@ -666,20 +672,35 @@ export function runReconciliation(
           hit.variance_name === VARIANCE.PICKUP_ODOO_OPEN;
         const postedLate = odooBlamed && !v.O.present && recentOdoo.has(k);
 
+        // ITEMS IN TRANSIT (decided 2026-09-14). An outward "not in Odoo" is
+        // not true when Odoo holds the dispatch as an Out line RESERVED against
+        // the sale order and has simply not validated it — validation follows
+        // delivery. Measured on Delhi's 13 Sep run: 31 of the 32 "Gate only"
+        // outward rows had an Out reserved (e.g. AP8IS726090175, Out
+        // "Available" to Meenal Atri). Counted only with corroboration: the gate
+        // or DT must have seen the unit leave, so a reservation for an order
+        // that never ships cannot pass for a dispatch on its own. Outward only,
+        // and never over a real late posting, which is the stronger statement.
+        const inTransit = !postedLate && odooBlamed && direction === "OUT" && !v.O.present
+          && (v.P.present || v.D.present) && pendingOdooOut.has(v.canonical);
+
         const name = postedLate
           ? VARIANCE.ODOO_POSTED_LATE
-          : echo
-            ? VARIANCE.ADJACENT_DAY
-            : hit.variance_name;
+          : inTransit
+            ? VARIANCE.ODOO_OUT_PENDING
+            : echo
+              ? VARIANCE.ADJACENT_DAY
+              : hit.variance_name;
         variances.push(
           applyBucket({
             ...baseRow(v),
             direction,
             variance_name: name,
-            priority: postedLate || echo ? "Info" : hit.priority,
+            priority: postedLate || inTransit || echo ? "Info" : hit.priority,
           })
         );
         if (postedLate) latePostings++;
+        if (inTransit) inTransitCount++;
       }
 
       // Duplicate scans — unless DT-all-pending suppressed this barcode.
@@ -701,6 +722,11 @@ export function runReconciliation(
 
   classifyViews(inViews, "IN");
   classifyViews(outViews, "OUT");
+  if (inTransitCount > 0) {
+    warnings.push(
+      `${inTransitCount} outward unit${inTransitCount === 1 ? "" : "s"} in transit — seen leaving by the gate or DT, with the Odoo Out reserved but not yet validated`
+    );
+  }
   if (latePostings > 0) {
     warnings.push(
       `${latePostings} "not in Odoo" finding${latePostings === 1 ? "" : "s"} downgraded — Odoo posted the unit within ${3} days either side, so the entry is made`
@@ -948,7 +974,8 @@ export function runAllCities(
   reportedByCity?: Partial<Record<City, ReportedSources>>,
   recentFloorByCity?: Partial<Record<City, ReadonlySet<string>>>,
   fallbackDate?: string,
-  recentOdooByCity?: Partial<Record<City, ReadonlySet<string>>>
+  recentOdooByCity?: Partial<Record<City, ReadonlySet<string>>>,
+  pendingOdooOutByCity?: Partial<Record<City, ReadonlySet<string>>>
 ): MultiCityRun {
   const perCity: CityRunResult[] = [];
   const skipped: { city: City; error: string }[] = [];
@@ -965,7 +992,8 @@ export function runAllCities(
           reportedByCity?.[city] ?? ALL_REPORTED,
           recentFloorByCity?.[city] ?? new Set(),
           fallbackDate,
-          recentOdooByCity?.[city] ?? new Set()
+          recentOdooByCity?.[city] ?? new Set(),
+          pendingOdooOutByCity?.[city] ?? new Set()
         )
       );
     } catch (err) {

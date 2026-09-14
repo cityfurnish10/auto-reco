@@ -359,3 +359,68 @@ export async function fetchOdooPostingsAfter(
   }
   return out;
 }
+
+/* ── Items in transit: Out lines reserved but not validated (2026-09-14) ──── */
+
+/** How far before the run date a reservation may have been made. A dispatch is
+ *  usually reserved the morning it leaves, but an order can sit reserved for
+ *  days before its delivery slot. */
+export const PENDING_OUT_DAYS_BEFORE = 7;
+
+/**
+ * Outward Out lines RESERVED against a sale order and not yet validated —
+ * Odoo's "Available" — created from a week before the run date to the end of
+ * the day after it.
+ *
+ * WHY. The pull reads validated lines only, so an item the warehouse had
+ * already marked in transit and reserved for its customer read as "not in
+ * Odoo" until somebody validated the Out after delivery. Delhi, 13 Sep 2026:
+ * AP8IS726090175 left at 10:16 on truck DL1LAH 3979; Odoo held an Out to Meenal
+ * Atri, status Available. 31 of the day's 32 "Gate only" rows were this.
+ *
+ * NEVER PRESENCE. These keys feed one demotion in run.ts, and only where the
+ * gate or DT independently saw the unit leave. Counting a reservation as Odoo
+ * presence on its own would let an order that never ships read as dispatched.
+ */
+export function buildPendingOutQuery(startUtc: string, endUtcExclusive: string): string {
+  const start = startUtc.slice(0, 19).replace("T", " ");
+  const end = endUtcExclusive.slice(0, 19).replace("T", " ");
+  return `
+SELECT
+    sl.name                                         AS barcode,
+    sw.code                                         AS warehouse_code,
+    so.reference_no                                 AS reference_no
+FROM stock_move_line sml
+JOIN stock_picking          sp   ON sp.id  = sml.picking_id
+JOIN stock_picking_type     spt  ON spt.id = sp.picking_type_id
+JOIN stock_warehouse        sw   ON sw.id  = spt.warehouse_id
+JOIN stock_lot              sl   ON sl.id  = sml.lot_id
+JOIN sale_order             so   ON so.id  = sml.sale_order_id
+WHERE
+    sml.state IN ('assigned', 'partially_available')
+    AND sml.movement_type = 'Out'
+    AND sml.create_date >= '${start}'
+    AND sml.create_date <  '${end}'
+ORDER BY sml.create_date ASC;
+`.trim();
+}
+
+export async function fetchOdooPendingOut(runDate: string): Promise<Partial<Record<City, Set<string>>>> {
+  const out: Partial<Record<City, Set<string>>> = {};
+  if (!metabaseConfigured()) return out;
+  const dbId = Number(process.env.METABASE_ODOO_DB_ID);
+  if (!dbId) return out;
+
+  const startUtc = businessDayToUtcWindow(addDays(runDate, -PENDING_OUT_DAYS_BEFORE)).startUtc;
+  const endUtcExclusive = businessDayToUtcWindow(addDays(runDate, 1)).endUtcExclusive;
+  const table = await runNativeSql(dbId, buildPendingOutQuery(startUtc, endUtcExclusive), LOOKAHEAD_TIMEOUT_MS);
+  for (const r of table.rows) {
+    const city = normalizeOdooWarehouse(r.warehouse_code);
+    const barcode = str(r.barcode);
+    if (!city || !barcode) continue;
+    // Same exclusion as the pull: an order transfer is paperwork, not a dispatch.
+    if (isOrderTransfer(r.reference_no)) continue;
+    (out[city] ??= new Set()).add(canonicalize(barcode));
+  }
+  return out;
+}

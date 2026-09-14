@@ -108,6 +108,16 @@ export const VARIANCE_META: Record<string, VarianceMeta> = {
     responsible: "odoo_team",
     note: "The floor confirmed this movement for the day, and the Odoo entry does exist — it was just posted a day late (the 1-day buffer picked it up). No action; the entry is made.",
   },
+  [VARIANCE.ODOO_OUT_PENDING]: {
+    // INFO, and it replaces a REAL "not in Odoo". Odoo DOES hold this dispatch —
+    // an Out line reserved against the customer's sale order — and the gate or
+    // DT confirms the unit left. What is outstanding is validation, which Odoo
+    // does after delivery. Not a loss; listed on its own as "Items in transit"
+    // so the Odoo team closes them rather than hunting for a missing unit.
+    bucket: "INFO",
+    responsible: "odoo_team",
+    note: "The gate or DT saw this unit leave, and Odoo has its Out reserved against the sale order — it has not been validated yet. The unit is in transit; validate the Odoo Out once it is delivered.",
+  },
   [VARIANCE.ODOO_POSTED_LATE]: {
     // INFO, and this one replaces a REAL. The floor's own book recorded the
     // movement and Odoo DOES hold the unit — the posting simply landed a few

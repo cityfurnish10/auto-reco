@@ -4,6 +4,8 @@
 // ever sees their own city (enforced by RLS on the API; the city filter here
 // is belt-and-suspenders). Managers close variances with a reason (→ PATCH).
 
+import InTransitSection from "./in-transit-section";
+import { VARIANCE } from "@/lib/engine/variance-names";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SessionUser } from "@/lib/demo-auth";
 import type { City } from "@/lib/sample-data";
@@ -335,6 +337,9 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
           for audit but are excluded from these counts (see hidden-count note). */}
       {/* The figures could not be read. Every tile below shows an em dash rather
           than a zero (see statFigure); this says why, and offers the retry. */}
+      {/* Items in transit — not losses, so above the loss tiles and the chase list. */}
+      <InTransitSection city={city} date={dateF} onOpen={(v) => setDetail(v)}
+        onViewAll={() => { setBucket("INFO"); setVarianceName(VARIANCE.ODOO_OUT_PENDING); setPage(1); }} />
       {statsError && (
         <ErrorState what="the figures" detail={statsError} onRetry={refetchStats} compact />
       )}

@@ -337,6 +337,16 @@ export const VARIANCE_LABELS: Record<VarianceName, LabelRule> = {
       "The floor confirmed the movement and the Odoo entry exists — it was made a day late."
     ),
   },
+  [VARIANCE.ODOO_OUT_PENDING]: {
+    base: {
+      display: "Items In Transit",
+      // Tier 2: nothing is lost, but there is a record to finish — the Odoo
+      // Out is still to be validated.
+      tier: 2,
+      risk: "The unit left the warehouse (the gate or DT saw it) and Odoo has its Out reserved against the order — it is on its way, not missing.",
+      action: "Validate the Odoo Out once the delivery is complete.",
+    },
+  },
   [VARIANCE.ODOO_POSTED_LATE]: {
     base: ODOO_DELAY(
       "The floor recorded the movement and Odoo does have the unit — the entry was posted a few days later, which is how vendor receipts are booked."

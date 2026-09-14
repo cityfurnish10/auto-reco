@@ -5,6 +5,8 @@
 // Date, City, Item Name, Barcode, Ticket ID, Source, Ops Type, SO Number,
 // Variance, Priority, Status. Defaults to the REAL + open "chase list".
 
+import InTransitSection from "./in-transit-section";
+import { VARIANCE } from "@/lib/engine/variance-names";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { SessionUser } from "@/lib/demo-auth";
@@ -437,6 +439,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
           )}
         </div>
       </div>
+
+      {/* Items in transit — not losses, so above the loss tiles and the chase list. */}
+      <InTransitSection city={cityTab} date={dateF} onOpen={(v) => setDetail(v)}
+        onViewAll={() => { setBucket("INFO"); setVarianceName(VARIANCE.ODOO_OUT_PENDING); setStatus("ALL"); setPage(1); }} />
 
       {/* KPI cards — loss-only. Posting-lag / hygiene (INFO) rows are kept in the
           DB for audit but excluded from these counts (see the hidden-count note). */}

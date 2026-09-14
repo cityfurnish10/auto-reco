@@ -14,7 +14,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { runAllCities, type MultiCityRun } from "../engine/run";
 import { guardTruncatedSheet } from "./sheet-guard";
 import { pullAll } from "../connectors";
-import { fetchOdooPostingsAfter } from "../connectors/odoo";
+import { fetchOdooPendingOut, fetchOdooPostingsAfter } from "../connectors/odoo";
 import { processPendingGuardUploads } from "../connectors/ocr/process";
 import { readWarehouseCalendar } from "../connectors/warehouse-calendar";
 import { buildRunCitySnapshots } from "./run-snapshot";
@@ -187,7 +187,7 @@ export async function runReconcilePipeline(
     //
     //    Skipped when the Odoo pull itself failed — the lookahead would fail
     //    the same way, only after burning its own timeout.
-    const [recentFloorByCity, storedOdooByCity, freshOdooByCity] = await Promise.all([
+    const [recentFloorByCity, storedOdooByCity, freshOdooByCity, pendingOdooOutByCity] = await Promise.all([
       loadRecentFloorBarcodes(db, runDate).catch((e) => {
         console.warn("loadRecentFloorBarcodes failed:", e instanceof Error ? e.message : e);
         return {};
@@ -209,6 +209,16 @@ export async function runReconcilePipeline(
             // swallowed into silence by the caller that catches it.
             pipelineWarnings.push(`Odoo late-posting lookahead failed: ${msg}`);
             console.warn("fetchOdooPostingsAfter failed:", msg);
+            return {} as Partial<Record<City, ReadonlySet<string>>>;
+          }),
+      // Items in transit: Out lines reserved against a sale order, not yet
+      // validated. Best-effort like the lookahead — without it those units keep
+      // their "not in Odoo" rows, which is the behaviour before this existed.
+      results.find((r) => r.source === "ODOO")?.ok === false
+        ? Promise.resolve({} as Partial<Record<City, ReadonlySet<string>>>)
+        : fetchOdooPendingOut(runDate).catch((e) => {
+            const msg = e instanceof Error ? e.message : String(e);
+            pipelineWarnings.push(`Odoo in-transit lookup failed: ${msg}`);
             return {} as Partial<Record<City, ReadonlySet<string>>>;
           }),
     ]);
@@ -233,7 +243,8 @@ export async function runReconcilePipeline(
       reportedByCity,
       recentFloorByCity,
       runDate,
-      recentOdooByCity
+      recentOdooByCity,
+      pendingOdooOutByCity
     );
     for (const s of run.skipped) {
       console.warn(`reconcile skipped ${s.city}: ${s.error}`);

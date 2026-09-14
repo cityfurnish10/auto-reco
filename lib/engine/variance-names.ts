@@ -35,6 +35,11 @@ export const VARIANCE = {
   // measured 2026-08-10, EVERY ONE of 162 "PO Inward" sheet rows had its Odoo
   // receipt posted +2 or +3 days later, so the ±1 window could never match one.
   ODOO_POSTED_LATE: "Odoo Entry Made Late — Posted a Few Days On",
+  // An outward unit the GATE or DT saw leave, whose Odoo Out is reserved
+  // against its sale order ("Available") but not yet validated. Decided 14 Sep
+  // 2026: count that reservation as Odoo's record of the dispatch — only with
+  // gate or DT corroboration — and show these apart as "Items in transit".
+  ODOO_OUT_PENDING: "Items In Transit — Odoo Out Not Yet Validated",
   OPS_ODOO_NO_DT: "Ops + Odoo Confirm — No DT Scan",
   DT_ODOO_NO_SHEET: "DT + Odoo Confirm — Missing from Ops Sheet",
   GATE_OPS_ODOO_NO_DT: "Gate + Ops + Odoo Confirm — DT Scan Pending",
