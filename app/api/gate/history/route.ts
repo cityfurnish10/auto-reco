@@ -10,7 +10,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { identifyDevice, withGuard } from "@/lib/gate/auth";
-import { currentBusinessDate } from "@/lib/reconcile/cron-dates";
+import { istDayRange, istToday, isIsoDate } from "@/lib/gate/calendar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,19 +23,25 @@ export const GET = jsonRoute("gate/history", async (req: NextRequest) => {
   const who = await withGuard(admin, device, req.nextUrl.searchParams.get("guardId"));
   if (!who) return NextResponse.json({ error: "no active guard" }, { status: 403 });
 
-  const date = req.nextUrl.searchParams.get("date") ?? currentBusinessDate();
+  // A CALENDAR day (IST), by when each trip was opened — the guard's own
+  // meaning of "the 13th". Items follow their trip, so a truck opened at 23:50
+  // keeps its 00:05 scans rather than splitting across two days.
+  const qd = req.nextUrl.searchParams.get("date");
+  const date = isIsoDate(qd) ? qd : istToday();
+  const { from, to } = istDayRange(date);
 
-  const [trips, scans] = await Promise.all([
-    admin.from("gate_trips")
-      .select("id,client_trip_id,direction,vehicle_no,driver_name,opened_at,closed_at,status")
-      .eq("guard_id", who.guardId).eq("business_date", date)
-      .order("opened_at", { ascending: false }),
-    admin.from("gate_scans")
-      .select("id,client_scan_id,trip_id,barcode,serial_no,item_kind,quantity,entry_method,override_reason,notes,scanned_at")
-      .eq("guard_id", who.guardId).eq("business_date", date).eq("status", "recorded")
-      .order("scanned_at", { ascending: true }),
-  ]);
+  const trips = await admin.from("gate_trips")
+    .select("id,client_trip_id,direction,vehicle_no,driver_name,opened_at,closed_at,status")
+    .eq("guard_id", who.guardId).gte("opened_at", from).lt("opened_at", to)
+    .order("opened_at", { ascending: false });
   if (trips.error) return NextResponse.json({ error: trips.error.message }, { status: 500 });
+  const tripIds = (trips.data ?? []).map((t) => (t as Record<string, unknown>).id as string);
+  const scans = tripIds.length
+    ? await admin.from("gate_scans")
+        .select("id,client_scan_id,trip_id,barcode,serial_no,item_kind,quantity,entry_method,override_reason,notes,scanned_at")
+        .in("trip_id", tripIds).eq("status", "recorded")
+        .order("scanned_at", { ascending: true })
+    : { data: [] as Record<string, unknown>[], error: null };
 
   const rows = (scans.data ?? []) as Record<string, unknown>[];
   return NextResponse.json({

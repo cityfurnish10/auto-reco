@@ -19,6 +19,7 @@ import { bootstrap, clearGuardId, drain, shiftState, expectedNow, fleet as fetch
          history, rosterFor, signIn, type Bootstrap, type ExpectedItem, type Fleet,
          type GuardOption, type HistoryTrip } from "@/lib/gate/client/api";
 import { click, compress, feedback, position } from "@/lib/gate/client/media";
+import { istToday, shiftIstDate, istDateOf } from "@/lib/gate/calendar";
 import { decodeFrame, initScanner, openCamera, stopCamera } from "@/lib/gate/client/scanner";
 import { canonicalize } from "@/lib/engine/barcode";
 import { blocksEntry, compare, describe as describeFace, fromArray, initFace } from "@/lib/gate/client/face";
@@ -225,7 +226,9 @@ export default function GateApp() {
   const [pin, setPin] = useState("");
   const [pinBad, setPinBad] = useState(false);
   const [problem, setProblem] = useState<{ titleKey: string; bodyKey: string } | null>(null);
-  const [histDate, setHistDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // Calendar days in IST throughout the phone. toISOString() is the UTC date,
+  // which between midnight and 05:30 IST is still yesterday.
+  const [histDate, setHistDate] = useState(() => istToday());
   const [hist, setHist] = useState<{ trips: HistoryTrip[]; totals: { trips: number; items: number } } | null>(null);
   const [histErr, setHistErr] = useState<string | null>(null);
   const [openTripId, setOpenTripId] = useState<string | null>(null);
@@ -267,7 +270,7 @@ export default function GateApp() {
   const saveDay = (t: number, i: number) => {
     try {
       localStorage.setItem("gate.day", JSON.stringify({
-        d: new Date().toISOString().slice(0, 10), trips: t, items: i,
+        d: istToday(), trips: t, items: i,
       }));
     } catch { /* storage blocked */ }
   };
@@ -299,7 +302,7 @@ export default function GateApp() {
         const raw = localStorage.getItem("gate.day");
         if (raw) {
           const d = JSON.parse(raw) as { d: string; trips: number; items: number };
-          if (d.d === new Date().toISOString().slice(0, 10)) {
+          if (d.d === istToday()) {
             setTrips(d.trips); setItemsToday(d.items);
           }
         }
@@ -370,7 +373,7 @@ export default function GateApp() {
           const voiding = new Set(all.filter((i) => i.kind === "void").map((i) => String(i.payload.clientScanId)));
           let sent: HistoryTrip["items"] = [];
           try {
-            const h = await history(tripBusinessDate(trip.opened_at));
+            const h = await history(istDateOf(trip.opened_at));
             sent = h.trips.find((x) => x.clientTripId === trip.client_trip_id)?.items ?? [];
           } catch { /* offline: the queue is all there is, and it is still right */ }
           const queuedIds = new Set(queued.map((i) => i.clientId));
@@ -1550,7 +1553,7 @@ export default function GateApp() {
               </div>
             )}
             <button className="gcard col tap" onClick={() => {
-              const d = new Date().toISOString().slice(0, 10);
+              const d = istToday();
               setHistDate(d); void loadHistory(d); setScreen("history");
             }}>
               <div className="gkv"><span>{t("tripsToday")}</span><b>{trips}</b></div>
@@ -1922,16 +1925,14 @@ export default function GateApp() {
           <div className="gbody">
             <div className="ghistnav">
               <button className="gbtn sm ghost" onClick={() => {
-                const d = new Date(histDate); d.setDate(d.getDate() - 1);
-                const iso = d.toISOString().slice(0, 10);
+                const iso = shiftIstDate(histDate, -1);
                 setHistDate(iso); void loadHistory(iso);
               }}><Icon name="chevron_left" size={18} /></button>
-              <input type="date" className="gf" value={histDate} max={new Date().toISOString().slice(0,10)}
+              <input type="date" className="gf" value={histDate} max={istToday()}
                 onChange={(e) => { setHistDate(e.target.value); void loadHistory(e.target.value); }} />
-              <button className="gbtn sm ghost" disabled={histDate >= new Date().toISOString().slice(0,10)}
+              <button className="gbtn sm ghost" disabled={histDate >= istToday()}
                 onClick={() => {
-                  const d = new Date(histDate); d.setDate(d.getDate() + 1);
-                  const iso = d.toISOString().slice(0, 10);
+                  const iso = shiftIstDate(histDate, 1);
                   setHistDate(iso); void loadHistory(iso);
                 }}><Icon name="chevron_right" size={18} /></button>
             </div>
@@ -2275,15 +2276,6 @@ function SignOutBtn({ onClick }: { onClick: () => void }) {
       <Icon name="logout" size={20} />
     </button>
   );
-}
-/**
- * The gate business day a trip was opened on: 15:00 IST to 15:00 IST, dated by
- * the day it started. The history lookup is per business day, and a trip opened
- * at 14:50 and reloaded at 15:10 belongs to the day it was opened on.
- */
-function tripBusinessDate(openedAt: string): string {
-  const IST_MS = 5.5 * 3600_000, CUTOFF_MS = 15 * 3600_000;
-  return new Date(Date.parse(openedAt) + IST_MS - CUTOFF_MS).toISOString().slice(0, 10);
 }
 
 /**

@@ -8,7 +8,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
-import { currentBusinessDate } from "@/lib/reconcile/cron-dates";
+import { istDateOf, istDayRange, istToday, isIsoDate } from "@/lib/gate/calendar";
 import { agentKey, commonestSpelling, transportKey } from "@/lib/gate/transport";
 import { findDuplicates } from "@/lib/gate/duplicates";
 
@@ -22,7 +22,12 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
   }
   const admin = createAdminClient();
   const sp = req.nextUrl.searchParams;
-  const date = sp.get("date") ?? currentBusinessDate();
+  // A CALENDAR day (IST), by when each trip was opened. Not the warehouse day
+  // (15:00 → 15:00) the reconciliation uses — "Activity for 13.09" was showing
+  // trucks that left on the morning of the 14th. Items follow their trip.
+  const qd = sp.get("date");
+  const date = isIsoDate(qd) ? qd : istToday();
+  const { from, to } = istDayRange(date);
   // A manager is pinned to their own city whatever they ask for.
   const city = me.role === "manager" ? me.city : sp.get("city");
   const guardId = sp.get("guardId");
@@ -40,7 +45,7 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
             // a manager could not look up is not a control, it is a nag.
             "expected_checked_at,expected_total,expected_scanned,expected_missing," +
             "unplanned_count,expected_warned")
-    .eq("business_date", date)
+    .gte("opened_at", from).lt("opened_at", to)
     .order("opened_at", { ascending: false });
   // unit_* and last_* are DERIVED (migration 0037) — Odoo's answer to "what is
   // this serial". task_* are DERIVED too (0039) — the unit's latest DT task,
@@ -49,51 +54,48 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
   // separate from product/so_number, which are the gate's own testimony.
   const SCAN_COLS = "id,trip_id,city,direction,business_date,barcode,serial_no,product,so_number,ticket_id,customer,item_kind,quantity,entry_method,override_reason,exception_reason,barcode_pending,geo_ok,photo_path,scanned_at,guard_id,notes,unit_product,unit_sku,last_customer,last_so,last_moved_at";
   const TASK_COLS = ",task_ticket,task_job_type,task_customer,task_so,task_city,task_checked_at,enriched_at";
-  const scansQuery = (cols: string) => {
-    let q = admin.from("gate_scans").select(cols)
-      .eq("business_date", date).eq("status", "recorded")
-      .order("scanned_at", { ascending: true }).limit(2000);
-    // Guard and direction are NOT narrowed here: a duplicate is judged against
-    // the whole day, and the entry it repeats may belong to another guard's
-    // trip. They are applied after duplicates are found.
-    if (city) q = q.eq("city", city);
-    return q;
-  };
+  // The day's trips first — ALL of them in the city. Guard and direction are
+  // applied afterwards, because a duplicate is judged against the whole day and
+  // the entry it repeats may sit on another guard's trip.
+  if (city) trips = trips.eq("city", city);
+  const tr = await trips;
+  if (tr.error) return NextResponse.json({ error: tr.error.message }, { status: 500 });
+  const dayTrips = (tr.data ?? []) as unknown as Record<string, unknown>[];
+  const dayTripIds = dayTrips.map((t) => t.id as string);
+  const NONE = "00000000-0000-0000-0000-000000000000";
+
+  const scansQuery = (cols: string) => admin.from("gate_scans").select(cols)
+    .in("trip_id", dayTripIds.length ? dayTripIds : [NONE]).eq("status", "recorded")
+    .order("scanned_at", { ascending: true }).limit(5000);
   const MATCH_COLS = ",task_date,task_matched";
   let scans = scansQuery(SCAN_COLS + TASK_COLS + MATCH_COLS);
-
-  if (city) trips = trips.eq("city", city);
-  if (guardId) trips = trips.eq("guard_id", guardId);
-  if (direction) trips = trips.eq("direction", direction);
 
   // Retractions, counted separately and never mixed into the item totals. A
   // voided row must not inflate what moved — that is the whole reason it is
   // voided — but a trip that had six items taken back is a trip worth opening,
   // and with this hidden entirely there was no way to notice.
-  let removed = admin.from("gate_scans")
-    .select("id,trip_id,barcode,serial_no,void_reason,voided_at")
-    .eq("business_date", date).eq("status", "void")
-    .order("voided_at", { ascending: true }).limit(500);
-  if (city) removed = removed.eq("city", city);
-  if (guardId) removed = removed.eq("guard_id", guardId);
-  if (direction) removed = removed.eq("direction", direction);
+  const removed = admin.from("gate_scans")
+    .select("id,trip_id,guard_id,direction,barcode,serial_no,void_reason,voided_at")
+    .in("trip_id", dayTripIds.length ? dayTripIds : [NONE]).eq("status", "void")
+    .order("voided_at", { ascending: true }).limit(1000);
 
-  let [tr, sc, rm] = await Promise.all([trips, scans, removed]);
+  let [sc, rm] = await Promise.all([scans, removed]);
   // 0039 applied by hand, possibly not yet: without its columns, show what 0037
   // gave rather than failing the whole Activity page over a lookup.
   if (sc.error?.code === "42703") { scans = scansQuery(SCAN_COLS + TASK_COLS); sc = await scans; }
   if (sc.error?.code === "42703") { scans = scansQuery(SCAN_COLS + ",enriched_at"); sc = await scans; }
   if (sc.error?.code === "42703") { scans = scansQuery(SCAN_COLS); sc = await scans; }
-  if (tr.error) return NextResponse.json({ error: tr.error.message }, { status: 500 });
   if (sc.error) return NextResponse.json({ error: sc.error.message }, { status: 500 });
   // A failure to read retractions must not take the whole page down with it —
   // they are context, not the record.
-  const removedRows = (rm.error ? [] : (rm.data ?? [])) as unknown as Record<string, unknown>[];
+  const removedRows = ((rm.error ? [] : (rm.data ?? [])) as unknown as Record<string, unknown>[])
+    .filter((r) => (!guardId || r.guard_id === guardId) && (!direction || r.direction === direction));
 
   // Cast once, here. Splitting the trip select across lines to fit the new
   // completeness columns lost Supabase's inferred row type, and casting at each
   // of the four use sites is how one of them quietly gets missed.
-  const allTrips = (tr.data ?? []) as unknown as Record<string, unknown>[];
+  const allTrips = dayTrips.filter((t) =>
+    (!guardId || t.guard_id === guardId) && (!direction || t.direction === direction));
 
   // Dropdown options come from the day BEFORE the transport and agent filters,
   // so choosing one truck does not empty the list of the others.
@@ -119,7 +121,8 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
   const dayScans = (sc.data ?? []) as unknown as Record<string, unknown>[];
   const duplicates = findDuplicates(dayScans.map((r) => ({
     id: r.id as string, tripId: (r.trip_id as string) ?? null, city: (r.city as string) ?? null,
-    businessDate: (r.business_date as string) ?? null, direction: (r.direction as string) ?? null,
+    // Same calendar day as everything else on this screen.
+    businessDate: istDateOf(r.scanned_at as string), direction: (r.direction as string) ?? null,
     barcode: (r.barcode as string) ?? null, serialNo: (r.serial_no as string) ?? null,
     soNumber: (r.so_number as string) ?? null, ticketId: (r.ticket_id as string) ?? null,
     itemKind: (r.item_kind as string) ?? null, quantity: (r.quantity as number) ?? null,
@@ -136,12 +139,14 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
   // Who worked this day, for the filter — derived from the data rather than
   // the roster, so the dropdown only offers names that will return something.
   const guards = new Map<string, string>();
-  for (const t of allTrips) {
+  for (const t of dayTrips) {
     if (t.guard_id) guards.set(t.guard_id as string, (t.app_users as { name?: string })?.name ?? "");
   }
 
   return NextResponse.json({
+    // Named businessDate for the page that reads it; it is the CALENDAR day.
     businessDate: date,
+    calendarDay: true,
     totals: {
       trips: tripRows.length,
       items: counted.length,

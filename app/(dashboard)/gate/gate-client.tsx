@@ -15,6 +15,7 @@ import { Icon } from "@/components/icon";
 import { Modal } from "@/components/modal";
 import { CITIES } from "@/lib/sample-data";
 import { groupVisits } from "@/lib/gate/transport";
+import { istToday } from "@/lib/gate/calendar";
 import type { SessionUser } from "@/lib/demo-auth";
 
 type Tab = "activity" | "guards" | "devices" | "gates" | "reviews" | "attendance";
@@ -135,21 +136,12 @@ interface ActivityData {
 }
 
 /**
- * The business day currently OPEN — not the calendar date.
- *
- * THE BUG THIS FIXES. The gate's day runs 15:00 → 15:00 IST, so work done on
- * the morning of the 25th is filed under the 24th. This defaulted to the UTC
- * calendar date, which means that from 05:30 to 15:00 IST every day — the
- * entire morning shift — the page opened on a date the gate had not started
- * writing to yet, and showed an empty day while guards were scanning.
+ * Today, as a CALENDAR day in IST — the day a guard, a supervisor and a manager
+ * all mean. (It used to be the 15:00 → 15:00 warehouse day, which is right for
+ * the reconciliation and wrong here: "13 Sep" showed trucks that left on the
+ * 14th. See lib/gate/calendar.ts.)
  */
-const today = () => {
-  const IST = 5.5 * 3600_000;
-  const ist = new Date(Date.now() + IST);
-  // Before 15:00 IST the open business day is still yesterday's date.
-  if (ist.getUTCHours() < 15) ist.setUTCDate(ist.getUTCDate() - 1);
-  return ist.toISOString().slice(0, 10);
-};
+const today = () => istToday();
 
 function Activity({ user }: { user: SessionUser }) {
   const [d, setD] = useState<ActivityData | null>(null);
@@ -293,7 +285,7 @@ function Activity({ user }: { user: SessionUser }) {
             ))}
           </select>
         )}
-        <span className="ml-auto text-xs text-text-muted">{d?.businessDate ?? date}</span>
+        <span className="ml-auto text-xs text-text-muted">Calendar day (IST) · trips by when they opened</span>
       </div>
 
       {loadErr && <ErrorState what="gate activity" detail={loadErr} onRetry={load} />}
@@ -762,7 +754,6 @@ interface AttendanceRow {
   onDuty: boolean; minutes: number | null;
 }
 
-const istToday = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
 
 /**
  * Who came in, when, and whether the face matched — per calendar day.

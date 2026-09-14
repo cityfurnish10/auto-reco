@@ -61,14 +61,21 @@ export const GET = jsonRoute("gate/bootstrap", async (req: NextRequest) => {
       ? admin.from("gate_trips")
           .select("id,client_trip_id,direction,vehicle_no,opened_at")
           .eq("guard_id", who.guardId).eq("status", "open")
-          .eq("business_date", businessDate)
+          // Within the last 12 hours rather than inside a named day — the
+          // nightly sweep abandons an open trip at 12h anyway (0032). A day
+          // bound, warehouse or calendar, dropped a truck opened before the
+          // boundary the moment the boundary passed, with the guard mid-scan.
+          .gte("opened_at", new Date(Date.now() - 12 * 3600_000).toISOString())
           .order("opened_at", { ascending: false }).limit(1).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     who
       ? admin.from("guard_shifts")
           .select("id,client_shift_id,checked_in_at")
           .eq("guard_id", who.guardId).eq("status", "open")
-          .eq("business_date", businessDate)
+          // 16 hours, the sweep's own limit for a shift. On a day bound a night
+          // guard who checked in at 20:00 was told at midnight (calendar) or
+          // 15:00 (warehouse) that they had no shift, and sent to check in again.
+          .gte("checked_in_at", new Date(Date.now() - 16 * 3600_000).toISOString())
           .order("checked_in_at", { ascending: false }).limit(1).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ]);

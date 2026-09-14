@@ -12,6 +12,7 @@
 // Scoped like every gate screen: a city manager sees their own city, an admin
 // sees all.
 
+import { istDayRange, isIsoDate } from "@/lib/gate/calendar";
 import { NextResponse, type NextRequest } from "next/server";
 import { jsonRoute } from "@/lib/api/json-route";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -27,7 +28,10 @@ export const GET = jsonRoute("gate/flags", async (req: NextRequest) => {
   }
   const admin = createAdminClient();
   const city = me.role === "manager" ? (me.city ?? "") : req.nextUrl.searchParams.get("city");
-  const date = req.nextUrl.searchParams.get("date");
+  // A calendar day (IST), matched on when it happened — as the Reviews tab
+  // already does — not on the warehouse day stored beside it.
+  const qd = req.nextUrl.searchParams.get("date");
+  const day = isIsoDate(qd) ? istDayRange(qd) : null;
 
   // ── Location ──────────────────────────────────────────────────────────
   // The view carries metres_from_gate and pin_unconfirmed alongside each row,
@@ -38,7 +42,7 @@ export const GET = jsonRoute("gate/flags", async (req: NextRequest) => {
     .order("checked_in_at", { ascending: false })
     .limit(200);
   if (city) loc = loc.eq("city", city);
-  if (date) loc = loc.eq("business_date", date);
+  if (day) loc = loc.gte("checked_in_at", day.from).lt("checked_in_at", day.to);
 
   // ── Scanning ──────────────────────────────────────────────────────────
   let rej = admin.from("gate_sync_rejections")
@@ -46,7 +50,7 @@ export const GET = jsonRoute("gate/flags", async (req: NextRequest) => {
     .order("rejected_at", { ascending: false })
     .limit(200);
   if (city) rej = rej.eq("city", city);
-  if (date) rej = rej.eq("business_date", date);
+  if (day) rej = rej.gte("rejected_at", day.from).lt("rejected_at", day.to);
 
   const [l, r] = await Promise.all([loc, rej]);
 
