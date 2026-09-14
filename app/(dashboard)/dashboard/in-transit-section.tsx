@@ -39,7 +39,7 @@ export default function InTransitSection({ city, date, onOpen, onViewAll }: {
   if (!loading && !error && total === 0) return null;
 
   return (
-    <section className="card p-4 border border-info/30">
+    <section className="card p-4 border border-border">
       <div className="flex flex-wrap items-center gap-2 mb-2">
         <Icon name="local_shipping" size={18} />
         <h2 className="font-semibold text-text-primary">Items in transit</h2>

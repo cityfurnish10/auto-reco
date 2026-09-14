@@ -38,6 +38,7 @@ import {
   responsibleLabel,
 } from "@/lib/ui/variance-format";
 import { shownBarcode } from "@/lib/ui/barcode-display";
+import { fieldMatch, type FieldMatch, type MatchField } from "@/lib/ui/field-match";
 
 // Past tense for the confirmation toast — "resolved", not "close".
 const ACTION_PAST: Record<string, string> = {
@@ -46,12 +47,50 @@ const ACTION_PAST: Record<string, string> = {
   close: "resolved",
 };
 
-function Field({ label, value, mono }: { label: string; value?: string | null; mono?: boolean }) {
+const SRC_SHORT: Record<string, string> = { PHYSICAL: "Gate", SHEET: "Ops sheet", DT: "DT", ODOO: "Odoo" };
+
+/**
+ * The agreement mark after a field's value — whether the systems that recorded
+ * this movement agree on it (lib/ui/field-match.ts). Green: all of them hold it
+ * and agree. Grey: those holding it agree, the rest are silent. Amber: they
+ * disagree — the tooltip lists what each one wrote, which is the next question.
+ */
+function MatchMark({ m }: { m: FieldMatch | null }) {
+  if (!m || m.state === "none") return null;
+  const held = new Set(m.holders.map((h) => h.source)).size;
+  const detail = m.holders.map((h) => `${SRC_SHORT[h.source]}: ${h.value}`).join("\n");
+  if (m.state === "all") {
+    return (
+      <span className="inline-flex items-center text-success ml-1.5 align-middle" title={`Matched in all ${m.compared.length} systems\n${detail}`}
+            aria-label={`Matched in all ${m.compared.length} systems`}>
+        <Icon name="check_circle" size={14} />
+      </span>
+    );
+  }
+  if (m.state === "partial") {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-text-muted ml-1.5 align-middle text-[11px]"
+            title={`Agrees in the ${held} of ${m.compared.length} systems that recorded it\n${detail}`}
+            aria-label={`Agrees in ${held} of ${m.compared.length} systems`}>
+        <Icon name="check" size={13} />{held}/{m.compared.length}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-0.5 text-status-warning ml-1.5 align-middle text-[11px]"
+          title={`Differs between systems\n${detail}`} aria-label="Differs between systems">
+      <Icon name="warning" size={13} />differs
+    </span>
+  );
+}
+
+function Field({ label, value, mono, match }: { label: string; value?: string | null; mono?: boolean; match?: FieldMatch | null }) {
   return (
     <div className="min-w-0">
       <p className="text-[11px] uppercase tracking-wider text-text-muted">{label}</p>
       <p className={`text-sm text-text-primary break-words ${mono ? "font-mono" : ""}`}>
         {value || "—"}
+        {!!value && <MatchMark m={match ?? null} />}
       </p>
     </div>
   );
@@ -132,6 +171,11 @@ export default function VarianceDetailModal({
   });
 
   if (!v) return null;
+
+  // Agreement per field across the records shown below. Null while they load,
+  // and when nothing is retained for the run — no mark rather than a wrong one.
+  const match = (f: MatchField): FieldMatch | null =>
+    evidenceLoading ? null : fieldMatch(bySource, f);
 
   const meta = VARIANCE_META[v.variance_name];
   const why = v.note ?? meta?.note ?? "Flagged for review.";
@@ -373,11 +417,12 @@ export default function VarianceDetailModal({
         <section>
           <h4 className="font-headline text-sm text-text-primary mb-2">Item &amp; identifiers</h4>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3">
-            <Field label="Product" value={v.product} />
+            <Field label="Product" value={v.product} match={match("product")} />
             <div className="min-w-0">
               <p className="text-[11px] uppercase tracking-wider text-text-muted">Barcode</p>
               <p className="text-sm text-text-primary font-mono break-all flex items-center gap-1.5">
                 {shownBarcode(v)}
+                <MatchMark m={match("barcode")} />
                 <button
                   onClick={() => navigator.clipboard?.writeText(shownBarcode(v))}
                   title="Copy barcode"
@@ -387,13 +432,13 @@ export default function VarianceDetailModal({
                 </button>
               </p>
             </div>
-            <Field label="Ticket ID" value={v.ticket_id} />
-            <Field label="SO / PO number" value={v.so_number} />
-            <Field label="Customer" value={v.customer} />
-            <Field label="Ops type" value={v.job_type ? opsTypeLabel(v.job_type) : null} />
-            <Field label="City" value={v.city} />
-            <Field label="Direction" value={DIRECTION_LABEL[v.direction]} />
-            <Field label="Business date" value={v.business_date} />
+            <Field label="Ticket ID" value={v.ticket_id} match={match("ticket_id")} />
+            <Field label="SO / PO number" value={v.so_number} match={match("so_number")} />
+            <Field label="Customer" value={v.customer} match={match("customer")} />
+            <Field label="Ops type" value={v.job_type ? opsTypeLabel(v.job_type) : null} match={match("job_type")} />
+            <Field label="City" value={v.city} match={match("city")} />
+            <Field label="Direction" value={DIRECTION_LABEL[v.direction]} match={match("direction")} />
+            <Field label="Business date" value={v.business_date} match={match("date")} />
           </div>
         </section>
 
