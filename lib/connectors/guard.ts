@@ -20,21 +20,40 @@ import type { GuardUpload } from "../db/schema";
 import { CITIES, type City } from "../sample-data";
 
 /**
- * Cities whose gate record now comes from the app.
+ * Cities whose gate record now comes from the app — optionally FROM A DATE.
  *
  * Driven by GATE_APP_CITIES (comma-separated) so the pilot can be widened or
  * pulled back without a code change. Empty means every city still reads the
  * paper register, which is the state on the day this ships.
+ *
+ *   "DELHI"              the app for every business date
+ *   "DELHI:2026-09-13"   the app from business date 13 Sep 2026; paper before it
+ *
+ * THE DATE IS NOT DECORATION. The reconcile cron re-checks earlier days and a
+ * manager can re-run any date. Without a start, switching a city on would also
+ * swap its gate record for every earlier day re-run afterwards — replacing a
+ * register that was reconciled with a handful of desk-test scans, and filling
+ * those days with false absences. A start date confines the switch to the days
+ * the app was really in use.
  *
  * A city listed here does NOT fall back to OCR if the app returns nothing —
  * that would be the worst of both worlds. A gate with no scans is a gate that
  * reported nothing, and the reported-aware ladder already knows what to do with
  * an absent source: treat it as down, not as a confident zero.
  */
-export function gateAppCities(): Set<City> {
+export function gateAppCities(runDate?: string): Set<City> {
   const raw = process.env.GATE_APP_CITIES ?? "";
-  const wanted = raw.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
-  return new Set(wanted.filter((c): c is City => (CITIES as readonly string[]).includes(c)));
+  const out = new Set<City>();
+  for (const part of raw.split(",")) {
+    const [cityRaw, fromRaw] = part.split(":").map((x) => x.trim());
+    const city = (cityRaw ?? "").toUpperCase();
+    if (!(CITIES as readonly string[]).includes(city)) continue;
+    // A malformed date must not silently switch a city on for all history.
+    if (fromRaw !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(fromRaw)) continue;
+    if (fromRaw && runDate && runDate < fromRaw) continue;
+    out.add(city as City);
+  }
+  return out;
 }
 
 export const guardConnector: Connector = {
@@ -42,7 +61,7 @@ export const guardConnector: Connector = {
   label: "Gate Register",
   async pull(runDate: string, ctx): Promise<CityTaggedRow[]> {
     const db = createAdminClient();
-    const appCities = gateAppCities();
+    const appCities = gateAppCities(runDate);
     const rows: CityTaggedRow[] = [];
 
     // ── Cities on the app ────────────────────────────────────────────────
@@ -58,6 +77,12 @@ export const guardConnector: Connector = {
 
       for (const r of (data ?? []) as Record<string, unknown>[]) {
         const barcode = String(r.barcode ?? "").trim();
+        // A barcode scanned twice the same day in the same direction is passed
+        // through as twice, on purpose: the engine counts the unit ONCE (its
+        // views are per barcode, per direction) and raises "Duplicate Scan"
+        // for it. Dropping the second here would count it once and lose the
+        // flag — and the flag is how ops hears a guard double-logged.
+        //
         // Counted extras — spares, consumables, packing boxes, samples — carry
         // no serial by design. The engine's count layer handles those from the
         // other sources and a barcode-less row cannot enter the per-barcode

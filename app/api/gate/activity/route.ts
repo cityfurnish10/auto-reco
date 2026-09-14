@@ -10,6 +10,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentAppUser } from "@/lib/db/current-user";
 import { currentBusinessDate } from "@/lib/reconcile/cron-dates";
 import { agentKey, commonestSpelling, transportKey } from "@/lib/gate/transport";
+import { findDuplicates } from "@/lib/gate/duplicates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,15 +47,16 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
   // which is where ticket, job type and the real customer live. All shown so a
   // manager sees the register row rather than a bare number; all deliberately
   // separate from product/so_number, which are the gate's own testimony.
-  const SCAN_COLS = "id,trip_id,barcode,serial_no,product,so_number,ticket_id,customer,item_kind,quantity,entry_method,override_reason,exception_reason,barcode_pending,geo_ok,photo_path,scanned_at,guard_id,notes,unit_product,unit_sku,last_customer,last_so,last_moved_at";
+  const SCAN_COLS = "id,trip_id,city,direction,business_date,barcode,serial_no,product,so_number,ticket_id,customer,item_kind,quantity,entry_method,override_reason,exception_reason,barcode_pending,geo_ok,photo_path,scanned_at,guard_id,notes,unit_product,unit_sku,last_customer,last_so,last_moved_at";
   const TASK_COLS = ",task_ticket,task_job_type,task_customer,task_so,task_city,task_checked_at,enriched_at";
   const scansQuery = (cols: string) => {
     let q = admin.from("gate_scans").select(cols)
       .eq("business_date", date).eq("status", "recorded")
       .order("scanned_at", { ascending: true }).limit(2000);
+    // Guard and direction are NOT narrowed here: a duplicate is judged against
+    // the whole day, and the entry it repeats may belong to another guard's
+    // trip. They are applied after duplicates are found.
     if (city) q = q.eq("city", city);
-    if (guardId) q = q.eq("guard_id", guardId);
-    if (direction) q = q.eq("direction", direction);
     return q;
   };
   const MATCH_COLS = ",task_date,task_matched";
@@ -114,9 +116,22 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
     (!agent || agentKey(t.driver_name as string) === agent));
   const keptTrips = new Set(tripRows.map((t) => t.id));
   const narrowed = !!(vehicle || agent);
-  const rows = ((sc.data ?? []) as unknown as Record<string, unknown>[])
+  const dayScans = (sc.data ?? []) as unknown as Record<string, unknown>[];
+  const duplicates = findDuplicates(dayScans.map((r) => ({
+    id: r.id as string, tripId: (r.trip_id as string) ?? null, city: (r.city as string) ?? null,
+    businessDate: (r.business_date as string) ?? null, direction: (r.direction as string) ?? null,
+    barcode: (r.barcode as string) ?? null, serialNo: (r.serial_no as string) ?? null,
+    soNumber: (r.so_number as string) ?? null, ticketId: (r.ticket_id as string) ?? null,
+    itemKind: (r.item_kind as string) ?? null, quantity: (r.quantity as number) ?? null,
+    notes: (r.notes as string) ?? null, scannedAt: r.scanned_at as string,
+  })));
+  // Every entry on the chosen trips, duplicates included so they can be SEEN…
+  const rows = dayScans
+    .filter((r) => (!guardId || r.guard_id === guardId) && (!direction || r.direction === direction))
     .filter((r) => !narrowed || keptTrips.has(r.trip_id));
-  const manual = rows.filter((r) => r.entry_method === "manual").length;
+  // …and only the unique ones COUNTED, anywhere a number is shown.
+  const counted = rows.filter((r) => !duplicates.has(r.id as string));
+  const manual = counted.filter((r) => r.entry_method === "manual").length;
 
   // Who worked this day, for the filter — derived from the data rather than
   // the roster, so the dropdown only offers names that will return something.
@@ -129,13 +144,15 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
     businessDate: date,
     totals: {
       trips: tripRows.length,
-      items: rows.length,
-      scanned: rows.length - manual,
+      items: counted.length,
+      scanned: counted.length - manual,
       manual,
-      overrides: rows.filter((r) => r.override_reason).length,
-      awaitingBarcode: rows.filter((r) => r.barcode_pending).length,
+      overrides: counted.filter((r) => r.override_reason).length,
+      awaitingBarcode: counted.filter((r) => r.barcode_pending).length,
       // The number the pilot is judged on: how much is scanned rather than typed.
-      scannedShare: rows.length ? +(((rows.length - manual) / rows.length) * 100).toFixed(1) : null,
+      scannedShare: counted.length ? +(((counted.length - manual) / counted.length) * 100).toFixed(1) : null,
+      // Left out of every figure above, shown on the trips they belong to.
+      duplicates: rows.length - counted.length,
       removed: removedRows.filter((r) => !narrowed || keptTrips.has(r.trip_id)).length,
       // How often the plan and the truck disagreed. The figure that decides
       // whether the close-screen warning can be trusted enough to act on.
@@ -148,6 +165,7 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
     agents,
     trips: tripRows.map((x) => {
       const items = rows.filter((r) => r.trip_id === x.id);
+      const unique = items.filter((r) => !duplicates.has(r.id as string));
       const secs = x.closed_at
         ? Math.round((Date.parse(x.closed_at as string) - Date.parse(x.opened_at as string)) / 1000)
         : null;
@@ -159,9 +177,10 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
         openedAt: x.opened_at, closedAt: x.closed_at, status: x.status,
         durationSec: secs,
         guardName: (x.app_users as { name?: string })?.name ?? "",
-        itemCount: items.length,
-        overrides: items.filter((i) => i.override_reason).length,
-        manual: items.filter((i) => i.entry_method === "manual").length,
+        itemCount: unique.length,
+        overrides: unique.filter((i) => i.override_reason).length,
+        manual: unique.filter((i) => i.entry_method === "manual").length,
+        duplicates: items.length - unique.length,
         // Taken back by the guard. Not part of itemCount — a voided row must
         // never inflate what moved — but shown, because six retractions on one
         // trip is a trip worth opening.
@@ -213,6 +232,8 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
           // The guard's own description. On a hand entry it is often the only
           // thing saying what the item is ("WM -10 QTY") and was shown nowhere.
           notes: (r.notes as string) ?? null,
+          // Not counted: repeats an earlier entry (lib/gate/duplicates.ts).
+          duplicateOf: duplicates.get(r.id as string) ?? null,
           entryMethod: r.entry_method,
           override: r.override_reason ?? null,
           exception: r.exception_reason ?? null,

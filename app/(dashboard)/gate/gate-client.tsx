@@ -94,6 +94,8 @@ interface TripItem {
    *  this movement's. */
   lastKnown: boolean; taskDate: string | null;
   notes: string | null;
+  /** Repeats an earlier entry — shown, never counted. */
+  duplicateOf: { of: string; ofScannedAt: string; reason: string } | null;
   /** A lookup is still owed; a dash here would read as "nothing to find". */
   lookupPending: boolean;
 }
@@ -114,6 +116,7 @@ interface Trip {
   carrierRef: string | null; city: string; siteCode: string;
   openedAt: string; closedAt: string | null; status: string; durationSec: number | null;
   guardName: string; itemCount: number; overrides: number; manual: number; items: TripItem[];
+  duplicates: number;
   removed: RemovedItem[];
   completeness: TripCompleteness | null;
 }
@@ -121,7 +124,7 @@ interface ActivityData {
   businessDate: string;
   totals: { trips: number; items: number; scanned: number; manual: number;
             overrides: number; awaitingBarcode: number; scannedShare: number | null;
-            removed: number; tripsShort: number; tripsChecked: number };
+            removed: number; tripsShort: number; tripsChecked: number; duplicates: number };
   guards: { id: string; name: string }[];
   /** One entry per truck / agent however it was spelled; `key` is what filters. */
   vehicles: { key: string; label: string; trips: number }[];
@@ -211,6 +214,11 @@ function Activity({ user }: { user: SessionUser }) {
                         )}
                         {tr.removed.length > 0 && (
                           <span className="badge badge-medium ml-2">{tr.removed.length} removed</span>
+                        )}
+                        {/* Entered again for an item already recorded. Not in the
+                            count to the left, and not in the reconciliation. */}
+                        {tr.duplicates > 0 && (
+                          <span className="badge badge-high ml-2">{tr.duplicates} duplicate</span>
                         )}
                         {/* Typed rather than scanned. No barcode was read, so
                             the row rests entirely on the guard and the photo
@@ -322,6 +330,13 @@ function Activity({ user }: { user: SessionUser }) {
             </div>
           )}
 
+          {d.totals.duplicates > 0 && (
+            <div className="card p-4 border border-warning/30 text-sm">
+              <b>{d.totals.duplicates}</b> duplicate entr{d.totals.duplicates === 1 ? "y" : "ies"} —
+              the same item recorded again. Shown on their trips, left out of every count.
+            </div>
+          )}
+
           {d.totals.awaitingBarcode > 0 && (
             <div className="card p-4 border border-warning/30 text-sm">
               <b>{d.totals.awaitingBarcode}</b> item{d.totals.awaitingBarcode === 1 ? "" : "s"} awaiting a barcode.
@@ -405,7 +420,7 @@ function Activity({ user }: { user: SessionUser }) {
 }
 
 /** Everything about one trip, including the items the table only counts. */
-function TripModal({ trip, onClose, onLookedUp }: {
+export function TripModal({ trip, onClose, onLookedUp }: {
   trip: Trip | null; onClose: () => void; onLookedUp: () => void;
 }) {
   const [photo, setPhoto] = useState<{ scanId: string; label: string } | null>(null);
@@ -437,7 +452,7 @@ function TripModal({ trip, onClose, onLookedUp }: {
   return (
     <Modal open onClose={onClose}
       title={`${trip.vehicleNo} · ${trip.direction === "OUT" ? "Outward" : "Inward"}`}
-      subtitle={`${trip.guardName} · ${trip.city}`} size="lg">
+      subtitle={`${trip.guardName} · ${trip.city}`} size="wide">
       <div className="grid sm:grid-cols-2 gap-x-8 mb-5">
         <Row k="Guard" v={trip.guardName || "—"} />
         <Row k="Delivery agent" v={trip.driverName ?? "—"} />
@@ -447,7 +462,7 @@ function TripModal({ trip, onClose, onLookedUp }: {
             gap between the guard starting the trip and closing it — how long
             the vehicle was at the gate. */}
         <Row k="Time at gate" v={took(trip.durationSec)} mono />
-        <Row k="Items" v={`${trip.itemCount}${trip.manual ? ` · ${trip.manual} typed` : ""}`} />
+        <Row k="Items" v={`${trip.itemCount}${trip.manual ? ` · ${trip.manual} typed` : ""}${trip.duplicates ? ` · ${trip.duplicates} duplicate not counted` : ""}`} />
         {trip.completeness && (
           <Row k="Against the plan"
                v={`${trip.completeness.scanned} of ${trip.completeness.total}`} />
@@ -523,51 +538,61 @@ function TripModal({ trip, onClose, onLookedUp }: {
         </div>
       )}
       {trip.items.length === 0 ? <Empty text="No items on this trip." /> : (
-        <div className="overflow-x-auto border border-border rounded-control">
-          <table className="w-full text-sm">
-            <thead>
+        <div className="overflow-x-auto rounded-control border border-border">
+          {/* GRIDLINES on every cell, and text that wraps where it is prose.
+              Twelve columns in a modal only fit a laptop screen if names and
+              products may take a second line; codes (SO, ticket, barcode,
+              truck) stay on one, because a wrapped code is misread. */}
+          <table className="w-full border-collapse text-[13px] leading-snug">
+            <thead className="bg-surface-elevated">
               <tr>
                 {[...REGISTER_COLUMNS.map((c) => c.label), "How", "Time"].map((h) => (
-                  <th key={h} className="text-left px-3 py-2 text-xs uppercase tracking-wide text-text-muted whitespace-nowrap">{h}</th>
+                  <th key={h} className="text-left align-bottom px-1.5 py-1.5 border border-border text-[11px] font-semibold uppercase tracking-wide text-text-muted">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {trip.items.map((it) => (
-                <tr key={it.id} className="border-t border-border">
+                <tr key={it.id} className={`align-top${it.duplicateOf ? " opacity-60" : ""}`}>
                   {REGISTER_COLUMNS.map((c) => {
                     const v = c.value(trip, it);
                     return (
                       <td key={c.label}
-                          className={`px-3 py-2 whitespace-nowrap ${c.mono ? "font-mono" : ""} ${v ? "" : "text-text-muted"}`}>
+                          className={`px-1.5 py-1.5 border border-border ${c.wrap ? (c.mono ? "min-w-[6rem] max-w-[9rem] break-words" : c.label === "Item Name" ? "min-w-[9rem] max-w-[15rem] break-words" : "min-w-[5.5rem] max-w-[12rem] break-words") : "whitespace-nowrap"} ${c.mono ? "font-mono text-[11.5px]" : ""} ${v ? "" : "text-text-muted"}`}>
                         {v ?? (c.lookedUp && it.lookupPending && lookup === "running" ? "…" : "—")}
                         {c.label === "Ticket ID" && v && it.lastKnown && (
-                          <span className="badge badge-medium ml-2 font-sans"
+                          <span className="badge badge-medium mt-1 font-sans block w-fit whitespace-nowrap"
                                 title="No DT task within a few days of this scan. Showing the unit's most recent task instead.">
-                            last known{it.taskDate ? ` · ${shortDate(it.taskDate)}` : ""}
+                            last known{it.taskDate ? ` · ${shortDate(it.taskDate).replace(/ \d{4}$/, "")}` : ""}
                           </span>
                         )}
                       </td>
                     );
                   })}
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    <span className={`badge ${it.entryMethod === "scan" ? "badge-done" : "badge-medium"}`}>
+                  <td className="px-1.5 py-1.5 border border-border min-w-[4.5rem] max-w-[8rem]">
+                    <span className={`badge ${it.entryMethod === "scan" ? "badge-done" : "badge-medium"} mr-1 mb-1 inline-block`}>
                       {it.entryMethod}
                     </span>
-                    {it.override && <span className="badge badge-high ml-1" title={it.override}>override</span>}
-                    {it.awaitingBarcode && <span className="badge badge-medium ml-1">no barcode</span>}
+                    {it.override && <span className="badge badge-high mr-1 mb-1 inline-block whitespace-nowrap" title={it.override}>override</span>}
+                    {it.awaitingBarcode && <span className="badge badge-medium mr-1 mb-1 inline-block whitespace-nowrap">no barcode</span>}
+                    {it.duplicateOf && (
+                      <span className="badge badge-high mr-1 mb-1 inline-block whitespace-nowrap"
+                            title={`Not counted: ${it.duplicateOf.reason} as the entry at ${clock(it.duplicateOf.ofScannedAt)}`}>
+                        duplicate · {hhmm(it.duplicateOf.ofScannedAt)}
+                      </span>
+                    )}
                     {/* The photo is the ONLY evidence a manual entry or an
                         override carries. This drew a camera icon and offered
                         no way to open it, which is the same as not having
                         taken one. */}
                     {it.hasPhoto && (
-                      <button className="btn-icon ml-1 align-middle" title="View photo"
+                      <button className="btn-icon mr-1 align-middle" title="View photo"
                               onClick={() => setPhoto({ scanId: it.id, label: it.barcode ?? it.serialNo ?? "item" })}>
                         <Icon name="camera" size={14} />
                       </button>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-text-secondary whitespace-nowrap">{clock(it.scannedAt)}</td>
+                  <td className="px-1.5 py-1.5 border border-border text-text-secondary whitespace-nowrap tabular-nums">{hms(it.scannedAt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -594,25 +619,29 @@ function TripModal({ trip, onClose, onLookedUp }: {
  */
 const REGISTER_COLUMNS: {
   label: string; mono?: boolean; lookedUp?: boolean;
+  /** Free text that may wrap onto a second line rather than widen the table. */
+  wrap?: boolean;
   value: (trip: Trip, it: TripItem) => string | null;
 }[] = [
   { label: "City", value: (t) => t.city || null },
   { label: "SO Number", mono: true, lookedUp: true, value: (_, i) => i.soDisplay },
   { label: "Ticket ID", mono: true, lookedUp: true, value: (_, i) => i.ticket },
-  { label: "Customer Name", lookedUp: true, value: (_, i) => i.customer },
-  { label: "Job Type", lookedUp: true, value: (_, i) => i.jobType },
+  { label: "Customer Name", lookedUp: true, wrap: true, value: (_, i) => i.customer },
+  { label: "Job Type", lookedUp: true, wrap: true, value: (_, i) => i.jobType },
   // A hand entry has no product to look up — a box of spares, a PP box, a
   // vendor delivery. Its kind and the guard's note ARE the item name, and
   // showing a dash there made the entry look like it was never recorded.
-  { label: "Item Name", lookedUp: true, value: (_, i) => i.itemName ?? manualName(i) },
+  { label: "Item Name", lookedUp: true, wrap: true, value: (_, i) => i.itemName ?? manualName(i) },
   // Dropped when the register columns replaced the old table, which hid that
   // "PO-TYUI-BJ900" was ten washing machines.
   { label: "Qty", value: (_, i) => String(i.quantity) },
   { label: "Movement Type", value: (t) => (t.direction === "OUT" ? "Outward" : "Inward") },
   // Raw scanned spelling — never the fold.
   { label: "Barcode", mono: true, value: (_, i) => i.barcode ?? i.serialNo },
-  { label: "Agent", value: (t) => t.driverName },
-  { label: "Transport", mono: true, value: (t) => t.vehicleNo },
+  { label: "Agent", wrap: true, value: (t) => t.driverName },
+  // Wraps at its own hyphens ("VIPIN-EV-" / "DL1LAT4654"): DT's transport text
+  // is the widest thing in the row and repeats on every line of the trip.
+  { label: "Transport", mono: true, wrap: true, value: (t) => t.vehicleNo },
 ];
 
 /**
@@ -623,6 +652,11 @@ const REGISTER_COLUMNS: {
  * with an apostrophe: a barcode comes from a sticker anyone can print, and a
  * spreadsheet treats "=HYPERLINK(...)" in a cell as a formula to run.
  */
+/** "11:45:07" in IST, 24-hour — the item table's time column, where AM/PM cost width. */
+const hms = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata" });
+/** "11:45" in IST — for tags, where the seconds and AM/PM cost width. */
+const hhmm = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
+
 /** "customer_return" → "Customer return", plus the guard's note if any. */
 function manualName(i: TripItem): string | null {
   if (i.entryMethod !== "manual") return null;
@@ -645,11 +679,13 @@ function downloadTripCsv(trip: Trip) {
   };
   // "Details From" travels with the file: a spreadsheet row loses the badge,
   // and a March ticket in a September export must still say it is last known.
-  const header = [...REGISTER_COLUMNS.map((c) => c.label), "Details From", "Entry", "Scanned At"];
+  const header = [...REGISTER_COLUMNS.map((c) => c.label), "Details From", "Duplicate", "Entry", "Scanned At"];
   const lines = trip.items.map((it) => [
     ...REGISTER_COLUMNS.map((c) => c.value(trip, it)),
     !it.ticket && !it.jobType && !it.customer ? ""
       : it.lastKnown ? `Last known task${it.taskDate ? ` (${shortDate(it.taskDate)})` : ""}` : "This movement",
+    // A spreadsheet row loses the greyed-out look, so the file says it outright.
+    it.duplicateOf ? `Yes — ${it.duplicateOf.reason} as ${new Date(it.duplicateOf.ofScannedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} entry; not counted` : "",
     it.entryMethod,
     new Date(it.scannedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
   ].map(cell).join(","));

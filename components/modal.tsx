@@ -15,13 +15,17 @@ import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Icon, type IconName } from "@/components/icon";
 
-export type ModalSize = "md" | "lg" | "xl";
+export type ModalSize = "md" | "lg" | "xl" | "wide";
 export type ModalLevel = "base" | "stacked" | "confirm";
 
 const SIZE: Record<ModalSize, string> = {
   md: "max-w-[480px]",
   lg: "max-w-[720px]",
   xl: "max-w-[1120px]",
+  // For a wide table a person has to read across — the gate trip register has
+  // twelve columns. Nearly the whole screen, capped so a very wide monitor does
+  // not stretch it into lines too long to follow.
+  wide: "max-w-[min(1600px,96vw)]",
 };
 
 // Above every existing overlay in the app (sidebar toast is the highest, z-80).
