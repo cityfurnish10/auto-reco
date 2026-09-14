@@ -418,6 +418,25 @@ export function pairReplies(
   return out;
 }
 
+/**
+ * Is this shift still open on the server? "unknown" when the server has not
+ * seen it (checked in offline) or cannot be reached — neither is a reason to
+ * send a guard back to check-in. See app/api/gate/shift/route.ts.
+ */
+export async function shiftState(clientShiftId: string): Promise<"open" | "closed" | "auto_closed" | "unknown"> {
+  try {
+    const g = getGuardId();
+    const q = new URLSearchParams({ clientShiftId });
+    if (g) q.set("guardId", g);
+    const r = await fetch(`/api/gate/shift?${q}`, { headers: headers(), cache: "no-store" });
+    if (!r.ok) return "unknown";
+    const j = await r.json();
+    return j.state === "open" || j.state === "closed" || j.state === "auto_closed" ? j.state : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 export interface HistoryTrip {
   id: string; clientTripId: string; direction: "IN" | "OUT"; vehicleNo: string;
   driverName: string | null; openedAt: string; closedAt: string | null;

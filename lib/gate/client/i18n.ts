@@ -24,6 +24,7 @@ type Row = Record<LangId, string>;
 
 export const STRINGS: Record<string, Row> = {
   // Added 14 Sep 2026 — not yet reviewed by native speakers.
+  shiftExpired:{en:"Your earlier shift was closed because nobody ended it. Please check in again.",hi:"आपकी पिछली शिफ्ट किसी ने खत्म नहीं की, इसलिए बंद कर दी गई। कृपया दोबारा हाज़िरी लगाएं।",mr:"तुमची आधीची शिफ्ट कोणी संपवली नाही म्हणून बंद केली. कृपया पुन्हा हजेरी लावा.",kn:"ಹಿಂದಿನ ಪಾಳಿಯನ್ನು ಯಾರೂ ಮುಗಿಸದ ಕಾರಣ ಮುಚ್ಚಲಾಗಿದೆ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಹಾಜರಾತಿ ಹಾಕಿ.",te:"మీ గత షిఫ్ట్‌ను ఎవరూ ముగించనందున మూసివేశాం. దయచేసి మళ్లీ హాజరు వేయండి."},
   finalList:{en:"Final list",hi:"अंतिम सूची",mr:"अंतिम यादी",kn:"ಅಂತಿಮ ಪಟ್ಟಿ",te:"తుది జాబితా"},
   finalListWhy:{en:"Check every item against the truck before closing.",hi:"बंद करने से पहले हर आइटम ट्रक से मिलाएं।",mr:"बंद करण्यापूर्वी प्रत्येक वस्तू ट्रकशी जुळवा.",kn:"ಮುಚ್ಚುವ ಮೊದಲು ಪ್ರತಿ ವಸ್ತುವನ್ನು ಟ್ರಕ್‌ನೊಂದಿಗೆ ಹೊಂದಿಸಿ.",te:"మూసివేసే ముందు ప్రతి వస్తువును ట్రక్‌తో సరిచూడండి."},
   confirmClose:{en:"Confirm & close",hi:"पक्का करें और बंद करें",mr:"खात्री करा आणि बंद करा",kn:"ಖಚಿತಪಡಿಸಿ ಮುಚ್ಚಿ",te:"నిర్ధారించి మూసివేయండి"},

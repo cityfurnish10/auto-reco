@@ -93,6 +93,11 @@ await ctx.route("**/api/gate/bootstrap*", (route) => json(route, {
   expected: [], expectedCount: 0,
 }));
 
+// Whether the server still holds the phone's shift open. Flipped by the
+// "shift closed on the server" step below.
+let serverShift = "open";
+await ctx.route("**/api/gate/shift*", (route) => json(route, { state: serverShift }));
+
 // The live DT read. Two vehicles and two agents, so the picker has a list to
 // render and the "type it in" escape has something to escape from.
 await ctx.route("**/api/gate/fleet", (route) => json(route, {
@@ -1074,6 +1079,36 @@ step("A refused entry can be read and re-sent");
 }
 
 /* ── report ──────────────────────────────────────────────────────────── */
+step("A shift closed on the server sends the guard back to check in");
+// Delhi, 12–13 Sep 2026: the nightly sweep closed two shifts while the phones
+// still held them, and the guards worked a whole evening without being checked
+// in. The phone must notice and ask for a fresh check-in.
+{
+  withTrip = false; onShift = true; serverShift = "open";
+  const p2 = await ctx.newPage();
+  // The app reopens on the last screen used; start this one from Today.
+  await p2.addInitScript((g) => { localStorage.setItem("gate.guardId", g); localStorage.setItem("gate.screen", "today"); }, GUARD_ID);
+  await p2.goto(`${BASE}/scan`, { waitUntil: "domcontentloaded", timeout: 45_000 });
+  await p2.waitForTimeout(3000);
+  const onToday = await p2.getByText("Start trip").first().isVisible().catch(() => false);
+  if (!onToday) bad(`could not reach Today with an open shift to test the expiry — on: "${(await p2.locator("body").innerText()).replace(/\s+/g, " ").slice(0, 140)}"`);
+  else {
+    ok("with the shift open, the phone stays on Today");
+    serverShift = "auto_closed";
+    await p2.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await p2.waitForTimeout(2500);
+    const told = await p2.getByText(/check in again/i).first().isVisible().catch(() => false);
+    const button = await p2.getByRole("button", { name: /^Check in$/i }).first().count();
+    if (told && button) ok("once the server has closed it, the phone asks for a fresh check-in and says why");
+    else bad("the server closed the shift but the phone did not ask for a new check-in");
+  }
+  serverShift = "open";
+  await p2.close();
+}
+
 step("Result");
 const uniq = [...new Set(errors)].filter((e) =>
   !/favicon|models\/face|getUserMedia|Permission/i.test(e) &&

@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/components/icon";
 import { LANGS, makeT, type LangId } from "@/lib/gate/client/i18n";
 import * as outbox from "@/lib/gate/client/outbox";
-import { bootstrap, clearGuardId, drain, expectedNow, fleet as fetchFleet, getGuardId, loadToken, requestPersistence,
+import { bootstrap, clearGuardId, drain, shiftState, expectedNow, fleet as fetchFleet, getGuardId, loadToken, requestPersistence,
          history, rosterFor, signIn, type Bootstrap, type ExpectedItem, type Fleet,
          type GuardOption, type HistoryTrip } from "@/lib/gate/client/api";
 import { click, compress, feedback, position } from "@/lib/gate/client/media";
@@ -77,6 +77,9 @@ export default function GateApp() {
 
   // shift
   const [shiftId, setShiftId] = useState<string | null>(null);
+  // The server closed this guard's shift (the nightly sweep, or a sign-out on
+  // another phone) while this phone still held it. See checkShiftStillOpen.
+  const [shiftExpired, setShiftExpired] = useState(false);
   const [shiftAt, setShiftAt] = useState<string | null>(null);
 
   // trip
@@ -871,6 +874,50 @@ export default function GateApp() {
     );
   }, [lines, expected, boot, dir]);
 
+  /* ── a shift the server has already closed ─────────────────────────────
+     THE GAP. A phone left open all day never asked whether its shift was still
+     open. Delhi, 12–13 Sep 2026: two guards checked in at 18:41, nobody signed
+     out, the nightly sweep closed both shifts 16 hours later — and that evening
+     they recorded trips on phones that still believed in the shift, so
+     attendance shows them absent on a day they worked.
+
+     Checked every minute and on coming back to the app. A trip in progress is
+     finished first — interrupting a guard mid-truck costs more than a few more
+     minutes without a shift — and check-in is asked for the moment it closes. */
+  const expireShift = useCallback((openTrip: boolean) => {
+    setShiftExpired(true);
+    if (openTrip) return;
+    setShiftId(null); setShiftAt(null);
+    setPhoto(null); setFaceScore(null); setFaceVerdict(null);
+    setShotUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    setSelfieMode("in"); setSelfieCam("starting"); setSelfieNonce((n) => n + 1);
+    setScreen("checkin");
+  }, []);
+
+  const checkShiftStillOpen = useCallback(async () => {
+    if (!shiftId || !getGuardId()) return;
+    // A check-in made offline is not on the server yet; "not found" then means
+    // "not sent", never "closed".
+    const pending = (await outbox.all()).some((i) => i.kind === "shift" && i.payload.clientShiftId === shiftId && !i.payload.checkedOutAt);
+    if (pending) return;
+    const st = await shiftState(shiftId);
+    if (st === "closed" || st === "auto_closed") expireShift(!!tripId);
+  }, [shiftId, tripId, expireShift]);
+
+  useEffect(() => {
+    if (!shiftId) return;
+    const first = setTimeout(() => { void checkShiftStillOpen(); }, 0);
+    const id = setInterval(() => { void checkShiftStillOpen(); }, 60_000);
+    const onShow = () => { if (document.visibilityState === "visible") void checkShiftStillOpen(); };
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("pageshow", onShow);
+    return () => {
+      clearTimeout(first); clearInterval(id);
+      document.removeEventListener("visibilitychange", onShow);
+      window.removeEventListener("pageshow", onShow);
+    };
+  }, [shiftId, checkShiftStillOpen]);
+
   async function startTrip() {
     if (tripMissing.length > 0) return;
     const clientId = uid();
@@ -932,7 +979,11 @@ export default function GateApp() {
     try { localStorage.removeItem("gate.t0"); } catch { /* storage blocked */ }
     setTripId(null); setDir(null); setVeh(""); setDrv("");
     setLines([]); seenRef.current = new Set();
-    await refreshQueue(); void sync(); setScreen("today");
+    await refreshQueue(); void sync();
+    // The shift was closed on the server while this truck was being worked:
+    // the trip is finished, so now the guard checks in again.
+    if (shiftExpired) { expireShift(false); return; }
+    setScreen("today");
   }
 
   const loadHistory = useCallback(async (d: string) => {
@@ -1136,7 +1187,7 @@ export default function GateApp() {
       },
     });
     if (photo) await outbox.putBlob(faceId, photo);
-    setShiftId(clientId); setShiftAt(new Date().toISOString());
+    setShiftId(clientId); setShiftAt(new Date().toISOString()); setShiftExpired(false);
     setPhoto(null); setFaceScore(null); setFaceVerdict(null);
     await refreshQueue(); void sync(); setScreen("today");
   }
@@ -1448,6 +1499,7 @@ export default function GateApp() {
                  : faceVerdict === "fail" ? t("faceNotYou")
                  : faceVerdict === "no_face" ? t("faceNone")
                  : faceVerdict ? t("faceReview") : selfieMode === "out" ? t("selfieOutWhy") : t("selfieWhy")}</p>
+              {shiftExpired && selfieMode === "in" && !faceVerdict && <p className="gnote">{t("shiftExpired")}</p>}
             </div>
             <GeoCard t={t} boot={boot} />
           </div>
