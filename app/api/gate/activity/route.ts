@@ -41,7 +41,7 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
   // which is where ticket, job type and the real customer live. All shown so a
   // manager sees the register row rather than a bare number; all deliberately
   // separate from product/so_number, which are the gate's own testimony.
-  const SCAN_COLS = "id,trip_id,barcode,serial_no,product,so_number,ticket_id,customer,item_kind,quantity,entry_method,override_reason,exception_reason,barcode_pending,geo_ok,photo_path,scanned_at,guard_id,unit_product,unit_sku,last_customer,last_so,last_moved_at";
+  const SCAN_COLS = "id,trip_id,barcode,serial_no,product,so_number,ticket_id,customer,item_kind,quantity,entry_method,override_reason,exception_reason,barcode_pending,geo_ok,photo_path,scanned_at,guard_id,notes,unit_product,unit_sku,last_customer,last_so,last_moved_at";
   const TASK_COLS = ",task_ticket,task_job_type,task_customer,task_so,task_city,task_checked_at,enriched_at";
   const scansQuery = (cols: string) => {
     let q = admin.from("gate_scans").select(cols)
@@ -179,6 +179,9 @@ export const GET = jsonRoute("gate/activity", async (req: NextRequest) => {
           // rather than a dash that reads as "there is nothing".
           lookupPending: ("enriched_at" in r && !r.enriched_at) || ("task_checked_at" in r && !r.task_checked_at),
           itemKind: r.item_kind, quantity: r.quantity,
+          // The guard's own description. On a hand entry it is often the only
+          // thing saying what the item is ("WM -10 QTY") and was shown nowhere.
+          notes: (r.notes as string) ?? null,
           entryMethod: r.entry_method,
           override: r.override_reason ?? null,
           exception: r.exception_reason ?? null,

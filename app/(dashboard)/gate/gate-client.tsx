@@ -92,6 +92,7 @@ interface TripItem {
    *  shown instead — labelled on screen and in the file, never passed off as
    *  this movement's. */
   lastKnown: boolean; taskDate: string | null;
+  notes: string | null;
   /** A lookup is still owed; a dash here would read as "nothing to find". */
   lookupPending: boolean;
 }
@@ -509,7 +510,13 @@ const REGISTER_COLUMNS: {
   { label: "Ticket ID", mono: true, lookedUp: true, value: (_, i) => i.ticket },
   { label: "Customer Name", lookedUp: true, value: (_, i) => i.customer },
   { label: "Job Type", lookedUp: true, value: (_, i) => i.jobType },
-  { label: "Item Name", lookedUp: true, value: (_, i) => i.itemName },
+  // A hand entry has no product to look up — a box of spares, a PP box, a
+  // vendor delivery. Its kind and the guard's note ARE the item name, and
+  // showing a dash there made the entry look like it was never recorded.
+  { label: "Item Name", lookedUp: true, value: (_, i) => i.itemName ?? manualName(i) },
+  // Dropped when the register columns replaced the old table, which hid that
+  // "PO-TYUI-BJ900" was ten washing machines.
+  { label: "Qty", value: (_, i) => String(i.quantity) },
   { label: "Movement Type", value: (t) => (t.direction === "OUT" ? "Outward" : "Inward") },
   // Raw scanned spelling — never the fold.
   { label: "Barcode", mono: true, value: (_, i) => i.barcode ?? i.serialNo },
@@ -525,6 +532,14 @@ const REGISTER_COLUMNS: {
  * with an apostrophe: a barcode comes from a sticker anyone can print, and a
  * spreadsheet treats "=HYPERLINK(...)" in a cell as a formula to run.
  */
+/** "customer_return" → "Customer return", plus the guard's note if any. */
+function manualName(i: TripItem): string | null {
+  if (i.entryMethod !== "manual") return null;
+  const kind = i.itemKind.replace(/_/g, " ");
+  const label = kind.charAt(0).toUpperCase() + kind.slice(1);
+  return i.notes ? `${label} · ${i.notes}` : label;
+}
+
 /** "2026-03-08" → "8 Mar 2026". Parsed as a plain date: no timezone shift. */
 const shortDate = (d: string) => {
   const [y, m, day] = d.slice(0, 10).split("-").map(Number);

@@ -117,7 +117,7 @@ describe("matching a DT task to the scan it explains", () => {
     expect(taskForScan([task("pickup", "2026-09-08", "P0")], scan, "IN")).toBeNull();
   });
 
-  it("prefers the kind that matches the direction, then the nearest date", () => {
+  it("takes only the kind the direction implies, then the nearest date", () => {
     const scan = "2026-09-12T06:00:00Z";
     const both = [task("delivery", "2026-09-12", "D"), task("pickup", "2026-09-11", "P")];
     expect(taskForScan(both, scan, "IN")?.ticket).toBe("P");
@@ -126,8 +126,18 @@ describe("matching a DT task to the scan it explains", () => {
     expect(taskForScan(two, scan, "IN")?.ticket).toBe("near");
   });
 
-  it("still explains a failed delivery coming back in the same day", () => {
-    expect(taskForScan([task("delivery", "2026-09-12", "D")], "2026-09-12T12:00:00Z", "IN")?.ticket).toBe("D");
+  it("THE DELHI CASE: an outward unit is not matched to the pickup that brought it back", () => {
+    // XXOTP4LT18060116, scanned OUT on 14 Sep 11:44 IST, was shown as a match
+    // for ticket 1219910 "Pickup and Refund, Dishika" — its return on 13 Sep.
+    const history = [task("pickup", "2026-09-13", "1219910"), task("delivery", "2026-09-05", "1217189")];
+    expect(taskForScan(history, "2026-09-14T06:14:58Z", "OUT")).toBeNull();
+    // And it keeps being asked, so today's delivery replaces it once recorded.
+    expect(chooseTask(history, "2026-09-14T06:14:58Z", "OUT", new Date("2026-09-14T08:00:00Z")))
+      .toMatchObject({ matched: false, final: false });
+  });
+
+  it("a scan with no direction is never matched", () => {
+    expect(taskForScan([task("delivery", "2026-09-12", "D")], "2026-09-12T06:00:00Z", null)).toBeNull();
   });
 
   it("keeps asking while a task could still be entered, then stops", () => {

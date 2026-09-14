@@ -158,8 +158,8 @@ export async function fetchUnitFacts(serials: string[]): Promise<Map<string, Uni
 // today's trip reads as a fact about today.
 //
 // So a task counts as THIS movement only when it is scheduled within
-// TASK_WINDOW of the scan, preferring the kind that matches the gate direction
-// (a delivery goes OUT, a pickup comes IN), then the nearest date. With no such
+// TASK_WINDOW of the scan and is the kind the gate direction implies (a
+// delivery goes OUT, a pickup comes IN), nearest date first. With no such
 // task the unit's latest one is shown instead, labelled as last known with its
 // date — see chooseTask.
 //
@@ -268,23 +268,34 @@ const dayDiff = (a: string, b: string) =>
 /**
  * The task that is this movement, or null.
  *
- * Inside the window only. Within it, the kind matching the direction wins
- * (OUT ↔ delivery, IN ↔ pickup) — but a mismatched kind is still accepted,
- * because a failed delivery coming back IN the same day is a delivery task and
- * is exactly the row a manager wants explained. Then the nearest date.
+ * Inside the window, AND of the kind that matches the gate direction — a
+ * delivery for OUT, a pickup for IN. The first version preferred the matching
+ * kind but accepted the other, and on Delhi's first real mornings that was
+ * wrong almost every time it fired: 46 outward scans on 13–14 Sep were shown
+ * as "Pickup and Refund / Repair / Replace" matches.
+ *
+ * The reason is how DT records a job. The item record that ties a barcode to a
+ * task is created when the agent COMPLETES the job at the customer — measured
+ * 14 Sep: of 42 Delhi "New - Rental" deliveries scheduled that day, 4 had any
+ * barcode attached while the trucks were at the gate. So for a unit leaving in
+ * the morning, the only task DT holds near the scan date is the PICKUP that
+ * brought it back a day or two earlier — the previous customer. Accepting it
+ * named the wrong customer against today's trip.
+ *
+ * The delivery record appears once the agent delivers, and the scan is re-asked
+ * until then (see chooseTask), so an outward row fills in later the same day.
  */
 export function taskForScan(tasks: UnitTask[], scannedAt: string, direction: string | null): UnitTask | null {
   const scanDay = utcToIstDate(scannedAt);
   if (!scanDay) return null;
   const wanted = direction === "OUT" ? "delivery" : direction === "IN" ? "pickup" : null;
+  if (!wanted) return null;
   const inWindow = tasks.filter((t) => {
-    if (!t.date) return false;
+    if (!t.date || t.kind !== wanted) return false;
     const d = dayDiff(t.date, scanDay);
     return d >= -TASK_WINDOW.daysBeforeScan && d <= TASK_WINDOW.daysAfterScan;
   });
-  inWindow.sort((a, b) =>
-    (Number(b.kind === wanted) - Number(a.kind === wanted))
-    || (Math.abs(dayDiff(a.date!, scanDay)) - Math.abs(dayDiff(b.date!, scanDay))));
+  inWindow.sort((a, b) => Math.abs(dayDiff(a.date!, scanDay)) - Math.abs(dayDiff(b.date!, scanDay)));
   return inWindow[0] ?? null;
 }
 
