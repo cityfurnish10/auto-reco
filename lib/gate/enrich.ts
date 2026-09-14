@@ -35,6 +35,7 @@
 import { runMongoPipeline, runNativeSql } from "../connectors/metabase";
 import { dtDatabaseId } from "./fleet";
 import { utcToIstDate } from "../connectors/ist-window";
+import type { DtOrderTask, OdooMove } from "./movement";
 
 export interface UnitFacts {
   serial: string;
@@ -377,4 +378,97 @@ export async function fetchSoCustomers(orders: string[]): Promise<Map<string, st
     if (so && name) out.set(so, name);
   }
   return out;
+}
+
+/* ── Odoo-first: the order a movement belongs to (see movement.ts) ───────── */
+
+/**
+ * Every Odoo line that carries a sale order, for a batch of serials, with the
+ * order's reference and customer. No date filter: an inward scan needs the
+ * delivery that put the unit with its customer, which can be months old, and a
+ * unit's whole life is a few dozen lines.
+ */
+export function unitMovesSql(serials: string[]): string {
+  const safe = askable(serials);
+  if (safe.length === 0) return "";
+  return `
+SELECT sl.name              AS serial,
+       sml.date             AS date,
+       sml.state            AS state,
+       sml.movement_type    AS movement_type,
+       so.name              AS so,
+       so.reference_no      AS order_ref,
+       rp.name              AS customer
+FROM stock_move_line sml
+JOIN stock_lot   sl ON sl.id = sml.lot_id
+JOIN sale_order  so ON so.id = sml.sale_order_id
+LEFT JOIN res_partner rp ON rp.id = so.partner_id
+WHERE sl.name IN (${safe.map((x) => `'${x}'`).join(",")})
+  AND sml.movement_type IN ('In', 'Out', 'In Transit')
+ORDER BY sl.name, sml.date`.trim();
+}
+
+export async function fetchUnitMoves(serials: string[]): Promise<Map<string, OdooMove[]>> {
+  const out = new Map<string, OdooMove[]>();
+  const sql = unitMovesSql(serials);
+  if (sql === "") return out;
+  const { rows } = await runNativeSql(odooDbId(), sql, TIMEOUT_MS);
+  for (const r of rows as Record<string, unknown>[]) {
+    const serial = String(r.serial ?? "").trim();
+    const so = String(r.so ?? "").trim();
+    if (!serial || !so) continue;
+    const ref = String(r.order_ref ?? "").trim();
+    const customer = String(r.customer ?? "").replace(/\s+/g, " ").trim();
+    out.set(serial, [...(out.get(serial) ?? []), {
+      serial, so, date: new Date(String(r.date)).toISOString(), state: String(r.state ?? ""),
+      movementType: String(r.movement_type ?? ""), orderRef: ref || null, customer: customer || null,
+    }]);
+  }
+  return out;
+}
+
+const SO_FIELDS = ["cf_delivery_so_1", "cf_delivery_so_2", "cf_delivery_so_3",
+  "cf_so_number_1", "cf_so_number_2", "cf_so_number_3", "cf_so_number_4", "cf_so_number_5"];
+
+/**
+ * DT tasks for a set of orders, within a date range. Matched on any of DT's
+ * eight SO fields, or on orderId — which can hold several ids separated by
+ * commas ("6018111402,7129641400"), hence the anchored pattern for those.
+ * Order references are digits only and SOs pass askable(), so neither can
+ * carry anything into the query.
+ */
+export function orderTasksPipeline(sos: string[], refs: string[], from: Date, to: Date): unknown[] | null {
+  const safeSos = askable(sos);
+  const safeRefs = [...new Set(refs.filter((r) => /^\d{4,20}$/.test(r)))];
+  if (safeSos.length === 0 && safeRefs.length === 0) return null;
+  const or: unknown[] = SO_FIELDS.map((f) => ({ [f]: { $in: safeSos } }));
+  if (safeRefs.length) {
+    or.push({ orderId: { $in: safeRefs } });
+    or.push({ orderId: { $regex: `(^|[,\\s])(${safeRefs.join("|")})([,\\s]|$)` } });
+  }
+  return [
+    { $match: { scheduledDate: { $gte: { $date: from.toISOString() }, $lt: { $date: to.toISOString() } }, $or: or } },
+    { $project: { _id: 0, ticketNumber: 1, jobType: 1, city: 1, scheduledDate: 1, orderId: 1,
+                  ...Object.fromEntries(SO_FIELDS.map((f) => [f, 1])) } },
+    { $limit: 5000 },
+  ];
+}
+
+export async function fetchOrderTasks(sos: string[], refs: string[], from: Date, to: Date): Promise<DtOrderTask[]> {
+  const pipeline = orderTasksPipeline(sos, refs, from, to);
+  if (!pipeline) return [];
+  const { rows } = await runMongoPipeline(dtDatabaseId(), "deliveries", pipeline, TIMEOUT_MS);
+  return (rows as Record<string, unknown>[]).flatMap((r) => {
+    const ticket = String(r.ticketNumber ?? "").trim();
+    if (!ticket) return [];
+    const clean = (v: unknown) => { const t = String(v ?? "").trim(); return t && t !== "," && t.toLowerCase() !== "null" ? t : null; };
+    return [{
+      ticket,
+      jobType: clean(r.jobType),
+      city: clean(r.city),
+      date: utcToIstDate(clean(r.scheduledDate)) ?? null,
+      sos: SO_FIELDS.map((f) => clean(r[f])).filter((x): x is string => !!x),
+      orderRefs: String(r.orderId ?? "").split(/[,\s]+/).map((x) => x.trim()).filter(Boolean),
+    }];
+  });
 }

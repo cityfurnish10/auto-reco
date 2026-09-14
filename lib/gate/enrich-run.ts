@@ -7,7 +7,8 @@
 // everything nobody opened.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { chooseTask, fetchSoCustomers, fetchUnitFacts, fetchUnitTasks, type UnitTask } from "./enrich";
+import { chooseTask, fetchOrderTasks, fetchSoCustomers, fetchUnitFacts, fetchUnitMoves, fetchUnitTasks, taskForScan, taskWindowClosed, type UnitTask } from "./enrich";
+import { resolveMovement, type ResolvedMovement } from "./movement";
 
 export interface ScanToEnrich {
   id: string;
@@ -48,25 +49,45 @@ export async function enrichScans(db: SupabaseClient, scans: ScanToEnrich[]): Pr
   const factsFor = withBarcode.filter((s) => s.needsFacts);
   const tasksFor = withBarcode.filter((s) => s.needsTask);
 
-  const [facts, tasks] = await Promise.all([
+  // Odoo first (see movement.ts): the order this movement belongs to, from the
+  // In Transit line for outward and the last delivery for inward. DT by
+  // barcode is kept as the fallback for the few Odoo cannot place.
+  const [facts, moves, tasks] = await Promise.all([
     factsFor.length
       ? fetchUnitFacts(factsFor.map((s) => s.barcode!)).catch((e) => { out.failed.push(`odoo: ${String(e).slice(0, 120)}`); return null; })
+      : Promise.resolve(null),
+    tasksFor.length
+      ? fetchUnitMoves(tasksFor.map((s) => s.barcode!)).catch((e) => { out.failed.push(`odoo moves: ${String(e).slice(0, 120)}`); return null; })
       : Promise.resolve(null),
     tasksFor.length
       ? fetchUnitTasks(tasksFor.map((s) => s.barcode!)).catch((e) => { out.failed.push(`dt: ${String(e).slice(0, 120)}`); return null; })
       : Promise.resolve(null),
   ]);
 
-  // Decide each scan's task first, so the customer lookup is one Odoo query for
-  // every order involved rather than one per row.
-  const chosen = new Map<string, ReturnType<typeof chooseTask>>();
-  if (tasks) {
-    for (const s of tasksFor) chosen.set(s.id, chooseTask(tasks.get(s.barcode!.trim()) ?? [], s.scannedAt, s.direction));
+  // DT tasks for every order involved, one query, in a window around the batch.
+  let orderTasks: Awaited<ReturnType<typeof fetchOrderTasks>> | null = [];
+  if (moves && tasksFor.length) {
+    const sos = new Set<string>(), refs = new Set<string>();
+    for (const s of tasksFor) for (const m of moves.get(s.barcode!.trim()) ?? []) { sos.add(m.so); if (m.orderRef) refs.add(m.orderRef); }
+    const times = tasksFor.map((s) => Date.parse(s.scannedAt)).filter((t) => !Number.isNaN(t));
+    if (sos.size && times.length) {
+      const DAY = 86_400_000;
+      orderTasks = await fetchOrderTasks([...sos], [...refs], new Date(Math.min(...times) - 6 * DAY), new Date(Math.max(...times) + 6 * DAY))
+        .catch((e) => { out.failed.push(`dt orders: ${String(e).slice(0, 120)}`); return null; });
+    }
   }
+
+  const resolved = new Map<string, ResolvedMovement | null>();
+  const chosen = new Map<string, ReturnType<typeof chooseTask>>();
+  for (const s of tasksFor) {
+    const key = s.barcode!.trim();
+    const link = tasks ? taskForScan(tasks.get(key) ?? [], s.scannedAt, s.direction) : null;
+    const r = moves ? resolveMovement(moves.get(key) ?? [], orderTasks ?? [], s.scannedAt, s.direction, link) : null;
+    resolved.set(s.id, r);
+    if (!r && tasks) chosen.set(s.id, chooseTask(tasks.get(key) ?? [], s.scannedAt, s.direction));
+  }
+  // Customers for the fallback path only; the Odoo path already carries its own.
   const orders = [...new Set([...chosen.values()].map((c) => c.task?.so).filter((o): o is string => !!o))];
-  // The customer comes from Odoo, not DT (see fetchSoCustomers). If Odoo cannot
-  // be asked, the DT half is skipped for this run rather than written with DT's
-  // name — that name is the one reported as wrong — and is retried next run.
   let customers: Map<string, string> | null = new Map();
   if (orders.length) {
     customers = await fetchSoCustomers(orders)
@@ -90,18 +111,30 @@ export async function enrichScans(db: SupabaseClient, scans: ScanToEnrich[]): Pr
       }
       patch.enriched_at = now;
     }
-    if (s.needsTask && tasks && customers) {
-      const { task: t, matched, final } = chosen.get(s.id)!;
-      if (t) {
+    if (s.needsTask && moves && orderTasks) {
+      const r = resolved.get(s.id);
+      if (r) {
         Object.assign(patch, {
-          task_ticket: t.ticket, task_job_type: t.jobType, task_customer: customerFor(t),
-          task_so: t.so, task_city: t.city, task_date: t.date, task_matched: matched,
+          task_ticket: r.ticket, task_job_type: r.jobType, task_customer: r.customer,
+          task_so: r.so, task_city: r.city, task_date: r.date, task_matched: true,
         });
-        if (matched) out.dtMatched++;
+        out.dtMatched++;
+        // Final once DT's ticket is in, or the window for one has passed. Until
+        // then the SO and customer show, and the row is asked again.
+        if (r.ticket || taskWindowClosed(s.scannedAt)) patch.task_checked_at = now;
+      } else if (tasks && customers) {
+        const { task: t, matched, final } = chosen.get(s.id)!;
+        if (t) {
+          Object.assign(patch, {
+            task_ticket: t.ticket, task_job_type: t.jobType, task_customer: customerFor(t),
+            task_so: t.so, task_city: t.city, task_date: t.date, task_matched: matched,
+          });
+          if (matched) out.dtMatched++;
+        }
+        // Not final while a record for this movement could still appear in
+        // Odoo or DT — Odoo in particular is posted after goods arrive.
+        if (final) patch.task_checked_at = now;
       }
-      // Not final while a task for this movement could still be entered: the
-      // row stays unstamped, is asked again, and a match replaces last-known.
-      if (final) patch.task_checked_at = now;
     }
     if (Object.keys(patch).length === 0) continue;
     // One row failing must not abandon the rest; it is picked up next run.
