@@ -124,6 +124,32 @@ interface CityAgg {
    * for a day no reconciliation has run for yet.
    */
   gateCount: { in: number; out: number; items: number };
+  /**
+   * The day read with the GATE as the anchor (decided 15 Sep 2026).
+   *
+   * The guard is the only source physically present when goods cross, so where
+   * it has a record that record stands and every other book is checked against
+   * it. Its SILENCE is deliberately not treated the same way: measured that
+   * week, Delhi's gate witnessed 26%, 42% then 60% of each day's movements as
+   * coverage improved, and on 13 Sep there were 118 movements the other three
+   * books all agreed on with nothing at the gate. Blaming three correct books
+   * for the guard's absence is the failure this shape exists to avoid — so
+   * `notSeenByGate` is a group of its own, never a variance count.
+   */
+  anchored: {
+    /** Movements the gate witnessed — the denominator of the three below. */
+    gateSaw: number;
+    /** Gate saw it and all three other books agree. */
+    confirmedAll: number;
+    /** Gate saw it; this book has no record of it. */
+    gateNotOdoo: number;
+    gateNotSheet: number;
+    gateNotDt: number;
+    /** Some book recorded a movement the gate has nothing for. Not blame. */
+    notSeenByGate: number;
+    /** False = the gate did not report at all; every figure above is unknown. */
+    gateReported: boolean;
+  };
 }
 
 function emptyAgg(city: string): CityAgg {
@@ -160,6 +186,10 @@ function emptyAgg(city: string): CityAgg {
       odoo: { in: 0, out: 0, reported: false },
     },
     gateCount: { in: 0, out: 0, items: 0 },
+    anchored: {
+      gateSaw: 0, confirmedAll: 0, gateNotOdoo: 0, gateNotSheet: 0,
+      gateNotDt: 0, notSeenByGate: 0, gateReported: false,
+    },
   };
 }
 
@@ -235,6 +265,8 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
     present_d: boolean;
     present_o: boolean;
     is_movement: boolean;
+    /** The gate reported at all for this city and day (invariant 2). */
+    reported_p: boolean;
   }
 
   // THE FOUR READS BELOW RUN CONCURRENTLY.
@@ -293,7 +325,7 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
       for (let from = 0; ; from += 1000) {
         const { data: page, error } = await supabase
           .from("movement_events")
-          .select("city, present_p, present_s, present_d, present_o, is_movement")
+          .select("city, present_p, present_s, present_d, present_o, is_movement, reported_p")
           .eq("business_date", run.business_date)
           // Latest run only — the ledger never deletes, so rows the newest run no
           // longer emits (merged/parked OCR artifacts) linger under older run_ids
@@ -472,6 +504,26 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
     } else if (floor && !m.present_o) {
       agg.floorNotInOdoo += 1;
       overall.floorNotInOdoo += 1;
+    }
+
+    // The same rows read with the gate as the anchor. Counted here rather than
+    // in a second pass because this loop already walks every movement of the
+    // day and the ledger is the only place the four presence flags live
+    // together.
+    for (const target of [agg, overall]) {
+      const a = target.anchored;
+      // One city reporting is enough for the ALL view to have something to
+      // show; the per-city figure is the one that decides anything.
+      if (m.reported_p) a.gateReported = true;
+      if (m.present_p) {
+        a.gateSaw += 1;
+        if (m.present_o && m.present_s && m.present_d) a.confirmedAll += 1;
+        if (!m.present_o) a.gateNotOdoo += 1;
+        if (!m.present_s) a.gateNotSheet += 1;
+        if (!m.present_d) a.gateNotDt += 1;
+      } else {
+        a.notSeenByGate += 1;
+      }
     }
     byCityMap.set(m.city, agg);
   }

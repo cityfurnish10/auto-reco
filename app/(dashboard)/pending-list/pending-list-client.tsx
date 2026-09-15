@@ -14,6 +14,7 @@
 // closure_reason while a row is still in_progress, so filtering on the reason
 // alone would show flagged rows that were never resolved at all.
 
+import { VarianceName } from "@/components/variance-name";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
 import { SourceBadge } from "@/components/source-badge";
@@ -288,7 +289,7 @@ export default function PendingListClient({ user }: { user: SessionUser }) {
                 <span className={`${PRIORITY_BADGE[v.priority]} shrink-0`}>{v.priority}</span>
               </div>
               {v.product && <p className="text-sm text-text-secondary">{v.product}</p>}
-              <p className="text-sm text-text-primary font-medium">{v.variance_name}</p>
+              <VarianceName name={v.variance_name} ctx={{ direction: v.direction, jobType: v.job_type, bucket: v.bucket, note: v.note }} className="block text-sm" />
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
                 {isAdmin && <span>{v.city}</span>}
                 <span>{v.business_date}</span>
@@ -393,7 +394,7 @@ export default function PendingListClient({ user }: { user: SessionUser }) {
                   </td>
                   <td className="text-text-secondary text-xs">{opsTypeLabel(v.job_type)}</td>
                   <td className="max-w-[220px]" title={v.note ?? ""}>
-                    {v.variance_name}
+                    <VarianceName name={v.variance_name} ctx={{ direction: v.direction, jobType: v.job_type, bucket: v.bucket, note: v.note }} />
                   </td>
                   <td className="text-text-secondary whitespace-nowrap">
                     {responsibleLabel(v.responsible)}

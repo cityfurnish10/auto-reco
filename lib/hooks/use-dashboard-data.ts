@@ -310,6 +310,23 @@ export interface CityAgg {
    * boxes, samples. Quantities, not rows; `items` is the row count.
    */
   gateCount: { in: number; out: number; items: number };
+  /**
+   * The day read with the gate as the anchor (15 Sep 2026).
+   *
+   * `notSeenByGate` is deliberately not a variance count: the gate's presence
+   * is authoritative, its absence is a coverage question until the guards cover
+   * the whole day. See app/(dashboard)/dashboard/anchored-cards.tsx.
+   */
+  anchored: {
+    gateSaw: number;
+    confirmedAll: number;
+    gateNotOdoo: number;
+    gateNotSheet: number;
+    gateNotDt: number;
+    notSeenByGate: number;
+    /** False = the gate did not report; every figure above is unknown, not 0. */
+    gateReported: boolean;
+  };
 }
 
 export interface SourceCount {
@@ -337,6 +354,10 @@ export function emptyCityAgg(city: string): CityAgg {
       odoo: { in: 0, out: 0, reported: false },
     },
     gateCount: { in: 0, out: 0, items: 0 },
+    anchored: {
+      gateSaw: 0, confirmedAll: 0, gateNotOdoo: 0, gateNotSheet: 0,
+      gateNotDt: 0, notSeenByGate: 0, gateReported: false,
+    },
   };
 }
 

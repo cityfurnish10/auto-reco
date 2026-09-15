@@ -388,7 +388,31 @@ const CLEARED_ON_RECHECK: VarianceLabel = {
 };
 
 /** The owner-facing label for a stored variance name. Never throws. */
-export function labelFor(name: string, ctx: LabelContext = {}): VarianceLabel {
+/**
+ * Stored names no current code path produces, and the name each became.
+ *
+ * UNLABELLED exists for exactly this case and its comment anticipated it: the
+ * database stores the variance name verbatim, so a rename leaves every earlier
+ * row speaking the old language. Measured 15 Sep 2026 — seven such spellings
+ * across the stored rows, and every one of them was rendering as
+ * "Unclassified", which reads as a fault in the tool rather than as history.
+ *
+ * Mapped rather than migrated: rewriting 4,000+ stored rows to make a screen
+ * read better is a far larger risk than a seven-line lookup, and it would
+ * destroy the record of what the engine actually decided at the time.
+ */
+const RENAMED: Record<string, string> = {
+  "Odoo-Only Entry — No Floor Record": VARIANCE.ODOO_ONLY,
+  "Register/DT Logged — Not in Odoo": VARIANCE.FLOOR_DT_NOT_ODOO,
+  "DT Missing — Ops & Odoo Agree": VARIANCE.OPS_ODOO_NO_DT,
+  "Ops Sheet Missing — DT & Odoo Agree": VARIANCE.DT_ODOO_NO_SHEET,
+  "Sheet-Only Dispatch — No Trail": VARIANCE.SHEET_ONLY,
+  "DT-Only — Fake Scan Risk": VARIANCE.DT_ONLY,
+  "Duplicate Scan / Multi-Source Mismatch": VARIANCE.DUPLICATE,
+};
+
+export function labelFor(rawName: string, ctx: LabelContext = {}): VarianceLabel {
+  const name = RENAMED[rawName] ?? rawName;
   const rule = (VARIANCE_LABELS as Record<string, LabelRule | undefined>)[name];
   if (!rule) return UNLABELLED;
   const label = rule.refine?.(ctx) ?? rule.base;

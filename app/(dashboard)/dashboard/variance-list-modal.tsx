@@ -5,6 +5,7 @@
 // own query, filters and pagination, and hands each row on to the detail
 // dialog.
 
+import { VarianceName } from "@/components/variance-name";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
 import { Modal } from "@/components/modal";
@@ -435,7 +436,7 @@ export default function VarianceListModal({
                 <span className={`${PRIORITY_BADGE[v.priority]} shrink-0`}>{v.priority}</span>
               </div>
               {v.product && <p className="text-sm text-text-secondary">{v.product}</p>}
-              <p className="text-sm text-text-primary font-medium">{v.variance_name}</p>
+              <VarianceName name={v.variance_name} ctx={{ direction: v.direction, jobType: v.job_type, bucket: v.bucket, note: v.note }} className="block text-sm" />
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
                 {showCityColumn && <span>{v.city}</span>}
                 <span>{v.business_date}</span>
@@ -546,7 +547,7 @@ export default function VarianceListModal({
                   </td>
                   <td className="text-text-secondary text-xs">{opsTypeLabel(v.job_type)}</td>
                   <td className="max-w-[240px]" title={v.note ?? ""}>
-                    <span className="text-text-primary">{v.variance_name}</span>
+                    <VarianceName name={v.variance_name} ctx={{ direction: v.direction, jobType: v.job_type, bucket: v.bucket, note: v.note }} />
                   </td>
                   <td>
                     <span className={PRIORITY_BADGE[v.priority]}>{v.priority}</span>

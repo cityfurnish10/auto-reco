@@ -5,6 +5,9 @@
 // Date, City, Item Name, Barcode, Ticket ID, Source, Ops Type, SO Number,
 // Variance, Priority, Status. Defaults to the REAL + open "chase list".
 
+import AnchoredCards from "./anchored-cards";
+import { sourceLabel } from "@/lib/ui/source-names";
+import { VarianceName } from "@/components/variance-name";
 import InTransitSection from "./in-transit-section";
 import SourceScoreboard from "./source-scoreboard";
 import CountOnlyCard from "./count-only-card";
@@ -515,6 +518,16 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         <span className="text-xs text-text-muted ml-auto">{rateCaption(agg)}</span>
       </div>
 
+      {/* The day read against the gate. Above the raw counts because it is the
+          question that decides what anyone does next; the scoreboard below is
+          what each book counted, which is the evidence for it. */}
+      <AnchoredCards
+        agg={agg}
+        city={cityTab}
+        loading={statsLoading}
+        businessDate={stats?.run?.business_date}
+      />
+
       {/* Did the four books agree? — the day-level question the variance list
           can only answer one unit at a time. */}
       <SourceScoreboard
@@ -717,7 +730,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
             </select>
             <select value={source} onChange={(e) => resetPage(setSource)(e.target.value as VarianceSource | "ALL")} className="input-clean font-semibold cursor-pointer">
               <option value="ALL">Raised by any check</option>
-              {SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+              {SOURCES.map((s) => <option key={s} value={s}>{sourceLabel(s)}</option>)}
             </select>
             <select value={priority} onChange={(e) => resetPage(setPriority)(e.target.value as Priority | "ALL")} className="input-clean font-semibold cursor-pointer">
               <option value="ALL">Any priority</option>
@@ -833,7 +846,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 <span className={`${PRIORITY_BADGE[v.priority]} shrink-0`}>{v.priority}</span>
               </div>
               {v.product && <p className="text-sm text-text-secondary">{v.product}</p>}
-              <p className="text-sm text-text-primary font-medium">{v.variance_name}</p>
+              <VarianceName name={v.variance_name} ctx={{ direction: v.direction, jobType: v.job_type, bucket: v.bucket, note: v.note }} className="block text-sm" />
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
                 <span>{v.business_date}</span>
                 <span>{v.city}</span>
@@ -1014,7 +1027,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                   <td className="text-text-secondary text-xs">{opsTypeLabel(v.job_type)}</td>
                   <td className="text-text-secondary whitespace-nowrap">{v.so_number ?? "—"}</td>
                   <td className="min-w-[200px] max-w-[260px]" title={v.note ?? ""}>
-                    <span className="text-text-primary">{v.variance_name}</span>
+                    <VarianceName name={v.variance_name} ctx={{ direction: v.direction, jobType: v.job_type, bucket: v.bucket, note: v.note }} />
                   </td>
                   <td className="text-text-secondary whitespace-nowrap">
                     {responsibleLabel(v.responsible)}

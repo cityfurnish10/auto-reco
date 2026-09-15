@@ -21,28 +21,29 @@
 
 import { Icon } from "@/components/icon";
 import type { CityAgg, SourceCount } from "@/lib/hooks/use-dashboard-data";
+import { SOURCE_NAME } from "@/lib/ui/source-names";
 
 /** The four books, in the order the warehouse meets them. */
 const SOURCES = [
   {
     key: "gate" as const,
-    label: "Gate register",
+    label: SOURCE_NAME.gate,
     hint: "What the guard recorded at the gate — the only source that was physically present when the goods crossed.",
   },
   {
     key: "sheet" as const,
-    label: "Ops sheet",
-    hint: "The warehouse team's own record of the day.",
+    label: SOURCE_NAME.sheet,
+    hint: "The warehouse team's own handwritten record of the day.",
   },
   {
     key: "dt" as const,
-    label: "Delivery app",
+    label: SOURCE_NAME.dt,
     hint: "What the delivery agents' app recorded against their tasks.",
   },
   {
     key: "odoo" as const,
-    label: "Odoo",
-    hint: "Stock movements posted in Odoo for this date. Odoo is posted after the fact, so it is routinely the last to fill in.",
+    label: SOURCE_NAME.odoo,
+    hint: "Stock movements posted in Odoo for this date. Odoo is posted after the fact, so it is routinely the last to fill in — measured at Delhi, an outward posting lands about 26 hours after the goods leave.",
   },
 ];
 

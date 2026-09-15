@@ -4,6 +4,8 @@
 // ever sees their own city (enforced by RLS on the API; the city filter here
 // is belt-and-suspenders). Managers close variances with a reason (→ PATCH).
 
+import AnchoredCards from "./anchored-cards";
+import { VarianceName } from "@/components/variance-name";
 import InTransitSection from "./in-transit-section";
 import CountOnlyCard from "./count-only-card";
 import { VARIANCE } from "@/lib/engine/variance-names";
@@ -416,6 +418,15 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
         </p>
       )}
 
+      {/* The day read against the gate — the same five groups the admin view
+          shows, scoped by RLS to this manager's own city. */}
+      <AnchoredCards
+        agg={cityAgg}
+        city={city}
+        loading={statsLoading}
+        businessDate={stats?.run?.business_date}
+      />
+
       {/* Count-only movements — PP boxes, spares, consumables and the gate's
           own hand-counted items. Not variances: no serial to reconcile. */}
       <CountOnlyCard
@@ -588,7 +599,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                 <span className={`${PRIORITY_BADGE[v.priority]} shrink-0`}>{v.priority}</span>
               </div>
               {v.product && <p className="text-sm text-text-secondary">{v.product}</p>}
-              <p className="text-sm text-text-primary font-medium">{v.variance_name}</p>
+              <VarianceName name={v.variance_name} ctx={{ direction: v.direction, jobType: v.job_type, bucket: v.bucket, note: v.note }} className="block text-sm" />
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
                 <span>{v.business_date}</span>
                 <SourceBadge source={v.variance_source} />
@@ -713,7 +724,7 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                   <td className="text-text-secondary text-xs">{opsTypeLabel(v.job_type)}</td>
                   <td className="text-text-secondary whitespace-nowrap">{v.so_number ?? "—"}</td>
                   <td className="min-w-[200px] max-w-[260px]" title={v.note ?? ""}>
-                    {v.variance_name}
+                    <VarianceName name={v.variance_name} ctx={{ direction: v.direction, jobType: v.job_type, bucket: v.bucket, note: v.note }} />
                     {/* A rejected submission used to look identical to one
                         nobody had touched — the admin's note was a hover
                         tooltip on the status badge, so on the desktop table the
