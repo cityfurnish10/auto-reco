@@ -1707,14 +1707,36 @@ interface Rejection {
   business_date: string | null; rejected_at: string;
   /** Set once the same entry was accepted after all (the guard retried). */
   resolved_at?: string | null;
+  /**
+   * Set once a manager wrote it off as never coming (0047). Deliberately NOT
+   * the same field as resolved_at: one is a fact about the record, the other a
+   * decision about it.
+   */
+  dismissed_at?: string | null;
+  dismiss_reason?: string | null;
+  dismiss_note?: string | null;
   app_users?: { name?: string } | null;
 }
+
+/** The fixed list the API accepts, phrased for the person clicking. */
+const DISMISS_REASONS: [string, string][] = [
+  ["test", "Test entry, not a real movement"],
+  ["elsewhere", "The movement was recorded another way"],
+  ["never", "The movement never happened"],
+  ["unrecoverable", "The phone no longer has it"],
+];
+const dismissLabel = (key: string | null | undefined) =>
+  DISMISS_REASONS.find(([k]) => k === key)?.[1] ?? "written off";
 
 function Reviews() {
   const [section, setSection] = useState<ReviewSection>("face");
   const [flags, setFlags] = useState<{ location: LocationFlag[]; scanning: Rejection[] } | null>(null);
   // Refused items are a to-do list: outstanding by default, history on request.
   const [showResolved, setShowResolved] = useState(false);
+  // The row whose "never coming" reason is being chosen, and the last error.
+  const [dismissing, setDismissing] = useState<Rejection | null>(null);
+  const [dismissErr, setDismissErr] = useState<string | null>(null);
+  const [flagsKey, setFlagsKey] = useState(0);
   const [flagErr, setFlagErr] = useState<string | null>(null);
   const [rows, setRows] = useState<Check[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1752,7 +1774,22 @@ function Reviews() {
         setFlagErr(j.locationError ?? j.scanningError ?? null);
       })
       .catch((e) => setFlagErr(e instanceof Error ? e.message : String(e)));
-  }, [date, showResolved]);
+  }, [date, showResolved, flagsKey]);
+
+  /** Write a refusal off, or undo that. The list is re-read either way. */
+  async function dismiss(id: string, reason: string | null, note: string, undo = false) {
+    setDismissErr(null);
+    const res = await fetch("/api/gate/rejections/dismiss", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(undo ? { id, undo: true } : { id, reason, note }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { setDismissErr(j.error ?? `HTTP ${res.status}`); return false; }
+    setDismissing(null);
+    setFlagsKey((k) => k + 1);
+    return true;
+  }
 
   async function decide(id: string, decision: "accepted" | "rejected") {
     await fetch("/api/gate/reviews", {
@@ -1847,15 +1884,20 @@ function Reviews() {
             <p className="text-text-muted text-sm">
               Rows the gate would not accept, and why. These are still OUTSTANDING: the
               movement is on a phone and not in the record. A guard clearing it —
-              Settings → needs attention → Try again — takes it off this list.
+              Settings → needs attention → Try again — takes it off this list. When no
+              retry can ever work (the trip it belonged to does not exist, or it was a
+              test), write it off with <b>Not coming</b> and say why.
             </p>
             <label className="flex items-center gap-2 text-sm ml-auto cursor-pointer select-none whitespace-nowrap">
               <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />
-              Include ones since accepted
+              Include ones since closed
             </label>
           </div>
+          {dismissErr && (
+            <p className="text-sm text-danger">{dismissErr}</p>
+          )}
           {counts.scanning === 0 ? (
-            <Empty text={showResolved ? "Nothing was refused." : "Nothing outstanding — every refused item has since been accepted."} />
+            <Empty text={showResolved ? "Nothing was refused." : "Nothing outstanding — every refused item has been accepted or written off."} />
           ) : (
             <div className="space-y-2">
               {flags!.scanning.map((r) => (
@@ -1868,6 +1910,14 @@ function Reviews() {
                     {r.resolved_at && (
                       <span className="badge badge-done" title={`Accepted after all, ${time(r.resolved_at)}`}>
                         since accepted
+                      </span>
+                    )}
+                    {/* Never the same badge as "since accepted". One says the
+                        movement reached the record; this says a person decided
+                        it never will, which is not the same claim. */}
+                    {r.dismissed_at && (
+                      <span className="badge badge-suppressed" title={`Written off ${time(r.dismissed_at)} — ${dismissLabel(r.dismiss_reason)}${r.dismiss_note ? `. ${r.dismiss_note}` : ""}`}>
+                        written off
                       </span>
                     )}
                     {r.attempts > 1 && (
@@ -1886,9 +1936,39 @@ function Reviews() {
                         .map(([k, v]) => `${k}: ${String(v)}`).join("  ·  ")}
                     </div>
                   )}
+                  <div className="mt-2 flex items-center gap-3">
+                    {r.dismissed_at ? (
+                      <>
+                        <span className="text-xs text-text-muted">
+                          Written off — {dismissLabel(r.dismiss_reason)}
+                          {r.dismiss_note ? ` · ${r.dismiss_note}` : ""}
+                        </span>
+                        {/* A mis-click must not permanently bury a real
+                            missing movement. */}
+                        <button className="btn btn-compact btn-ghost"
+                          onClick={() => dismiss(r.id, null, "", true)}>
+                          Undo
+                        </button>
+                      </>
+                    ) : !r.resolved_at ? (
+                      <button className="btn btn-compact btn-secondary"
+                        onClick={() => { setDismissErr(null); setDismissing(r); }}
+                        title="No retry can ever clear this one — write it off with a reason">
+                        Not coming
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               ))}
             </div>
+          )}
+          {dismissing && (
+            <DismissDialog
+              row={dismissing}
+              error={dismissErr}
+              onCancel={() => setDismissing(null)}
+              onConfirm={(reason, note) => dismiss(dismissing.id, reason, note)}
+            />
           )}
         </>
       )}
@@ -2016,4 +2096,85 @@ function Table({ head, children }: { head: string[]; children: React.ReactNode }
 }
 function Empty({ text }: { text: string }) {
   return <div className="card p-8 text-center text-text-muted text-sm">{text}</div>;
+}
+
+/**
+ * Why this refusal is never coming.
+ *
+ * A REASON IS REQUIRED, and from a fixed list. The point of writing a refusal
+ * off is to shorten a to-do list, and a list shortened by unexplained clicks is
+ * worse than the long one — nobody can tell later whether thirteen items were
+ * investigated or waved past. The list is short so the residue can be counted
+ * by cause; anything that does not fit goes in the note.
+ *
+ * The entry's own details are shown again here because the row being written
+ * off may be scrolled out of view behind the dialog, and "are you sure" about
+ * an item you cannot see is not a question anyone can answer.
+ */
+function DismissDialog({ row, error, onCancel, onConfirm }: {
+  row: Rejection;
+  error: string | null;
+  onCancel: () => void;
+  /** Resolves false when the write-off failed, so the dialog can be used again. */
+  onConfirm: (reason: string, note: string) => Promise<boolean>;
+}) {
+  const [reason, setReason] = useState<string>("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <Modal open onClose={onCancel} size="md" title="Write this off"
+      subtitle="It leaves the outstanding list and keeps its history. Use this only when no retry on a phone could ever clear it.">
+      <div className="space-y-4">
+        <div className="card p-3 text-sm">
+          <b className="text-text-primary">{row.reason}</b>
+          <p className="text-xs text-text-muted mt-1">
+            {row.kind} · {row.city} · {time(row.rejected_at)}
+            {row.app_users?.name ? ` · ${row.app_users.name}` : ""}
+          </p>
+          {row.summary && (
+            <p className="mt-1 text-xs text-text-muted font-mono break-all">
+              {Object.entries(row.summary)
+                .filter(([, v]) => v !== null && v !== "")
+                .map(([k, v]) => `${k}: ${String(v)}`).join("  ·  ")}
+            </p>
+          )}
+        </div>
+
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-semibold text-text-primary mb-1">Why is it not coming?</legend>
+          {DISMISS_REASONS.map(([key, label]) => (
+            <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="radio" name="dismiss-reason" value={key}
+                checked={reason === key} onChange={() => setReason(key)} />
+              {label}
+            </label>
+          ))}
+        </fieldset>
+
+        <label className="block text-sm">
+          <span className="text-text-secondary">Anything to add (optional)</span>
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={500}
+            className="input-clean w-full mt-1" placeholder="Who confirmed it, what was checked…" />
+        </label>
+
+        {error && <p className="text-sm text-danger">{error}</p>}
+
+        <div className="flex justify-end gap-2">
+          <button className="btn btn-secondary" onClick={onCancel} disabled={busy}>Cancel</button>
+          {/* The failure path matters: a refused write-off (a stale row, a
+              migration not applied) used to leave this button disabled and
+              reading "Writing off…" for ever, with the error shown above it. */}
+          <button className="btn btn-primary disabled:opacity-40" disabled={!reason || busy}
+            onClick={async () => {
+              setBusy(true);
+              const ok = await onConfirm(reason, note);
+              if (!ok) setBusy(false);
+            }}>
+            {busy ? "Writing off…" : "Write it off"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
 }

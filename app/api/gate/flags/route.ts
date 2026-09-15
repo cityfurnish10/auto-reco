@@ -46,25 +46,34 @@ export const GET = jsonRoute("gate/flags", async (req: NextRequest) => {
 
   // ── Scanning ──────────────────────────────────────────────────────────
   // Outstanding refusals only — a movement that is on a phone and not in the
-  // record. Resolved ones (the guard retried and it was accepted) are history
-  // and shown only when asked for.
+  // record. A row leaves the list two ways, and they are NOT the same: the
+  // guard retried and it was accepted (resolved_at, 0046), or a manager wrote
+  // it off as never coming (dismissed_at, 0047). Both are history and shown
+  // only when asked for; the tab labels them differently, because a dismissal
+  // is a decision and an acceptance is a fact.
   const includeResolved = req.nextUrl.searchParams.get("resolved") === "1";
-  // 0046 is applied by hand, possibly not yet: without resolved_at the tab
-  // shows what it always showed rather than failing.
-  const rejQuery = (withResolved: boolean) => {
+  // Both migrations are applied by hand, possibly not yet. Degrade one column
+  // at a time rather than failing the tab — see trap 3 in CLAUDE.md.
+  const COLS = "id,client_id,kind,city,reason,summary,attempts,business_date,rejected_at,app_users!guard_id(name)";
+  const rejQuery = (level: "dismissed" | "resolved" | "base") => {
     let q = admin.from("gate_sync_rejections")
-      .select("id,client_id,kind,city,reason,summary,attempts,business_date,rejected_at,app_users!guard_id(name)"
-              + (withResolved ? ",resolved_at" : ""))
+      .select(
+        level === "dismissed"
+          ? `${COLS},resolved_at,dismissed_at,dismiss_reason,dismiss_note`
+          : level === "resolved" ? `${COLS},resolved_at` : COLS
+      )
       .order("rejected_at", { ascending: false })
       .limit(200);
     if (city) q = q.eq("city", city);
     if (day) q = q.gte("rejected_at", day.from).lt("rejected_at", day.to);
-    if (withResolved && !includeResolved) q = q.is("resolved_at", null);
+    if (level !== "base" && !includeResolved) q = q.is("resolved_at", null);
+    if (level === "dismissed" && !includeResolved) q = q.is("dismissed_at", null);
     return q;
   };
 
-  let [l, r] = await Promise.all([loc, rejQuery(true)]);
-  if (r.error?.code === "42703") r = await rejQuery(false) as typeof r;
+  let [l, r] = await Promise.all([loc, rejQuery("dismissed")]);
+  if (r.error?.code === "42703") r = await rejQuery("resolved") as typeof r;
+  if (r.error?.code === "42703") r = await rejQuery("base") as typeof r;
 
   // Each section fails on its own. A missing migration on one must not take the
   // whole tab down and hide the other — which is exactly the sort of blank page
