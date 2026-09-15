@@ -84,6 +84,16 @@ export default function InTransitSection({ city, date, onOpen }: {
   const lookedUp = (v: VarianceDB) =>
     gateDetails[(v.barcode_display || "").toUpperCase()] ?? gateDetails[(v.barcode || "").toUpperCase()] ?? null;
 
+  // The card's counts read the same two places the cells do, or it says 8
+  // customers over a list showing 68 names.
+  //
+  // A LAST-KNOWN lookup (task_matched false) is deliberately not counted: it
+  // says where the unit was previously seen, not who it is going to now, and
+  // counting it would put a number on the card that the list cannot justify.
+  const settled = (v: VarianceDB) => { const g = lookedUp(v); return g?.matched ? g : null; };
+  const customerOf = (v: VarianceDB) => v.customer ?? settled(v)?.customer;
+  const orderOf = (v: VarianceDB) => v.so_number ?? settled(v)?.soNumber;
+
   // Nothing in transit is the normal state for most cities and days; no empty card.
   if (!loading && !error && total === 0) return null;
 
@@ -112,8 +122,8 @@ export default function InTransitSection({ city, date, onOpen }: {
         ) : (
           <>
             <Figure label="Items" value={loading ? "—" : total} />
-            <Figure label="Orders" value={loading ? "—" : `${distinct(rows, (v) => v.so_number)}${complete ? "" : "+"}`} />
-            <Figure label="Customers" value={loading ? "—" : `${distinct(rows, (v) => v.customer)}${complete ? "" : "+"}`} />
+            <Figure label="Orders" value={loading ? "—" : `${distinct(rows, orderOf)}${complete ? "" : "+"}`} />
+            <Figure label="Customers" value={loading ? "—" : `${distinct(rows, customerOf)}${complete ? "" : "+"}`} />
             {city === "ALL" && !loading && byCity.length > 1 && (
               <span className="text-xs text-text-muted">
                 {byCity.map(([c, n]) => `${c} ${n}`).join(" · ")}
