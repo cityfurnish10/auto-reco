@@ -45,14 +45,26 @@ export const GET = jsonRoute("gate/flags", async (req: NextRequest) => {
   if (day) loc = loc.gte("checked_in_at", day.from).lt("checked_in_at", day.to);
 
   // ── Scanning ──────────────────────────────────────────────────────────
-  let rej = admin.from("gate_sync_rejections")
-    .select("id,client_id,kind,city,reason,summary,attempts,business_date,rejected_at,app_users!guard_id(name)")
-    .order("rejected_at", { ascending: false })
-    .limit(200);
-  if (city) rej = rej.eq("city", city);
-  if (day) rej = rej.gte("rejected_at", day.from).lt("rejected_at", day.to);
+  // Outstanding refusals only — a movement that is on a phone and not in the
+  // record. Resolved ones (the guard retried and it was accepted) are history
+  // and shown only when asked for.
+  const includeResolved = req.nextUrl.searchParams.get("resolved") === "1";
+  // 0046 is applied by hand, possibly not yet: without resolved_at the tab
+  // shows what it always showed rather than failing.
+  const rejQuery = (withResolved: boolean) => {
+    let q = admin.from("gate_sync_rejections")
+      .select("id,client_id,kind,city,reason,summary,attempts,business_date,rejected_at,app_users!guard_id(name)"
+              + (withResolved ? ",resolved_at" : ""))
+      .order("rejected_at", { ascending: false })
+      .limit(200);
+    if (city) q = q.eq("city", city);
+    if (day) q = q.gte("rejected_at", day.from).lt("rejected_at", day.to);
+    if (withResolved && !includeResolved) q = q.is("resolved_at", null);
+    return q;
+  };
 
-  const [l, r] = await Promise.all([loc, rej]);
+  let [l, r] = await Promise.all([loc, rejQuery(true)]);
+  if (r.error?.code === "42703") r = await rejQuery(false) as typeof r;
 
   // Each section fails on its own. A missing migration on one must not take the
   // whole tab down and hide the other — which is exactly the sort of blank page

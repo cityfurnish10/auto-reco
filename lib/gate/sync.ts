@@ -788,6 +788,20 @@ export async function applyBatch(
     batch.scans?.[0]?.scannedAt ?? batch.trips?.[0]?.openedAt ?? now.toISOString(), now
   )?.businessDate ?? null;
 
+  // A REFUSAL THAT WAS FIXED IS NOT OUTSTANDING (0046). "Try again" on the
+  // phone re-sends the same client_id; once it is stored, the note about its
+  // earlier refusal stops being a to-do. Kept, not deleted — that it was once
+  // refused is part of how the gate behaved. Never allowed to fail the batch.
+  const accepted = [...report.trips, ...report.scans, ...report.voids, ...report.shifts, ...report.faceChecks]
+    .filter((o) => o.status === "stored" || o.status === "duplicate")
+    .map((o) => o.clientId);
+  if (accepted.length) {
+    try {
+      await admin.from("gate_sync_rejections").update({ resolved_at: new Date().toISOString() })
+        .in("client_id", accepted).is("resolved_at", null);
+    } catch { /* the movements are stored; this note is not worth a failure */ }
+  }
+
   const scanById = new Map((batch.scans ?? []).map((x) => [x.clientScanId, x]));
   const tripById = new Map((batch.trips ?? []).map((x) => [x.clientTripId, x]));
 

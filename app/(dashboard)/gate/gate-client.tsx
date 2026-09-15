@@ -1705,12 +1705,16 @@ interface Rejection {
   id: string; client_id: string; kind: string; city: string; reason: string;
   summary: Record<string, unknown> | null; attempts: number;
   business_date: string | null; rejected_at: string;
+  /** Set once the same entry was accepted after all (the guard retried). */
+  resolved_at?: string | null;
   app_users?: { name?: string } | null;
 }
 
 function Reviews() {
   const [section, setSection] = useState<ReviewSection>("face");
   const [flags, setFlags] = useState<{ location: LocationFlag[]; scanning: Rejection[] } | null>(null);
+  // Refused items are a to-do list: outstanding by default, history on request.
+  const [showResolved, setShowResolved] = useState(false);
   const [flagErr, setFlagErr] = useState<string | null>(null);
   const [rows, setRows] = useState<Check[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1740,6 +1744,7 @@ function Reviews() {
   useEffect(() => {
     const q = new URLSearchParams();
     if (date) q.set("date", date);
+    if (showResolved) q.set("resolved", "1");
     fetch(`/api/gate/flags?${q}`, { credentials: "same-origin" })
       .then((r) => r.json())
       .then((j) => {
@@ -1747,7 +1752,7 @@ function Reviews() {
         setFlagErr(j.locationError ?? j.scanningError ?? null);
       })
       .catch((e) => setFlagErr(e instanceof Error ? e.message : String(e)));
-  }, [date]);
+  }, [date, showResolved]);
 
   async function decide(id: string, decision: "accepted" | "rejected") {
     await fetch("/api/gate/reviews", {
@@ -1838,12 +1843,19 @@ function Reviews() {
       {/* ── Refused items ───────────────────────────────────────────────── */}
       {section === "scanning" && (
         <>
-          <p className="text-text-muted text-sm">
-            Rows the gate would not accept, and why. These never reached the record —
-            the item still needs adding properly.
-          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-text-muted text-sm">
+              Rows the gate would not accept, and why. These are still OUTSTANDING: the
+              movement is on a phone and not in the record. A guard clearing it —
+              Settings → needs attention → Try again — takes it off this list.
+            </p>
+            <label className="flex items-center gap-2 text-sm ml-auto cursor-pointer select-none whitespace-nowrap">
+              <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />
+              Include ones since accepted
+            </label>
+          </div>
           {counts.scanning === 0 ? (
-            <Empty text="Nothing was refused." />
+            <Empty text={showResolved ? "Nothing was refused." : "Nothing outstanding — every refused item has since been accepted."} />
           ) : (
             <div className="space-y-2">
               {flags!.scanning.map((r) => (
@@ -1853,6 +1865,11 @@ function Reviews() {
                     <b className="text-text-primary">{r.reason}</b>
                     {/* A climbing count is the signal that a phone is stuck
                         retrying something it can never get accepted. */}
+                    {r.resolved_at && (
+                      <span className="badge badge-done" title={`Accepted after all, ${time(r.resolved_at)}`}>
+                        since accepted
+                      </span>
+                    )}
                     {r.attempts > 1 && (
                       <span className="badge badge-medium" title="The phone has re-sent this and it keeps being refused.">
                         tried {r.attempts}×

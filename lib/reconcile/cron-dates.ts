@@ -138,3 +138,20 @@ export function recheckTargetDate(now: Date = new Date()): string {
 export function followupTargetDate(now: Date = new Date()): string {
   return recheckTargetDate(now);
 }
+
+/**
+ * How settled is a date somebody is about to reconcile by hand?
+ *
+ *   "open"  its window has not shut yet — the day is still being worked.
+ *   "fresh" it shut this afternoon; the sources have not finished filing.
+ *   null    old enough to judge (what the scheduled run targets).
+ *
+ * Asked for 15 Sep 2026, after a mid-day run of an open date produced two
+ * variances for Delhi and read as a clean day. It was not: the day had 2½ hours
+ * to go, and the ops sheet had filed nothing at all.
+ */
+export function runDateFreshness(runDate: string, now: Date = new Date()): "open" | "fresh" | null {
+  if (runDate >= currentBusinessDate(now)) return "open";
+  if (runDate === lastClosedBusinessDate(now)) return "fresh";
+  return null;
+}

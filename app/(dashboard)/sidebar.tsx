@@ -11,7 +11,7 @@ import { runAllCities } from "@/lib/engine/run";
 import { buildSampleRowsByCity } from "@/lib/sample-raw-sources";
 import { Icon, type IconName } from "@/components/icon";
 import { useToast } from "@/components/toast";
-import { istDate, reconcileTargetDate } from "@/lib/reconcile/cron-dates";
+import { istDate, reconcileTargetDate, runDateFreshness } from "@/lib/reconcile/cron-dates";
 
 const supabaseConfigured =
   !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -63,6 +63,13 @@ export default function Sidebar({
   const today = istDate();
   const [runDate, setRunDate] = useState(reconcileTargetDate); // date the run reconciles
 
+  // A warehouse day runs 15:00 → 15:00, so "today" is still being written and
+  // the day before it closed only this afternoon. Running either reads a
+  // partial day — the ops sheet often has nothing yet, Odoo posts through the
+  // evening — and 15 Sep 2026 a mid-day run of an open date was read as "only
+  // 2 variances, did we do a good job?". It was 2½ hours from closing.
+  const tooEarly = runDateFreshness(runDate);
+
   async function handleRunReconciliation() {
     if (running) return;
 
@@ -73,6 +80,19 @@ export default function Sidebar({
         title: `Run reconciliation for ${runDate}?`,
         body: (
           <>
+            {tooEarly && (
+              <p className="text-status-warning">
+                <b>
+                  {tooEarly === "open"
+                    ? `${runDate} is still open — it runs until 15:00 tomorrow.`
+                    : `${runDate} closed at 15:00 today.`}
+                </b>{" "}
+                Sources are still filing: the ops sheet is often written up later, and
+                about half of Odoo&apos;s postings land the next day. Expect items that
+                clear by themselves. The scheduled run for this date is{" "}
+                {tooEarly === "open" ? "in two evenings" : "tomorrow evening"}.
+              </p>
+            )}
             <p>
               This pulls all four sources — guard register, ops sheet, DT and Odoo — and
               re-derives every variance for that day. It can take up to a minute.
