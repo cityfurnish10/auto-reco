@@ -41,6 +41,16 @@ const ALLOWED: { file: string; snippet: string; why: string }[] = [
     snippet: "barcode: r.barcode, scannedAt: r.scanned_at",
     why: "KEY: same lookup, for one trip a manager has just opened. Never shown.",
   },
+  // The dashboard asks "what did the gate look up for these units?" and keys
+  // the answer by barcode. The raw QR payload is one of the two keys returned
+  // (the folded spelling is the other), because a variance row carries the fold
+  // and gate_scans carries the raw — they differ on exactly the rows that
+  // needed one. Neither is rendered: the customer, SO and ticket are.
+  {
+    file: "app/api/gate/unit-details/route.ts",
+    snippet: 'const raw = String(r.barcode ?? "").trim();',
+    why: "KEY: the raw QR payload keys the reply so a folded variance row can find its unit. Never shown.",
+  },
   // The Gate screens read gate_scans, where `barcode` is the RAW QR payload the
   // scanner returned — stored deliberately unfolded. shownBarcode() exists to
   // recover a true spelling from a folded one; here there is no fold to undo,
