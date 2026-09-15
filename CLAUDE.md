@@ -87,6 +87,7 @@ and is recorded for a manager to read afterwards. Re-litigated twice.
 3. **Migrations are applied by hand** and there is no direct Postgres URL. Ship code that degrades on `42703` (undefined_column) rather than failing the nightly run — see `saveCityStats`.
 4. **`vercel.json` has no local safety net.** `npm run build` never validates it; only `vercel build` does. Strict JSON, unknown keys rejected, no comments — an `_comment` key once broke a deploy while every local check passed.
 5. **Tailwind scans `lib/**`** — class strings there must be literal. Twelve uses of `bg-accent-soft` generated no CSS for months.
+5b. **Turbopack can serve a stale `globals.css`.** An edit to a rule inside `@layer components` kept compiling to the PREVIOUS declaration — through a hard reload and a dev-server restart — while the file on disk was correct, so a CSS fix looks like a CSS bug. Confirm against the served stylesheet (`document.styleSheets` → the rule's `cssText`), not the file. Cure: `rm -rf .next/dev`, then restart (deleting it under a running server returns Internal Server Error until the restart).
 6. **`position: fixed` inside the sidebar** renders off-screen; the `<aside>` sets a `translate`, making it a containing block. Portal to `document.body`.
 7. **`DT.scheduledDate` is not a clock** — 6,659 of 6,753 rows pinned at exactly 10:00 IST. Window on `items.updatedAt`.
 8. **`Odoo.sml.date` is posting time, not movement time** — roughly half post the next day; vendor PO receipts post +2/+3.

@@ -39,6 +39,7 @@ export function SortHeader({
   onSort,
   align = "left",
   title,
+  className,
 }: {
   label: string;
   sortKey: SortKey;
@@ -46,14 +47,17 @@ export function SortHeader({
   onSort: (next: SortState) => void;
   align?: "left" | "right" | "center";
   title?: string;
+  /** Extra classes on the <th> — the pinned-column classes need to land here. */
+  className?: string;
 }) {
   const active = state.key === sortKey;
+  const alignClass = align === "right" ? "text-right" : align === "center" ? "text-center" : "";
   return (
     <th
       // aria-sort is what tells a screen reader the table is sorted and how;
       // the arrow glyph alone conveys nothing to one.
       aria-sort={active ? (state.dir === "asc" ? "ascending" : "descending") : "none"}
-      className={align === "right" ? "text-right" : align === "center" ? "text-center" : undefined}
+      className={[alignClass, className].filter(Boolean).join(" ") || undefined}
     >
       <button
         type="button"

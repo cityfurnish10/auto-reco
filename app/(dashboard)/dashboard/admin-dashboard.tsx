@@ -6,6 +6,8 @@
 // Variance, Priority, Status. Defaults to the REAL + open "chase list".
 
 import InTransitSection from "./in-transit-section";
+import SourceScoreboard from "./source-scoreboard";
+import CountOnlyCard from "./count-only-card";
 import { VARIANCE } from "@/lib/engine/variance-names";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -26,7 +28,9 @@ import VarianceDetailModal from "./variance-detail-modal";
 import VarianceListModal, { type ListModalRequest } from "./variance-list-modal";
 import { isCityClosed } from "@/lib/engine/schedule";
 import { addDays } from "@/lib/engine/dates";
-import { cityRateLine, closedCaption, queueCaption, rateCaption, statFigure } from "@/lib/ui/stat-captions";
+// closedCaption / queueCaption went with the KPI tiles — the one-line strip has
+// no room for a sentence under each figure. Still used by the manager dashboard.
+import { cityRateLine, rateCaption, statFigure } from "@/lib/ui/stat-captions";
 import {
   PRIORITY_BADGE,
   STATUS_BADGE,
@@ -52,6 +56,7 @@ import {
   useVarianceFacets,
   patchVariance,
   fetchAllVariances,
+  emptyCityAgg,
   type VarianceFilters,
 } from "@/lib/hooks/use-dashboard-data";
 import { shownBarcode } from "@/lib/ui/barcode-display";
@@ -205,15 +210,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
     if (!stats) return null;
     return cityTab === "ALL"
       ? stats.overall
-      : stats.byCity.find((c) => c.city === cityTab) ?? {
-          city: cityTab, total: 0, open: 0, inProgress: 0, pendingApproval: 0, closed: 0,
-          pendingList: 0, openReal: 0, inProgressReal: 0, pendingApprovalReal: 0, closedReal: 0,
-          pendingListReal: 0, high: 0, medium: 0, info: 0, real: 0, infoBucket: 0, ppBox: 0, consumable: 0,
-          // A city with no row in this run moved nothing we recorded. movements
-          // 0 makes rateCaption say "No movements recorded for this day" rather
-          // than inventing a perfect score out of a zero denominator.
-          movements: 0, openOver3d: 0, oldestOpenAt: null,
-        };
+      : stats.byCity.find((c) => c.city === cityTab) ?? emptyCityAgg(cityTab);
   }, [stats, cityTab]);
 
   function resetPage<T>(setter: (v: T) => void) {
@@ -443,96 +440,89 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
       {/* Items in transit — not losses, so above the loss tiles and the chase list. */}
       <InTransitSection city={cityTab} date={dateF} onOpen={(v) => setDetail(v)} />
 
-      {/* KPI cards — loss-only. Posting-lag / hygiene (INFO) rows are kept in the
-          DB for audit but excluded from these counts (see the hidden-count note). */}
-      {/* The figures could not be read. Every tile below shows an em dash rather
-          than a zero (see statFigure); this says why, and offers the retry. */}
+      {/* The figures could not be read. Every number below shows an em dash
+          rather than a zero (see statFigure); this says why, and offers the
+          retry. */}
       {statsError && (
         <ErrorState what="the figures" detail={statsError} onRetry={refetchStats} compact />
       )}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="kpi-tile kpi-tile--accent flex flex-col justify-between group">
-          <button
-            onClick={() =>
-              setListRequest({ bucket: "REAL", status: "ALL", title: "All loss variances" })
-            }
-            title="Open every loss variance"
-            className="w-full text-left flex flex-col cursor-pointer"
-          >
-            <span className="kpi-label group-hover:underline">Not accounted for</span>
-            <div className="flex items-end justify-between mt-2">
-              <span className="kpi-value">{statFigure(statsLoading, statsError, agg?.real)}</span>
-              {/* "High" is an enum value; "urgent" is what it means. Safe to
-                  trust: applyBucket forces every INFO row to Info priority, so a
-                  High row is a loss by construction. */}
-              {(agg?.high ?? 0) > 0 && <span className="badge badge-high">{agg?.high} urgent</span>}
-            </div>
-            <span className="text-xs text-text-muted mt-1">
-              {rateCaption(agg)}
-            </span>
-          </button>
-        </div>
-        <div className="kpi-tile kpi-tile--danger flex flex-col justify-between group">
-          <button
-            onClick={() =>
-              setListRequest({ bucket: "REAL", status: "open", title: "Open losses" })
-            }
-            title="Open the losses awaiting action"
-            className="w-full text-left flex flex-col cursor-pointer"
-          >
-            <span className="kpi-label group-hover:underline">Still open</span>
-            <span className="kpi-value mt-2">{statFigure(statsLoading, statsError, agg?.openReal)}</span>
-          </button>
-          <span className="text-xs text-text-muted mt-1">
-            {/* REAL-scoped, because that is what the click opens. */}
-            {(agg?.pendingApprovalReal ?? 0) > 0 ? (
-              <button
-                onClick={() =>
-                  setListRequest({
-                    bucket: "REAL",
-                    status: "pending_approval",
-                    title: "Awaiting your approval",
-                  })
-                }
-                className="text-accent font-semibold hover:underline"
-              >
-                {agg?.pendingApprovalReal} pending approval
-              </button>
-            ) : (
-              queueCaption(agg)
-            )}
-          </span>
-        </div>
-        <div className="kpi-tile flex flex-col justify-between group">
-          <button
-            onClick={() =>
-              setListRequest({ bucket: "REAL", status: "closed", title: "Resolved losses" })
-            }
-            title="Open the resolved losses"
-            className="w-full text-left flex flex-col cursor-pointer"
-          >
-            <span className="kpi-label group-hover:underline">Closed today</span>
-            {/* LOSSES ONLY, matching the list this opens. It used to show
-                `closed` across every bucket, so the tile read 88 and the list
-                behind it held 31 — and the ratio to `real` could exceed 100%,
-                which is why this tile was left relating itself to nothing. */}
-            <span className="kpi-value mt-2">{statFigure(statsLoading, statsError, agg?.closedReal)}</span>
-            <span className="text-xs text-text-muted mt-1">
-              {closedCaption(agg)}
-            </span>
-          </button>
-          {/* Pending-list items are stored as closed, so they land in the count
-              above. Naming them stops the tile reading as "all finished". */}
-          {(agg?.pendingListReal ?? 0) > 0 && (
-            <Link
-              href="/pending-list"
-              className="text-xs text-status-warning hover:underline mt-1"
+
+      {/* The chase list, in one line.
+          This replaced three KPI tiles. They answered "how much is on my list",
+          which is a one-line question that was taking a third of the first
+          screen; the scoreboard below answers "did the four records of today's
+          movements agree", which nothing answered at all. Every figure here is
+          still a click into the same filtered list the tiles opened, and every
+          one is counted over LOSSES only, matching what the click shows. */}
+      <div className="card px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+        <button
+          onClick={() => setListRequest({ bucket: "REAL", status: "ALL", title: "All loss variances" })}
+          className="flex items-baseline gap-1.5 hover:text-accent cursor-pointer group"
+          title="Open every loss variance"
+        >
+          <b className="text-lg font-bold text-text-primary group-hover:text-accent">
+            {statFigure(statsLoading, statsError, agg?.real)}
+          </b>
+          <span className="text-text-secondary group-hover:underline">to chase</span>
+        </button>
+        <span className="text-border">|</span>
+        <button
+          onClick={() => setListRequest({ bucket: "REAL", status: "open", title: "Open losses" })}
+          className="flex items-baseline gap-1.5 hover:text-accent cursor-pointer group"
+          title="Open the losses awaiting action"
+        >
+          <b className="text-lg font-bold text-danger">
+            {statFigure(statsLoading, statsError, agg?.openReal)}
+          </b>
+          <span className="text-text-secondary group-hover:underline">still open</span>
+        </button>
+        <span className="text-border">|</span>
+        <button
+          onClick={() => setListRequest({ bucket: "REAL", status: "closed", title: "Resolved losses" })}
+          className="flex items-baseline gap-1.5 hover:text-accent cursor-pointer group"
+          title="Open the resolved losses"
+        >
+          <b className="text-lg font-bold text-text-primary group-hover:text-accent">
+            {statFigure(statsLoading, statsError, agg?.closedReal)}
+          </b>
+          <span className="text-text-secondary group-hover:underline">closed</span>
+        </button>
+        {(agg?.pendingApprovalReal ?? 0) > 0 && (
+          <>
+            <span className="text-border">|</span>
+            <button
+              onClick={() =>
+                setListRequest({
+                  bucket: "REAL",
+                  status: "pending_approval",
+                  title: "Awaiting your approval",
+                })
+              }
+              className="text-accent font-semibold hover:underline cursor-pointer"
             >
-              {agg?.pendingListReal} of these are on the pending list
-            </Link>
-          )}
-        </div>
+              {agg?.pendingApprovalReal} pending approval
+            </button>
+          </>
+        )}
+        {(agg?.high ?? 0) > 0 && <span className="badge badge-high">{agg?.high} urgent</span>}
+        {/* Pending-list items are stored as closed, so they land in the count
+            above. Naming them stops "closed" reading as "all finished". */}
+        {(agg?.pendingListReal ?? 0) > 0 && (
+          <Link href="/pending-list" className="text-xs text-status-warning hover:underline">
+            {agg?.pendingListReal} on the pending list
+          </Link>
+        )}
+        <span className="text-xs text-text-muted ml-auto">{rateCaption(agg)}</span>
       </div>
+
+      {/* Did the four books agree? — the day-level question the variance list
+          can only answer one unit at a time. */}
+      <SourceScoreboard
+        agg={agg}
+        city={cityTab}
+        loading={statsLoading}
+        businessDate={stats?.run?.business_date}
+      />
       {!statsLoading && (agg?.infoBucket ?? 0) > 0 && (
         <p className="text-xs text-text-disabled -mt-2">
           {agg?.infoBucket} more items were checked and need nothing from you — late Odoo
@@ -552,21 +542,14 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         </p>
       )}
 
-      {/* Count-only movements (PP boxes & consumables) — not variances */}
-      <div className="card px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-1">
-        <span className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
-          Count-only movements{cityTab === "ALL" ? "" : ` · ${cityTab}`}
-        </span>
-        <span className="text-sm text-text-muted flex items-center gap-1.5">
-          <Icon name="inventory_2" size={16} className="text-accent" /> PP-Box{" "}
-          <b className="text-text-primary">{statsLoading ? "…" : agg?.ppBox ?? 0}</b>
-        </span>
-        <span className="text-sm text-text-muted flex items-center gap-1.5">
-          <Icon name="category" size={16} className="text-accent" /> Consumables{" "}
-          <b className="text-text-primary">{statsLoading ? "…" : agg?.consumable ?? 0}</b>
-        </span>
-        <span className="text-xs text-text-disabled">Counted by quantity, not by barcode — they never appear in the list below.</span>
-      </div>
+      {/* Count-only movements — PP boxes, spares, consumables and the gate's
+          own hand-counted items. Not variances: no serial to reconcile. */}
+      <CountOnlyCard
+        agg={agg}
+        city={cityTab}
+        loading={statsLoading}
+        businessDate={stats?.run?.business_date}
+      />
 
       {/* City-wise breakdown */}
       {cityTab === "ALL" && stats && stats.byCity.length > 0 && (
@@ -939,11 +922,23 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         </div>
 
         {/* Tablet/desktop: full table (md+) */}
+        {/* THIRTEEN COLUMNS IN A BOX THAT REFUSED TO SCROLL.
+            `table-clean` is width:100% with no minimum, so the browser met the
+            container's width by crushing every column instead of overflowing —
+            the sideways scrollbar this div asks for could never appear, and
+            Problem and Item were reduced to a word each on a laptop.
+            `table-wide` gives the table a floor, which is what turns the squeeze
+            back into a scroll.
+
+            BARCODE MOVED to sit beside Date so the two pinned columns are
+            adjacent — sticky only works on a contiguous block from the edge, and
+            these are the two you need to keep your place while scrolling right:
+            the day, and which unit the row is about. */}
         <div className="overflow-x-auto hidden md:block">
-          <table className="table-clean">
+          <table className="table-clean table-wide">
             <thead>
               <tr>
-                <th className="w-10">
+                <th className="w-10 col-pin col-pin-1">
                   <SelectAllCheckbox
                     checked={sel.allVisibleSelected}
                     indeterminate={sel.someVisibleSelected}
@@ -951,10 +946,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     label={`Select all ${rows.length} rows on this page`}
                   />
                 </th>
-                <SortHeader label="Date" sortKey="date" state={sort} onSort={applySort} />
+                <SortHeader label="Date" sortKey="date" state={sort} onSort={applySort} className="col-pin col-pin-2" />
+                <SortHeader label="Barcode" sortKey="barcode" state={sort} onSort={applySort} className="col-pin col-pin-3" />
                 <SortHeader label="City" sortKey="city" state={sort} onSort={applySort} />
                 <SortHeader label="Item" sortKey="product" state={sort} onSort={applySort} />
-                <SortHeader label="Barcode" sortKey="barcode" state={sort} onSort={applySort} />
                 <SortHeader label="Ticket" sortKey="ticket" state={sort} onSort={applySort} />
                 <SortHeader label="Raised by" sortKey="source" state={sort} onSort={applySort} />
                 <SortHeader label="Job type" sortKey="jobType" state={sort} onSort={applySort} />
@@ -992,33 +987,33 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                   onClick={() => openDetail(v)}
                   className={`cursor-pointer ${sel.has(v.id) ? "bg-accent-soft" : ""}`}
                 >
-                  <td onClick={(e) => e.stopPropagation()}>
+                  <td onClick={(e) => e.stopPropagation()} className="col-pin col-pin-1">
                     <RowCheckbox
                       checked={sel.has(v.id)}
                       onChange={(shift) => onRowCheck(v.id, shift)}
                       label={`Select ${shownBarcode(v)}`}
                     />
                   </td>
-                  <td className="whitespace-nowrap text-text-secondary">{v.business_date}</td>
-                  <td>{v.city}</td>
-                  <td className="max-w-[200px] truncate" title={v.product ?? ""}>{v.product ?? "—"}</td>
-                  <td>
+                  <td className="whitespace-nowrap text-text-secondary col-pin col-pin-2">{v.business_date}</td>
+                  <td className="col-pin col-pin-3">
                     {/* A <tr> can't take focus — this is the keyboard route in. */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         openDetail(v);
                       }}
-                      className="font-mono font-semibold text-text-primary hover:text-accent hover:underline"
+                      className="font-mono font-semibold text-text-primary hover:text-accent hover:underline whitespace-nowrap"
                     >
                       {shownBarcode(v)}
                     </button>
                   </td>
+                  <td>{v.city}</td>
+                  <td className="max-w-[200px] truncate" title={v.product ?? ""}>{v.product ?? "—"}</td>
                   <td className="text-text-secondary">{v.ticket_id ?? "—"}</td>
                   <td><SourceBadge source={v.variance_source} /></td>
                   <td className="text-text-secondary text-xs">{opsTypeLabel(v.job_type)}</td>
-                  <td className="text-text-secondary">{v.so_number ?? "—"}</td>
-                  <td className="max-w-[220px]" title={v.note ?? ""}>
+                  <td className="text-text-secondary whitespace-nowrap">{v.so_number ?? "—"}</td>
+                  <td className="min-w-[200px] max-w-[260px]" title={v.note ?? ""}>
                     <span className="text-text-primary">{v.variance_name}</span>
                   </td>
                   <td className="text-text-secondary whitespace-nowrap">

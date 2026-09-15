@@ -294,6 +294,50 @@ export interface CityAgg {
   floorNotInOdoo: number;
   /** Movement rows in the ledger for this date; 0 means no ledger view. */
   ledgered: number;
+  /**
+   * What each of the four books counted, per direction (migration 0012).
+   * `reported: false` with a 0 count means the source did not report — draw it
+   * as "no data", never as a zero (invariant 2).
+   */
+  sources: {
+    gate: SourceCount;
+    sheet: SourceCount;
+    dt: SourceCount;
+    odoo: SourceCount;
+  };
+  /**
+   * Counted extras the gate recorded with no barcode — spares, consumables, PP
+   * boxes, samples. Quantities, not rows; `items` is the row count.
+   */
+  gateCount: { in: number; out: number; items: number };
+}
+
+export interface SourceCount {
+  in: number;
+  out: number;
+  /** The connector reported at all. A zero count alone cannot say this. */
+  reported: boolean;
+}
+
+/** A city the current run did not cover — every figure unknown, not zero. */
+export function emptyCityAgg(city: string): CityAgg {
+  return {
+    city, total: 0, open: 0, inProgress: 0, pendingApproval: 0, closed: 0,
+    pendingList: 0, openReal: 0, inProgressReal: 0, pendingApprovalReal: 0,
+    closedReal: 0, pendingListReal: 0, high: 0, medium: 0, info: 0, real: 0,
+    infoBucket: 0, ppBox: 0, consumable: 0,
+    // movements 0 makes rateCaption say "No movements recorded for this day"
+    // rather than inventing a perfect score out of a zero denominator.
+    movements: 0, openOver3d: 0, oldestOpenAt: null,
+    odooOnly: 0, floorNotInOdoo: 0, ledgered: 0,
+    sources: {
+      gate: { in: 0, out: 0, reported: false },
+      sheet: { in: 0, out: 0, reported: false },
+      dt: { in: 0, out: 0, reported: false },
+      odoo: { in: 0, out: 0, reported: false },
+    },
+    gateCount: { in: 0, out: 0, items: 0 },
+  };
 }
 
 export interface StatsResponse {

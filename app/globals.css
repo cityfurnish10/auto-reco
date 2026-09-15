@@ -485,6 +485,68 @@ body {
   .table-clean td {
     overflow-wrap: anywhere;
   }
+  /* A table with more columns than fit ---------------------------------------
+     `.table-clean` is width:100% with no floor, so a thirteen-column table met
+     its container by crushing every column instead of overflowing: the
+     `overflow-x-auto` wrapper asked for a sideways scrollbar that could never
+     appear, and Item and Problem were squeezed to a word each on a laptop.
+     A minimum width turns the squeeze back into a scroll. */
+  .table-wide {
+    min-width: 1180px;
+  }
+
+  /* Pinned first columns.
+     Scrolling right in a wide table loses the two things that tell you which
+     row you are reading — the day and the unit. These stay put.
+
+     Every pinned cell needs its OWN background: a sticky cell is painted over
+     its siblings but is transparent by default, so the scrolled columns would
+     slide visibly underneath it. That is also why each row state (hover,
+     selected) has to be repeated here — the state lives on the <tr> and a
+     transparent <td> cannot inherit a paint. */
+  .table-clean .col-pin {
+    position: sticky;
+    z-index: 2;
+    background: var(--surface-card);
+  }
+  .table-clean thead .col-pin {
+    /* Above the body's pinned cells, which scroll under the header. */
+    z-index: 3;
+    background: var(--surface-elevated);
+  }
+  .table-clean tbody tr:hover .col-pin,
+  .table-clean tbody tr:focus-within .col-pin {
+    background: var(--surface-elevated);
+  }
+  /* The selection wash is deliberately TRANSLUCENT, which is right everywhere
+     except here: a see-through sticky cell showed the scrolled columns sliding
+     underneath the pinned barcode. Painting the wash over an opaque card colour
+     keeps the same shade and stops the bleed. */
+  .table-clean tbody tr.bg-accent-soft .col-pin {
+    background-color: var(--surface-card);
+    background-image: linear-gradient(var(--color-accent-soft), var(--color-accent-soft));
+  }
+  /* Fixed widths, because the left offsets below are absolute pixels and an
+     auto-laid-out column would put the next pinned cell in the wrong place. */
+  .table-clean .col-pin-1 {
+    left: 0;
+    width: 44px;
+    min-width: 44px;
+    padding-left: 12px;
+    padding-right: 0;
+  }
+  .table-clean .col-pin-2 {
+    left: 44px;
+    width: 104px;
+    min-width: 104px;
+  }
+  .table-clean .col-pin-3 {
+    left: 148px;
+    /* The seam. Without it the pinned block and the scrolling columns read as
+       one grid and the sticky behaviour looks like a rendering fault. */
+    box-shadow: 6px 0 8px -6px rgba(0, 0, 0, 0.18);
+  }
+
   .table-clean .row-action {
     opacity: 0;
     transition: opacity 120ms ease;

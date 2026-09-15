@@ -5,6 +5,7 @@
 // is belt-and-suspenders). Managers close variances with a reason (→ PATCH).
 
 import InTransitSection from "./in-transit-section";
+import CountOnlyCard from "./count-only-card";
 import { VARIANCE } from "@/lib/engine/variance-names";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SessionUser } from "@/lib/demo-auth";
@@ -415,21 +416,14 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
         </p>
       )}
 
-      {/* Count-only movements (PP boxes & consumables) — not variances */}
-      <div className="card px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-1">
-        <span className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
-          Count-only movements · {city}
-        </span>
-        <span className="text-sm text-text-muted flex items-center gap-1.5">
-          <Icon name="inventory_2" size={16} className="text-accent" /> PP-Box{" "}
-          <b className="text-text-primary">{statFigure(statsLoading, statsError, cityAgg?.ppBox)}</b>
-        </span>
-        <span className="text-sm text-text-muted flex items-center gap-1.5">
-          <Icon name="category" size={16} className="text-accent" /> Consumables{" "}
-          <b className="text-text-primary">{statFigure(statsLoading, statsError, cityAgg?.consumable)}</b>
-        </span>
-        <span className="text-xs text-text-disabled">Counted by quantity, not by barcode — they never appear in the list below.</span>
-      </div>
+      {/* Count-only movements — PP boxes, spares, consumables and the gate's
+          own hand-counted items. Not variances: no serial to reconcile. */}
+      <CountOnlyCard
+        agg={cityAgg}
+        city={city}
+        loading={statsLoading}
+        businessDate={stats?.run?.business_date}
+      />
 
       {/* Variance table */}
       <section className="card overflow-hidden flex flex-col">
@@ -717,8 +711,8 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                   <td className="text-text-secondary">{v.ticket_id ?? "—"}</td>
                   <td><SourceBadge source={v.variance_source} /></td>
                   <td className="text-text-secondary text-xs">{opsTypeLabel(v.job_type)}</td>
-                  <td className="text-text-secondary">{v.so_number ?? "—"}</td>
-                  <td className="max-w-[220px]" title={v.note ?? ""}>
+                  <td className="text-text-secondary whitespace-nowrap">{v.so_number ?? "—"}</td>
+                  <td className="min-w-[200px] max-w-[260px]" title={v.note ?? ""}>
                     {v.variance_name}
                     {/* A rejected submission used to look identical to one
                         nobody had touched — the admin's note was a hover

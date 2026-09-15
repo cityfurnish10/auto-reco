@@ -19,6 +19,20 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/**
+ * What ONE source recorded for this city and day, per direction.
+ *
+ * `reported` is not derivable from the counts and is the whole reason this is a
+ * shape rather than two numbers: a source that was down and a source that saw a
+ * genuinely quiet gate both count 0, and the dashboard must never draw the
+ * first one as if it were the second (invariant 2).
+ */
+export interface SourceCount {
+  in: number;
+  out: number;
+  reported: boolean;
+}
+
 interface CityAgg {
   city: string;
   total: number;
@@ -85,6 +99,31 @@ interface CityAgg {
   floorNotInOdoo: number;
   /** Movement rows found in the ledger for this date. 0 = ledger has no view. */
   ledgered: number;
+  /**
+   * What each of the four books recorded, per direction (migration 0012).
+   *
+   * The engine has computed these on every run since 0012 and only the digest
+   * email ever read them. They are the answer to the first question anybody
+   * asks of a reconciliation — "do the four counts even agree?" — which the
+   * variance list can only answer one unit at a time.
+   */
+  sources: {
+    gate: SourceCount;
+    sheet: SourceCount;
+    dt: SourceCount;
+    odoo: SourceCount;
+  };
+  /**
+   * Counted extras the GATE recorded — spare parts, consumables, PP boxes,
+   * samples. Read live from gate_scans, not from the run.
+   *
+   * They cannot come from the run: lib/connectors/guard.ts drops every
+   * barcode-less row before the engine sees it (a row with no serial cannot
+   * enter a per-barcode ladder), so a guard's hand-added items have never
+   * reached any screen in this tool. Reading them here also means they appear
+   * for a day no reconciliation has run for yet.
+   */
+  gateCount: { in: number; out: number; items: number };
 }
 
 function emptyAgg(city: string): CityAgg {
@@ -114,8 +153,18 @@ function emptyAgg(city: string): CityAgg {
     odooOnly: 0,
     floorNotInOdoo: 0,
     ledgered: 0,
+    sources: {
+      gate: { in: 0, out: 0, reported: false },
+      sheet: { in: 0, out: 0, reported: false },
+      dt: { in: 0, out: 0, reported: false },
+      odoo: { in: 0, out: 0, reported: false },
+    },
+    gateCount: { in: 0, out: 0, items: 0 },
   };
 }
+
+/** The counted family — no serial exists or is expected (migration 0041). */
+const COUNTED_KINDS = ["spare_part", "consumable", "pp_box", "sample"] as const;
 
 export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
   const supabase = await createClient();
@@ -273,14 +322,36 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
     }
   };
 
-  const [varRes, cityStatsRes, ledgerRows, calRows] = await Promise.all([
+  // Counted extras straight from the gate. Its own try/catch: these columns
+  // arrived with the gate app and an older database simply has no rows, which
+  // must cost the card its numbers and nothing else on the page.
+  const readGateCounts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("gate_scans")
+        .select("city, direction, quantity")
+        .eq("business_date", run.business_date)
+        .eq("status", "recorded")
+        .in("item_kind", COUNTED_KINDS as unknown as string[])
+        .is("barcode", null)
+        .limit(2000);
+      return error ? null : data;
+    } catch {
+      return null;
+    }
+  };
+
+  const [varRes, cityStatsRes, ledgerRows, calRows, gateCountRows] = await Promise.all([
     readVariances(),
     supabase
       .from("run_city_stats")
-      .select("city, pp_box_count, consumable_count, movements")
+      // One literal, however long: PostgREST infers the row type from the
+      // string, and a concatenated one degrades every column to `unknown`.
+      .select("city, pp_box_count, consumable_count, movements, phys_in, phys_out, sheet_in, sheet_out, dt_in, dt_out, odoo_in, odoo_out, reported_p, reported_s, reported_d, reported_o")
       .eq("business_date", run.business_date),
     readLedger(),
     readCalendar(),
+    readGateCounts(),
   ]);
 
   if (varRes.error) return NextResponse.json({ error: varRes.error }, { status: 500 });
@@ -345,10 +416,45 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
     // The denominator. It was being fetched one column away from here and
     // thrown out, which is why five city cards ranked by warehouse size.
     agg.movements = s.movements ?? 0;
+    agg.sources = {
+      gate: { in: s.phys_in ?? 0, out: s.phys_out ?? 0, reported: !!s.reported_p },
+      sheet: { in: s.sheet_in ?? 0, out: s.sheet_out ?? 0, reported: !!s.reported_s },
+      dt: { in: s.dt_in ?? 0, out: s.dt_out ?? 0, reported: !!s.reported_d },
+      odoo: { in: s.odoo_in ?? 0, out: s.odoo_out ?? 0, reported: !!s.reported_o },
+    };
     byCityMap.set(s.city, agg);
     overall.ppBox += s.pp_box_count ?? 0;
     overall.consumable += s.consumable_count ?? 0;
     overall.movements += s.movements ?? 0;
+    // ALL CITIES sums the counts, but "reported" is an AND across the cities in
+    // view: one gate down is the fact worth surfacing, and an OR would let four
+    // healthy cities vouch for it.
+    for (const k of ["gate", "sheet", "dt", "odoo"] as const) {
+      const from = agg.sources[k];
+      const to = overall.sources[k];
+      to.in += from.in;
+      to.out += from.out;
+    }
+  }
+  // Only cities the run actually covered get a vote. A city that appears here
+  // solely because it has an old open variance never ran today, and letting its
+  // all-false row into the AND would report every source as down.
+  const covered = (cityStats ?? []).map((s) => byCityMap.get(s.city)).filter((c): c is CityAgg => !!c);
+  for (const k of ["gate", "sheet", "dt", "odoo"] as const) {
+    overall.sources[k].reported = covered.length > 0 && covered.every((c) => c.sources[k].reported);
+  }
+
+  // Counted extras per city — quantities, not rows: four PP boxes on one entry
+  // is four boxes, and the guard's own screen says four.
+  for (const g of (gateCountRows ?? []) as { city: string; direction: string; quantity: number | null }[]) {
+    const agg = byCityMap.get(g.city) ?? emptyAgg(g.city);
+    const qty = g.quantity ?? 1;
+    for (const target of [agg, overall]) {
+      if (g.direction === "IN") target.gateCount.in += qty;
+      else target.gateCount.out += qty;
+      target.gateCount.items += 1;
+    }
+    byCityMap.set(g.city, agg);
   }
 
   // Which sources actually witnessed each movement (migration 0015). Null when
