@@ -19,7 +19,7 @@
 import { MongoClient } from "mongodb";
 import type { Connector, CityTaggedRow } from "./types";
 import { normalizeCity } from "./types";
-import { businessDayToUtcWindow } from "./ist-window";
+import { dayToUtcWindow, istDayToUtcWindow, usesCalendarDay } from "./ist-window";
 import { deriveDtDirection, DT_EXCLUDED_JOB_TYPES } from "./dt-mapping";
 
 const DT_PARENT_COLLECTION = process.env.DT_TASKS_COLLECTION ?? "deliveries";
@@ -50,27 +50,38 @@ export const dtConnector: Connector = {
     if (!uri) throw new Error("DT not configured (set DT_MONGODB_URI).");
 
     const dbName = process.env.DT_MONGODB_DB ?? "cityfurnish";
-    // The business day is 15:00 → 15:00 IST, and DT is windowed on when a
-    // movement COMPLETED, not when it was scheduled.
+    // WHICH DAY A DELIVERY TASK BELONGS TO — two answers, by date.
     //
-    // Why not scheduledDate: measured July 2026, 6,659 of 6,753 values sit at
-    // exactly 10:00 IST. It is a date marker pinned to a fixed hour, not an
-    // event time, so cutting it at 15:00 would push every DT row into the
-    // previous business day. items.updatedAt is the real completion timestamp —
-    // 3,176 completed items over 20-26 Jul with a realistic evening peak
-    // (17:00-21:00) — and is what actually belongs on the same clock as Odoo.
+    // FROM 13 Sep 2026 the task is placed on the day it was SCHEDULED for
+    // (owner's decision, 16 Sep 2026). A delivery scheduled for the 14th is the
+    // 14th's movement even when the agent closes it at half past midnight, and
+    // that is also the day the goods crossed the gate — so the Tracker now
+    // lines up with the guard rather than with its own paperwork clock.
+    // scheduledDate is a DATE, not an event time (measured July 2026: 6,659 of
+    // 6,753 values sit at exactly 10:00 IST), which is exactly why it can carry
+    // a calendar day and could never have carried a 15:00 one.
+    //
+    // BEFORE THAT the old rule stands, unchanged, so re-running an older date
+    // reproduces what it meant: the 15:00-to-15:00 day, cut on items.updatedAt
+    // — the real completion timestamp, with its realistic evening peak.
     //
     // The two-stage filter exists because of indexes, not taste:
     // orderfromcityfurnishes.updatedAt is NOT indexed (333k docs → collection
-    // scan), while deliveries.scheduledDate IS. So scheduledDate stays as a
-    // cheap bounding pre-scan, widened to cover the scheduled→completed lag
-    // (measured: 1,110 same-day, 542 +1d, 24 +2d, 4 beyond — a 7-day lookback
-    // covers 99.9%), and the exact cut happens on items.updatedAt after the
-    // unwind.
-    const { startUtc, endUtcExclusive } = businessDayToUtcWindow(runDate);
+    // scan), while deliveries.scheduledDate IS. So scheduledDate stays as the
+    // cheap bounding pre-scan either way, widened on the old path to cover the
+    // scheduled→completed lag (measured: 1,110 same-day, 542 +1d, 24 +2d, 4
+    // beyond — a 7-day lookback covers 99.9%).
+    const byScheduledDate = usesCalendarDay(runDate);
+    const { startUtc, endUtcExclusive } = dayToUtcWindow(runDate);
+    // On the new path the pre-scan IS the filter, so it is the day itself.
+    const schedule = byScheduledDate ? istDayToUtcWindow(runDate) : null;
     const SCAN_LOOKBACK_DAYS = 7;
-    const scanStart = new Date(Date.parse(startUtc) - SCAN_LOOKBACK_DAYS * 86_400_000);
-    const scanEnd = new Date(Date.parse(endUtcExclusive) + 86_400_000);
+    const scanStart = schedule
+      ? new Date(schedule.startUtc)
+      : new Date(Date.parse(startUtc) - SCAN_LOOKBACK_DAYS * 86_400_000);
+    const scanEnd = schedule
+      ? new Date(schedule.endUtcExclusive)
+      : new Date(Date.parse(endUtcExclusive) + 86_400_000);
 
     const client = new MongoClient(uri);
     try {
@@ -82,8 +93,9 @@ export const dtConnector: Connector = {
       const pipeline = [
         {
           $match: {
-            // Bounding pre-scan only (indexed). The precise business-day cut is
-            // on items.updatedAt below.
+            // Indexed. On the calendar path this is THE filter — the scheduled
+            // day is the answer. On the old path it is a bounding pre-scan and
+            // the precise cut happens on items.updatedAt below.
             scheduledDate: { $gte: scanStart, $lt: scanEnd },
             email: { $not: { $regex: "cityfurnish\\.com$", $options: "i" } },
             $nor: [
@@ -130,15 +142,20 @@ export const dtConnector: Connector = {
         { $unwind: { path: "$items", preserveNullAndEmptyArrays: false } },
         // Done-only rule (§15) — only physical status "2" enters the engine.
         { $match: { "items.status": "2" } },
-        // The real business-day cut: when the movement actually completed.
-        {
-          $match: {
-            "items.updatedAt": {
-              $gte: new Date(startUtc),
-              $lt: new Date(endUtcExclusive),
-            },
-          },
-        },
+        // The old rule's cut: when the movement actually completed. Dropped on
+        // the calendar path, where the scheduled day has already decided it —
+        // keeping it there would re-impose the very boundary this replaced and
+        // throw away every task closed after midnight.
+        ...(byScheduledDate
+          ? []
+          : [{
+              $match: {
+                "items.updatedAt": {
+                  $gte: new Date(startUtc),
+                  $lt: new Date(endUtcExclusive),
+                },
+              },
+            }]),
         {
           $project: {
             _id: 0,

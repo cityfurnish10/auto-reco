@@ -56,23 +56,33 @@ describe("business day — 15:00 → 15:00 IST", () => {
   it("reports the lag it declares, not a number written twice", () => {
     // The whole cadence is derived from this constant, so the test reads it
     // rather than restating it — a changed lag must not need seven edits here.
-    for (const day of ["2026-07-25", "2026-11-30", "2027-02-28"]) {
+    // Pre-cutover days only: the lag exists because a 15:00 day is not finished
+    // until 15:00 the next afternoon. A calendar day is finished at midnight
+    // and is judged the following evening, which the case below covers.
+    for (const day of ["2026-07-25", "2026-08-30", "2026-09-10"]) {
       const fires = addDays(day, 1 + REPORTING_LAG_DAYS);
       expect(reconcileTargetDate(atIst(fires, 16, 30))).toBe(day);
     }
   });
 
   it("both daily jobs always name the same business day", () => {
-    for (const day of ["2026-07-23", "2026-08-01", "2026-12-31", "2027-03-01"]) {
+    for (const day of ["2026-07-23", "2026-08-01", "2026-09-11"]) {
       const next = addDays(day, 1 + REPORTING_LAG_DAYS);
       expect(reconcileTargetDate(atIst(next, 16, 30))).toBe(day);
       expect(digestTargetDate(atIst(next, 16, 45))).toBe(day);
+    }
+    // …and on the calendar side, where both jobs name yesterday.
+    for (const day of ["2026-09-13", "2026-12-31", "2027-03-01"]) {
+      const next = addDays(day, 1);
+      expect(reconcileTargetDate(atIst(next, 20, 0))).toBe(day);
+      expect(digestTargetDate(atIst(next, 21, 0))).toBe(day);
     }
   });
 
   it("crosses month and year boundaries", () => {
     expect(reconcileTargetDate(atIst("2026-08-01", 16))).toBe("2026-07-30");
-    expect(digestTargetDate(atIst("2027-01-01", 16, 45))).toBe("2026-12-30");
+    // A calendar-day year boundary: 1 Jan closes 31 Dec, not the 30th.
+    expect(digestTargetDate(atIst("2027-01-01", 20, 45))).toBe("2026-12-31");
   });
 
   it("lastClosedBusinessDate is always exactly one day behind the open one", () => {

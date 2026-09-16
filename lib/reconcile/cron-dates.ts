@@ -48,7 +48,7 @@
 // their tests agree on the target regardless of the hour the job fires.
 
 import { addDays } from "../engine/dates";
-import { utcToBusinessDate } from "../connectors/ist-window";
+import { utcToBusinessDate, usesCalendarDay } from "../connectors/ist-window";
 import { utcToIstDate } from "../connectors/ist-window";
 
 // The IST calendar date at a given instant. Still calendar-based — used for
@@ -110,6 +110,18 @@ export const REPORTING_LAG_DAYS = 1;
 // are no longer the same thing: that is "the most recent day whose window has
 // shut", this is "the most recent day we are willing to judge".
 export function reconcileTargetDate(now: Date = new Date()): string {
+  // CALENDAR DAYS NEED NO LAG, and that is the point of the change rather than
+  // a side effect of it. The lag existed because the 15:00 day did not END
+  // until 15:00 the following afternoon: its last outward movements crossed the
+  // gate that morning, Odoo posted them around midday the day after THAT, and
+  // judging the day any sooner meant judging it without a quarter of Odoo.
+  //
+  // A calendar day is finished at midnight. Its outward postings land about 26
+  // hours later — measured at Delhi, leaves 09:29, posted 13:06 the next day —
+  // so by the 20:00 run on D+1 Odoo is in. Yesterday, reported tonight: a full
+  // day earlier than the old cadence, with more of Odoo present, not less.
+  const yesterday = addDays(istDate(now), -1);
+  if (usesCalendarDay(yesterday)) return yesterday;
   return addDays(lastClosedBusinessDate(now), -REPORTING_LAG_DAYS);
 }
 export function digestTargetDate(now: Date = new Date()): string {

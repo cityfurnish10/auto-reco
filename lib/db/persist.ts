@@ -1,6 +1,7 @@
 // Persistence layer for the reconcile pipeline. All writes use the service-role
 // admin client (bypasses RLS). Keeps the route thin and the SQL shape in one place.
 
+import { usesCalendarDay } from "../connectors/ist-window";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { City } from "../sample-data";
 import type { CityRunResult, ReportedSources, SourceFlags, SourceRow } from "../engine/types";
@@ -213,6 +214,11 @@ export async function createRun(
     trigger: opts.trigger,
     triggered_by: opts.triggeredBy ?? null,
   };
+  // What business_date MEANS for this run (0049). Two definitions share the
+  // column and nothing else distinguishes them, so a week spanning the 13 Sep
+  // seam would otherwise be compared with two different rulers and read as a
+  // change in the business.
+  const dayDefinition = usesCalendarDay(opts.runDate) ? "calendar" : "business_15";
   // created_at is selected because run_city_snapshots denormalises it, which
   // turns "the passes for this date in order" into an index range scan instead
   // of a join on every page load.
@@ -220,7 +226,7 @@ export async function createRun(
 
   let { data, error } = await db
     .from("reconciliation_runs")
-    .insert({ ...base, run_role: opts.role, ocr_skipped: opts.skipOcr === true })
+    .insert({ ...base, run_role: opts.role, ocr_skipped: opts.skipOcr === true, day_definition: dayDefinition })
     .select(cols)
     .single();
 
@@ -237,12 +243,22 @@ export async function createRun(
       error.code === "PGRST204" ||
       /does not exist|could not find/i.test(error.message)
     ) {
-      warnNo0017();
+      // Step down one migration at a time: 0049's stamp is the newest, and
+      // dropping straight to `base` would also discard run_role and
+      // ocr_skipped, which 0017 depends on.
       ({ data, error } = await db
         .from("reconciliation_runs")
-        .insert(base)
+        .insert({ ...base, run_role: opts.role, ocr_skipped: opts.skipOcr === true })
         .select(cols)
         .single());
+      if (error) {
+        warnNo0017();
+        ({ data, error } = await db
+          .from("reconciliation_runs")
+          .insert(base)
+          .select(cols)
+          .single());
+      }
     }
   }
   if (error) throw new Error(`createRun failed: ${error.message}`);

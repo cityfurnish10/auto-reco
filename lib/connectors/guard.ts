@@ -18,6 +18,7 @@ import { createAdminClient } from "../supabase/admin";
 import type { Connector, CityTaggedRow } from "./types";
 import type { GuardUpload } from "../db/schema";
 import { CITIES, type City } from "../sample-data";
+import { dayToUtcWindow, usesCalendarDay } from "./ist-window";
 
 /**
  * Cities whose gate record now comes from the app — optionally FROM A DATE.
@@ -66,12 +67,27 @@ export const guardConnector: Connector = {
 
     // ── Cities on the app ────────────────────────────────────────────────
     if (appCities.size > 0) {
-      const { data, error } = await db
+      // READ BY THE CLOCK, NOT BY THE STORED COLUMN, on the calendar path.
+      //
+      // gate_scans.business_date was written at sync time under whichever rule
+      // was live then, so every scan taken before the 13 Sep 2026 cutover
+      // shipped carries an old-rule date — including the scans ON 13-15 Sep,
+      // which is exactly the range being re-run. Selecting on scanned_at
+      // reproduces the day from the event itself and needs no backfill; the
+      // stored column stays as the audit record of what was decided at the
+      // time.
+      let q = db
         .from("gate_scans")
         .select("city,direction,barcode,serial_no,item_kind,quantity,so_number,ticket_id,product,customer,entry_method,scanned_at")
-        .eq("business_date", runDate)
         .eq("status", "recorded")
         .in("city", [...appCities]);
+      if (usesCalendarDay(runDate)) {
+        const { startUtc, endUtcExclusive } = dayToUtcWindow(runDate);
+        q = q.gte("scanned_at", startUtc).lt("scanned_at", endUtcExclusive);
+      } else {
+        q = q.eq("business_date", runDate);
+      }
+      const { data, error } = await q;
 
       if (error) throw new Error(`Gate connector (scans) failed: ${error.message}`);
 

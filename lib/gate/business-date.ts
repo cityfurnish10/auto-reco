@@ -14,7 +14,7 @@
 // which operations has already said is coming — is a single recompute over
 // scanned_at, not lost data.
 
-import { utcToBusinessDate } from "../connectors/ist-window";
+import { utcToDayDate } from "../connectors/ist-window";
 
 export interface DatedEvent {
   /** ISO instant from the device. */
@@ -55,7 +55,10 @@ export function resolveBusinessDate(
 ): ResolvedDate | null {
   const t = Date.parse(deviceIso);
   if (Number.isNaN(t)) return null;
-  const businessDate = utcToBusinessDate(new Date(t));
+  // Under the definition in force on that date (13 Sep 2026 cutover). A scan
+  // taken today is placed on its calendar day; one being re-sent from an older
+  // offline queue still gets the rule its own day used.
+  const businessDate = utcToDayDate(new Date(t));
   if (!businessDate) return null;
   const skewMs = t - now.getTime();
   return {

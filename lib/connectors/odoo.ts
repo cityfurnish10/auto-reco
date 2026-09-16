@@ -28,7 +28,9 @@ import { addDays } from "../engine/dates";
 import {
   businessDayToUtcWindow,
   businessDaySpanToUtcWindow,
-  utcToBusinessDate,
+  daySpanToUtcWindow,
+  dayToUtcWindow,
+  utcToDayDate,
 } from "./ist-window";
 import { normalizeOdooWarehouse } from "./odoo-mapping";
 import { metabaseConfigured, runNativeSql } from "./metabase";
@@ -127,7 +129,11 @@ export const odooConnector: Connector = {
     const dbId = Number(process.env.METABASE_ODOO_DB_ID);
     if (!dbId) throw new Error("METABASE_ODOO_DB_ID not set.");
 
-    const { startUtc, endUtcExclusive } = businessDaySpanToUtcWindow(
+    // Under the date's own day definition (13 Sep 2026 cutover). The span is
+    // a PULL window either side of the day, because sml.date is a posting time
+    // and a movement is routinely posted after its day has ended; which day a
+    // posting is EVIDENCE for is decided by utcToDayDate below.
+    const { startUtc, endUtcExclusive } = daySpanToUtcWindow(
       runDate,
       POSTING_DAYS_BEFORE,
       POSTING_DAYS_AFTER
@@ -179,7 +185,7 @@ export const odooConnector: Connector = {
         // Business date, not calendar: this has to agree with the pull window
         // above, or a posting made after 15:00 would be pulled for one day and
         // then attributed to another.
-        createdOn: utcToBusinessDate(r.date as string | null),
+        createdOn: utcToDayDate(r.date as string | null),
         // `recordCreatedOn` = the IST calendar date this stock_move_line RECORD
         // was created in Odoo (create_date, NOT sml.date). Used ONLY by the
         // engine's "Odoo-only" flag to tell a genuine same-day movement the
@@ -187,7 +193,7 @@ export const odooConnector: Connector = {
         // late batch-post of an earlier movement (record older → INFO). It is
         // NEVER the odoo-window key — that stays the posting date above, so pull
         // coverage is unchanged (create_date runs 0–2 days ahead of posting).
-        recordCreatedOn: utcToBusinessDate(r.record_created as string | null),
+        recordCreatedOn: utcToDayDate(r.record_created as string | null),
         movementDate: str(r.date),
         soNumber: str(r.so_number),
         ticketId: str(r.ticket_id),
@@ -320,8 +326,8 @@ export async function fetchOdooPostingsAfter(
 
   // [D+1 .. D+days] of whole business days. Written as two window calls rather
   // than a negative daysBefore so the range is readable at the call site.
-  const startUtc = businessDayToUtcWindow(addDays(runDate, 1)).startUtc;
-  const endUtcExclusive = businessDayToUtcWindow(addDays(runDate, days)).endUtcExclusive;
+  const startUtc = dayToUtcWindow(addDays(runDate, 1)).startUtc;
+  const endUtcExclusive = dayToUtcWindow(addDays(runDate, days)).endUtcExclusive;
 
   // Timed out where the main pull is not. This query is optional — losing it
   // costs a demotion, and the caller treats a failure as "no evidence" — so it
@@ -411,8 +417,8 @@ export async function fetchOdooPendingOut(runDate: string): Promise<Partial<Reco
   const dbId = Number(process.env.METABASE_ODOO_DB_ID);
   if (!dbId) return out;
 
-  const startUtc = businessDayToUtcWindow(addDays(runDate, -PENDING_OUT_DAYS_BEFORE)).startUtc;
-  const endUtcExclusive = businessDayToUtcWindow(addDays(runDate, 1)).endUtcExclusive;
+  const startUtc = dayToUtcWindow(addDays(runDate, -PENDING_OUT_DAYS_BEFORE)).startUtc;
+  const endUtcExclusive = dayToUtcWindow(addDays(runDate, 1)).endUtcExclusive;
   const table = await runNativeSql(dbId, buildPendingOutQuery(startUtc, endUtcExclusive), LOOKAHEAD_TIMEOUT_MS);
   for (const r of table.rows) {
     const city = normalizeOdooWarehouse(r.warehouse_code);
