@@ -19,7 +19,10 @@
 
 "use client";
 
+import { useEffect, useState } from "react";
 import { Icon } from "@/components/icon";
+import { Modal } from "@/components/modal";
+import { ErrorState } from "@/components/error-state";
 import type { CityAgg, SourceCount } from "@/lib/hooks/use-dashboard-data";
 import { SOURCE_NAME } from "@/lib/ui/source-names";
 
@@ -56,7 +59,25 @@ interface Props {
   businessDate?: string;
 }
 
+/** Which cell a manager clicked: one source, one direction (or both). */
+interface OpenCell {
+  source: "gate" | "sheet" | "dt" | "odoo";
+  direction: "IN" | "OUT" | "BOTH";
+  label: string;
+  /** The figure that was clicked, so the modal can reconcile itself to it. */
+  figure: number;
+}
+
+/** The stored source code each screen name maps to — see lib/ui/source-names. */
+const CODE: Record<OpenCell["source"], string> = {
+  gate: "PHYSICAL",
+  sheet: "SHEET",
+  dt: "DT",
+  odoo: "ODOO",
+};
+
 export default function SourceScoreboard({ agg, city, loading, businessDate }: Props) {
+  const [cell, setCell] = useState<OpenCell | null>(null);
   const all = city === "ALL";
   const rows = SOURCES.map((s) => ({ ...s, count: agg?.sources?.[s.key] }));
   const silent = rows.filter((r) => r.count && !r.count.reported);
@@ -119,6 +140,7 @@ export default function SourceScoreboard({ agg, city, loading, businessDate }: P
               const gap = !!c && !c.reported;
               const down = gap && !all;
               const partial = gap && all;
+              const dropped = (c?.notDone?.in ?? 0) + (c?.notDone?.out ?? 0);
               return (
                 <tr key={r.key} className={down ? "opacity-60" : undefined}>
                   <td>
@@ -135,17 +157,33 @@ export default function SourceScoreboard({ agg, city, loading, businessDate }: P
                         Partial
                       </span>
                     )}
+                    {/* WHY THIS COLUMN IS SMALLER THAN THE SHEET. Rows the
+                        sheet's own outcome column marks "Not Delivered" are not
+                        movements and are left out — correct, and invisible until
+                        somebody counted the tab by hand and found 91 where the
+                        board said 78. Only the sheet can have these: it is the
+                        one source that records an outcome. */}
+                    {!unread && !down && dropped > 0 && (
+                      <span
+                        className="text-xs text-text-muted ml-2"
+                        title="Rows the sheet itself marks as not delivered or cancelled. They are not movements, so they are not counted here — this is the difference between the sheet's row count and the figure beside it."
+                      >
+                        · {dropped} not delivered
+                      </span>
+                    )}
                   </td>
-                  <td className="text-right font-semibold text-text-primary">
-                    {unread ? "…" : down ? "—" : c.in}
-                  </td>
-                  <td className="text-right font-semibold text-text-primary">
-                    {unread ? "…" : down ? "—" : c.out}
-                  </td>
-                  <td className="text-right text-text-secondary">
-                    {unread ? "…" : down ? "—" : c.in + c.out}
-                    {partial && !unread && <span className="text-text-disabled">+</span>}
-                  </td>
+                  {/* EVERY FIGURE OPENS ITS OWN ROWS. A count on its own can
+                      only be trusted or doubted; the rows behind it can be
+                      checked. Asked for 16 Sep 2026 after "why does the sheet
+                      say 91 and the board say 78" took a database query to
+                      answer. */}
+                  <Cell figure={unread ? null : down ? "—" : c!.in}
+                    onOpen={() => setCell({ source: r.key, direction: "IN", label: `${r.label} · inward`, figure: c!.in })} />
+                  <Cell figure={unread ? null : down ? "—" : c!.out}
+                    onOpen={() => setCell({ source: r.key, direction: "OUT", label: `${r.label} · outward`, figure: c!.out })} />
+                  <Cell muted suffix={partial && !unread ? "+" : undefined}
+                    figure={unread ? null : down ? "—" : c!.in + c!.out}
+                    onOpen={() => setCell({ source: r.key, direction: "BOTH", label: `${r.label} · both ways`, figure: c!.in + c!.out })} />
                 </tr>
               );
             })}
@@ -179,6 +217,161 @@ export default function SourceScoreboard({ agg, city, loading, businessDate }: P
           "Not enough sources reported to compare."
         )}
       </div>
+
+      {cell && businessDate && (
+        <SourceRowsModal
+          cell={cell}
+          date={businessDate}
+          city={city}
+          onClose={() => setCell(null)}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * One figure in the table, as a button.
+ *
+ * A dash or a loading ellipsis is NOT clickable: there is nothing behind a
+ * figure that was never read, and a button that opens an empty modal teaches
+ * people the modal is broken rather than that the source was silent.
+ */
+function Cell({ figure, onOpen, muted, suffix }: {
+  figure: number | string | null;
+  onOpen: () => void;
+  muted?: boolean;
+  suffix?: string;
+}) {
+  const tone = muted ? "text-text-secondary" : "font-semibold text-text-primary";
+  if (figure === null) return <td className={`text-right ${tone}`}>…</td>;
+  if (typeof figure === "string") return <td className={`text-right ${tone}`}>{figure}</td>;
+  return (
+    <td className="text-right p-0">
+      <button
+        type="button"
+        onClick={onOpen}
+        title="Open the rows behind this figure, exactly as the source sent them"
+        className={`w-full h-full px-4 py-2.5 text-right cursor-pointer hover:text-accent hover:underline ${tone}`}
+      >
+        {figure}
+        {suffix && <span className="text-text-disabled">{suffix}</span>}
+      </button>
+    </td>
+  );
+}
+
+interface RawRow {
+  barcodeAsWritten: string;
+  direction: string;
+  status: string | null;
+  jobType: string | null;
+  soNumber: string | null;
+  ticketId: string | null;
+  customer: string | null;
+  product: string | null;
+  recordedAt: string | null;
+}
+
+/** The rows behind one figure, exactly as that book sent them. */
+function SourceRowsModal({ cell, date, city, onClose }: {
+  cell: OpenCell;
+  date: string;
+  city: string;
+  onClose: () => void;
+}) {
+  const [rows, setRows] = useState<RawRow[] | null>(null);
+  const [pruned, setPruned] = useState(false);
+  const [capped, setCapped] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const q = new URLSearchParams({ date, source: CODE[cell.source] });
+    if (cell.direction !== "BOTH") q.set("direction", cell.direction);
+    if (city !== "ALL") q.set("city", city);
+    fetch(`/api/source-rows?${q}`, { credentials: "same-origin" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (!alive) return;
+        if (j.error) setError(String(j.error));
+        else { setRows(j.rows ?? []); setPruned(!!j.pruned); setCapped(!!j.capped); }
+      })
+      .catch(() => { if (alive) setError("Could not reach the server."); });
+    return () => { alive = false; };
+  }, [cell, date, city]);
+
+  const istTime = (iso: string | null) =>
+    iso
+      ? new Date(iso).toLocaleString("en-IN", {
+          timeZone: "Asia/Kolkata", day: "2-digit", month: "short",
+          hour: "2-digit", minute: "2-digit", hour12: false,
+        })
+      : "—";
+
+  return (
+    <Modal open onClose={onClose} size="xl" icon="fact_check"
+      title={`${cell.label} · ${date}`}
+      subtitle="The rows exactly as this source sent them — before matching, folding or de-duplicating. This is why the figure is what it is.">
+      {error && <ErrorState what="these rows" detail={error} onRetry={() => location.reload()} compact />}
+      {!rows && !error && <p className="text-sm text-text-muted">Loading…</p>}
+      {rows && rows.length === 0 && (
+        <p className="text-sm text-text-muted">
+          {pruned
+            ? "No rows kept for this day. The raw feed is retained for about six weeks, so an older date shows nothing here — which is not the same as the source having reported nothing."
+            : "This source sent no rows for this day."}
+        </p>
+      )}
+      {rows && rows.length > 0 && (
+        <>
+          <p className="text-sm text-text-muted mb-3">
+            {rows.length} row{rows.length === 1 ? "" : "s"}
+            {capped && <span className="text-status-warning"> · showing the first 1,000 only</span>}
+            {/* THE ONE CELL THAT LEGITIMATELY DIFFERS. The sheet sends rows its
+                own outcome column marks "Not Delivered"; those are not
+                movements and are not counted. Saying so here is the difference
+                between a modal that explains the figure and one that appears to
+                contradict it. */}
+            {rows.length !== cell.figure && (
+              <span>
+                {" · "}the board counts <b className="text-text-primary">{cell.figure}</b> of these
+                as movements — the rest are rows this source marked as not delivered, or lines
+                with no barcode (see Outcome)
+              </span>
+            )}
+          </p>
+          <div className="overflow-x-auto border border-border rounded-control">
+            <table className="w-full text-sm border-collapse">
+              <thead className="bg-surface-elevated">
+                <tr>
+                  {["Way", "Barcode", "Product", "Customer", "SO", "Ticket", "Job type", "Outcome", "Recorded at"].map((h) => (
+                    <th key={h} className="text-left px-3 py-2 border border-border text-xs uppercase tracking-wide text-text-muted whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={`${r.barcodeAsWritten}-${i}`} className="hover:bg-surface-elevated">
+                    <td className="px-3 py-1.5 border border-border whitespace-nowrap">{r.direction === "IN" ? "Inward" : "Outward"}</td>
+                    <td className="px-3 py-1.5 border border-border font-mono whitespace-nowrap">{r.barcodeAsWritten || "—"}</td>
+                    <td className="px-3 py-1.5 border border-border">{r.product ?? "—"}</td>
+                    <td className="px-3 py-1.5 border border-border">{r.customer ?? "—"}</td>
+                    <td className="px-3 py-1.5 border border-border font-mono whitespace-nowrap">{r.soNumber ?? "—"}</td>
+                    <td className="px-3 py-1.5 border border-border font-mono whitespace-nowrap">{r.ticketId ?? "—"}</td>
+                    <td className="px-3 py-1.5 border border-border whitespace-nowrap">{r.jobType ?? "—"}</td>
+                    {/* Only the sheet carries an outcome (invariant 3); the
+                        other three hard-code "done" because each filters to
+                        completed rows upstream. Shown raw so a "Not Delivered"
+                        is visible as the sheet wrote it. */}
+                    <td className="px-3 py-1.5 border border-border whitespace-nowrap">{r.status ?? "—"}</td>
+                    <td className="px-3 py-1.5 border border-border whitespace-nowrap tabular-nums text-xs text-text-muted">{istTime(r.recordedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </Modal>
   );
 }

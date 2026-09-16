@@ -169,6 +169,23 @@ export interface CountLayer {
   dt_total: number;
   phys_sheet_match: boolean;
   phys_sheet_diff: number;
+  /**
+   * Sheet rows for this direction whose own outcome column says the task did
+   * NOT happen — "Not Delivered", a cancellation.
+   *
+   * Reported because their absence is otherwise invisible and reads as a bug.
+   * Delhi, 14 Sep 2026: the outward tab held 91 rows, 87 with barcodes, and the
+   * scoreboard said 78. The difference is these — a failed delivery is not a
+   * movement, and counting one would invent a dispatch to chase.
+   *
+   * TWO NUMBERS, because they answer different questions. `sheet_not_done` is
+   * what somebody reading the sheet counts. `sheet_dropped` is how many were
+   * actually removed: a row another book says completed is kept (done wins
+   * across sources), so the two differ whenever the sheet is out of step with
+   * the rest.
+   */
+  sheet_not_done: number;
+  sheet_dropped: number;
 }
 
 /**

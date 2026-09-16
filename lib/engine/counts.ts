@@ -6,7 +6,19 @@ import { normalizeStatus } from "./util";
 import { parseDate } from "./dates";
 import type { CountLayer, SourceRow } from "./types";
 
-export function computeCountLayer(rows: SourceRow[], runDate?: string): CountLayer {
+export function computeCountLayer(
+  rows: SourceRow[],
+  runDate?: string,
+  /**
+   * Sheet rows for this direction the pipeline removed before it got here, and
+   * how many the sheet had merely MARKED not-done. Passed in rather than
+   * derived, because by this point they are gone: run.ts drops them so a failed
+   * delivery cannot seed a phantom dispatch, and the count is the only thing
+   * left that explains the gap between a sheet somebody is reading and the
+   * figure on the dashboard.
+   */
+  notDone?: { marked: number; dropped: number }
+): CountLayer {
   const phys = rows.filter((r) => r.source === "PHYSICAL");
   const sheet = rows.filter((r) => r.source === "SHEET");
   const dt = rows.filter((r) => r.source === "DT");
@@ -60,5 +72,7 @@ export function computeCountLayer(rows: SourceRow[], runDate?: string): CountLay
     dt_total,
     phys_sheet_match: phys_total === sheet_total,
     phys_sheet_diff: phys_total - sheet_total,
+    sheet_not_done: notDone?.marked ?? 0,
+    sheet_dropped: notDone?.dropped ?? 0,
   };
 }

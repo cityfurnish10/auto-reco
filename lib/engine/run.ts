@@ -813,8 +813,22 @@ export function runReconciliation(
   const stamped: VarianceRowOut[] = variances.map((v) => ({ ...v, reported }));
 
   // Section 9 — count layer per direction.
-  const count_in = computeCountLayer(countByDir("IN"), runDate);
-  const count_out = computeCountLayer(countByDir("OUT"), runDate);
+  //
+  // The not-done figures travel separately because their rows are already gone
+  // by here — `working` excluded them. Without them the scoreboard's sheet
+  // column is a number nobody can reconcile against the sheet they are holding
+  // (Delhi 14 Sep: 91 rows on the outward tab, 78 on the dashboard).
+  const sheetNotDone = (dir: Direction) => ({
+    marked: preFilter.filter(
+      (r) => r.source === "SHEET" && r.direction === dir && normalizeStatus(r.status) === "not_done"
+    ).length,
+    // Only those actually removed. A row another book says completed is kept —
+    // done wins across sources — so this is the smaller of the two whenever the
+    // sheet disagrees with the rest.
+    dropped: notDoneRows.filter((r) => r.source === "SHEET" && r.direction === dir).length,
+  });
+  const count_in = computeCountLayer(countByDir("IN"), runDate, sheetNotDone("IN"));
+  const count_out = computeCountLayer(countByDir("OUT"), runDate, sheetNotDone("OUT"));
 
   // Summary.
   const real_variances = stamped.filter((v) => v.bucket === "REAL");

@@ -334,6 +334,11 @@ export interface SourceCount {
   out: number;
   /** The connector reported at all. A zero count alone cannot say this. */
   reported: boolean;
+  /**
+   * Rows this source said did not happen, left out of the counts beside them.
+   * Only the sheet carries an outcome, so only the sheet ever has these.
+   */
+  notDone?: { in: number; out: number };
 }
 
 /** A city the current run did not cover — every figure unknown, not zero. */

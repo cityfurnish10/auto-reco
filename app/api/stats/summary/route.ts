@@ -31,6 +31,12 @@ export interface SourceCount {
   in: number;
   out: number;
   reported: boolean;
+  /**
+   * Rows this source itself said did not happen, and were therefore left out
+   * of the counts beside them (migration 0048). Only the sheet carries an
+   * outcome, so only the sheet ever has these.
+   */
+  notDone?: { in: number; out: number };
 }
 
 interface CityAgg {
@@ -379,7 +385,7 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
       .from("run_city_stats")
       // One literal, however long: PostgREST infers the row type from the
       // string, and a concatenated one degrades every column to `unknown`.
-      .select("city, pp_box_count, consumable_count, movements, phys_in, phys_out, sheet_in, sheet_out, dt_in, dt_out, odoo_in, odoo_out, reported_p, reported_s, reported_d, reported_o")
+      .select("city, pp_box_count, consumable_count, movements, phys_in, phys_out, sheet_in, sheet_out, dt_in, dt_out, odoo_in, odoo_out, reported_p, reported_s, reported_d, reported_o, sheet_dropped_in, sheet_dropped_out")
       .eq("business_date", run.business_date),
     readLedger(),
     readCalendar(),
@@ -450,7 +456,12 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
     agg.movements = s.movements ?? 0;
     agg.sources = {
       gate: { in: s.phys_in ?? 0, out: s.phys_out ?? 0, reported: !!s.reported_p },
-      sheet: { in: s.sheet_in ?? 0, out: s.sheet_out ?? 0, reported: !!s.reported_s },
+      sheet: {
+        in: s.sheet_in ?? 0, out: s.sheet_out ?? 0, reported: !!s.reported_s,
+        // The rows the sheet said never happened. Shown so the figure beside
+        // it can be reconciled against the sheet somebody is reading.
+        notDone: { in: s.sheet_dropped_in ?? 0, out: s.sheet_dropped_out ?? 0 },
+      },
       dt: { in: s.dt_in ?? 0, out: s.dt_out ?? 0, reported: !!s.reported_d },
       odoo: { in: s.odoo_in ?? 0, out: s.odoo_out ?? 0, reported: !!s.reported_o },
     };

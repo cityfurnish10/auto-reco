@@ -807,6 +807,12 @@ export async function saveCityStats(
       reported_s: rep?.S ?? false,
       reported_d: rep?.D ?? false,
       reported_o: rep?.O ?? false,
+      // Why the sheet column is smaller than the sheet (0048). Without these
+      // the subtraction is invisible and the figure reads as stale.
+      sheet_not_done_in: c.count_in.sheet_not_done,
+      sheet_not_done_out: c.count_out.sheet_not_done,
+      sheet_dropped_in: c.count_in.sheet_dropped,
+      sheet_dropped_out: c.count_out.sheet_dropped,
     };
   });
   if (payload.length === 0) return 0;
@@ -821,6 +827,26 @@ export async function saveCityStats(
     // the WHOLE reconcile failed and produce no variances at all for the day,
     // purely because a cosmetic email column is missing.
     if (error.code === "42703" || /does not exist/i.test(error.message)) {
+      // STEP DOWN ONE MIGRATION AT A TIME. 0048's four columns are the newest,
+      // and dropping straight to the pre-0012 set would throw away the
+      // per-source counts the dashboard's scoreboard reads — turning a missing
+      // cosmetic column into a blank board for every city, for the window
+      // between a deploy and the migration being applied by hand.
+      const without0048 = payload.map((p) => {
+        const { sheet_not_done_in, sheet_not_done_out, sheet_dropped_in, sheet_dropped_out, ...rest } = p;
+        void sheet_not_done_in; void sheet_not_done_out; void sheet_dropped_in; void sheet_dropped_out;
+        return rest;
+      });
+      const mid = await db
+        .from("run_city_stats")
+        .upsert(without0048, { onConflict: "business_date,city" });
+      if (!mid.error) {
+        console.warn(
+          "[saveCityStats] migration 0048 not applied — the sheet's not-delivered breakdown was not stored; every other figure is intact."
+        );
+        return without0048.length;
+      }
+
       const legacy = payload.map((p) => ({
         run_id: p.run_id,
         business_date: p.business_date,
