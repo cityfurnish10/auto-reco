@@ -10,6 +10,7 @@ import { DashSection, DayStatus } from "./dashboard-sections";
 import { sourceLabel } from "@/lib/ui/source-names";
 import { variancePhrase } from "@/lib/ui/variance-phrases";
 import { VarianceName } from "@/components/variance-name";
+import { VarianceFlags } from "@/components/variance-flags";
 import InTransitSection from "./in-transit-section";
 import SourceScoreboard from "./source-scoreboard";
 import CountOnlyCard from "./count-only-card";
@@ -783,6 +784,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
               </div>
               {v.product && <p className="text-sm text-text-secondary">{v.product}</p>}
               <VarianceName name={v.variance_name} ctx={{ direction: v.direction, jobType: v.job_type, bucket: v.bucket, note: v.note }} className="block text-sm" />
+              <VarianceFlags flags={v.flags} />
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
                 <span>{v.business_date}</span>
                 <span>{v.city}</span>
@@ -957,6 +959,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                   <BookTick present={v.present_o} reported={v.reported_o} />
                   <td className="min-w-[240px]" title={v.note ?? ""}>
                     <VarianceName name={v.variance_name} ctx={{ direction: v.direction, jobType: v.job_type, bucket: v.bucket, note: v.note }} />
+                    <VarianceFlags flags={v.flags} />
                     <span className="block text-[11px] text-text-muted mt-0.5">
                       {v.direction === "IN" ? "Inward" : v.direction === "OUT" ? "Outward" : v.direction}
                       {v.priority === "High" && <span className="text-danger"> · urgent</span>}

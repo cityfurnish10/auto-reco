@@ -23,6 +23,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { jsonRoute } from "@/lib/api/json-route";
+import { attachFlags } from "@/lib/variances/attach-flags";
 import { createClient } from "@/lib/supabase/server";
 
 // Sortable keys, whitelisted — the value reaches PostgREST's order() as a
@@ -216,7 +217,10 @@ export const GET = jsonRoute("variances", async (req: NextRequest) => {
   }
 
   return NextResponse.json({
-    data,
+    // Each row carries its flags (ODOO PENDING, VENDOR RECEIPT, …) — see
+    // lib/variances/flags.ts. Worked out on read so a clock-based flag lapses
+    // on its own.
+    data: await attachFlags(data ?? []),
     page,
     pageSize,
     total: count ?? 0,

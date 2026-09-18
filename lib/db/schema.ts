@@ -137,6 +137,9 @@ export interface VarianceDB {
   reported_s?: boolean;
   reported_d?: boolean;
   reported_o?: boolean;
+  /** Known-reason labels (ODOO PENDING, VENDOR RECEIPT, …) attached by
+   *  /api/variances on read — lib/variances/flags.ts. Not a DB column. */
+  flags?: string[];
 
   created_at: string;
   updated_at: string;

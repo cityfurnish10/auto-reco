@@ -5,9 +5,13 @@
 // ruled off and handed over mid-afternoon — so a day's books are complete
 // shortly after 15:00 the following afternoon, not at midnight.
 //
+// FROM 13 SEP 2026 (calendar days): 17:00 IST on D+1 reconciles D, and 18:00
+// emails it — see reconcileTargetDate. What follows is the older 15:00-day
+// cadence, still what a pre-cutover date gets on re-run.
+//
 // Both jobs close the SAME day, minutes apart — but not the day that just shut.
 // REPORTING_LAG_DAYS (below) holds a day back so late Odoo postings land first,
-// so with the lag at 1 the cadence is:
+// so with the lag at 1 the cadence was:
 //
 //   20:00 IST on D+2  → reconcile D   (its window shut 29 hours earlier —
 //                        the 20:00 hour was moved from 16:30 on 2026-08-01:
@@ -22,8 +26,17 @@
 // is strict JSON and Vercel's schema rejects unknown keys, so the mapping is
 // recorded here instead:
 //
-//   "30 14 * * *"  = 14:30 UTC = 20:00 IST   /api/cron/reconcile
-//   "30 15 * * *"  = 15:30 UTC = 21:00 IST   /api/cron/email-digest
+//   "30 11 * * *"  = 11:30 UTC = 17:00 IST   /api/cron/reconcile
+//   "30 12 * * *"  = 12:30 UTC = 18:00 IST   /api/cron/email-digest
+//
+// MOVED 18 Sep 2026 from 20:00 / 21:00 (owner's decision). The ops sheet is
+// complete by 16:00 without fail and Odoo's window shuts at 15:00, so by 17:00
+// all four books hold the previous calendar day. The email is an hour behind,
+// not thirty minutes, because Hobby only promises a cron somewhere inside its
+// hour. Known costs, accepted: paper-register cities whose register lands
+// after 17:00 read "guard missing" until the re-check pass two days on, and a
+// day before a week-off is judged while Odoo's window is still open (those
+// rows carry the ODOO PENDING flag — lib/variances/flags.ts).
 //
 // A THIRD schedule is not available: Vercel Hobby caps at two crons and both
 // are used. Everything else rides one of these two — the scheduled-email queue

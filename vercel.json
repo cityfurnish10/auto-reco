@@ -6,11 +6,11 @@
   "crons": [
     {
       "path": "/api/cron/reconcile",
-      "schedule": "30 14 * * *"
+      "schedule": "30 11 * * *"
     },
     {
       "path": "/api/cron/email-digest",
-      "schedule": "30 15 * * *"
+      "schedule": "30 12 * * *"
     }
   ]
 }

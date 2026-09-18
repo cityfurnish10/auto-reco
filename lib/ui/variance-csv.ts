@@ -25,6 +25,7 @@ const COLUMNS: { header: string; get: (v: VarianceDB) => string | number | null 
   { header: "SO Number", get: (v) => v.so_number },
   { header: "Customer", get: (v) => v.customer },
   { header: "Variance", get: (v) => v.variance_name },
+  { header: "Flags", get: (v) => (v.flags ?? []).join("; ") },
   { header: "Priority", get: (v) => v.priority },
   { header: "Bucket", get: (v) => v.bucket },
   { header: "Status", get: (v) => v.status },

@@ -15,6 +15,7 @@
 // alone would show flagged rows that were never resolved at all.
 
 import { VarianceName } from "@/components/variance-name";
+import { VarianceFlags } from "@/components/variance-flags";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
 import { SourceBadge } from "@/components/source-badge";
@@ -290,6 +291,7 @@ export default function PendingListClient({ user }: { user: SessionUser }) {
               </div>
               {v.product && <p className="text-sm text-text-secondary">{v.product}</p>}
               <VarianceName name={v.variance_name} ctx={{ direction: v.direction, jobType: v.job_type, bucket: v.bucket, note: v.note }} className="block text-sm" />
+              <VarianceFlags flags={v.flags} />
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
                 {isAdmin && <span>{v.city}</span>}
                 <span>{v.business_date}</span>
@@ -395,6 +397,7 @@ export default function PendingListClient({ user }: { user: SessionUser }) {
                   <td className="text-text-secondary text-xs">{opsTypeLabel(v.job_type)}</td>
                   <td className="max-w-[220px]" title={v.note ?? ""}>
                     <VarianceName name={v.variance_name} ctx={{ direction: v.direction, jobType: v.job_type, bucket: v.bucket, note: v.note }} />
+                    <VarianceFlags flags={v.flags} />
                   </td>
                   <td className="text-text-secondary whitespace-nowrap">
                     {responsibleLabel(v.responsible)}
