@@ -31,6 +31,7 @@ import {
   daySpanToUtcWindow,
   dayToUtcWindow,
   utcToDayDate,
+  utcToOdooOutDate,
 } from "./ist-window";
 import { normalizeOdooWarehouse } from "./odoo-mapping";
 import { metabaseConfigured, runNativeSql } from "./metabase";
@@ -185,7 +186,13 @@ export const odooConnector: Connector = {
         // Business date, not calendar: this has to agree with the pull window
         // above, or a posting made after 15:00 would be pulled for one day and
         // then attributed to another.
-        createdOn: utcToDayDate(r.date as string | null),
+        // Which day this posting is evidence for. Outward uses the 15:00 window
+        // the team works to (utcToOdooOutDate); inward is posted within minutes
+        // and sits on the calendar day.
+        createdOn:
+          direction === "OUT"
+            ? utcToOdooOutDate(r.date as string | null)
+            : utcToDayDate(r.date as string | null),
         // `recordCreatedOn` = the IST calendar date this stock_move_line RECORD
         // was created in Odoo (create_date, NOT sml.date). Used ONLY by the
         // engine's "Odoo-only" flag to tell a genuine same-day movement the

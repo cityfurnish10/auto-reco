@@ -203,3 +203,42 @@ export function daySpanToUtcWindow(
     ? istDaySpanToUtcWindow(date, daysBefore, daysAfter)
     : businessDaySpanToUtcWindow(date, daysBefore, daysAfter);
 }
+
+
+// ── Odoo OUT: the 15:00 window, by the owner's process ──────────────────────
+//
+// Decided 18 Sep 2026. Delhi's team validates a day's dispatches in one batch
+// at lunchtime the NEXT day — measured, 59 of the 69 outward postings for the
+// 15th landed between 11:00 and 15:00 on the 16th. So Odoo's record of day D's
+// outward movements is its Out postings from D 15:00 to D+1 15:00, checked
+// against Odoo's own Moves History (Done · Movement Type = Out · Date between)
+// and matched to the row.
+//
+// OUT ONLY. Inward is posted within minutes of the goods arriving (median 0.1
+// hours after the gate scan), so it belongs on the calendar day with the other
+// three books.
+//
+// THE 30-SECOND GRACE. A batch submitted at 15:00 is stamped a few seconds
+// later: on the 16th, postings landed at 15:00:13 and 15:00:58. A sharp cut
+// gives 69 where the owner's Odoo filter showed 70; the whole 15:00 minute
+// gives 71. Thirty seconds keeps the posting that was plainly part of the 3pm
+// batch and sends the next one to the following day. The same instant ends one
+// day and starts the next, so no posting is ever counted twice.
+export const ODOO_OUT_DAY_START_MS = (15 * 60 * 60 + 30) * 1000;
+
+/**
+ * A posting time → the day whose OUTWARD movements it is Odoo's evidence for.
+ *
+ * Only for dates on the calendar definition. Before the 13 Sep 2026 cutover the
+ * whole engine ran on the 15:00 day, which already treated Odoo this way.
+ */
+export function utcToOdooOutDate(
+  value: string | number | Date | null | undefined
+): string | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return undefined;
+  const shifted = utcToIstDate(new Date(d.getTime() - ODOO_OUT_DAY_START_MS));
+  if (shifted === undefined) return undefined;
+  return usesCalendarDay(shifted) ? shifted : utcToBusinessDate(value);
+}
