@@ -49,27 +49,35 @@ describe("foldCalendar", () => {
     expect(cal.weeklyOff.BANGALORE).toBeUndefined();
   });
 
-  it("closes a city only when EVERY warehouse feeding it closes", () => {
-    // Gurgaon and Noida are different buildings that both normalise to DELHI.
-    // One shut and one open is a working city; marking it off would suppress
-    // real findings for the warehouse that ran all day.
-    const split = foldCalendar(
-      [
-        { city: "Gurgaon", status: true, "week day": "Thu" },
-        { city: "Noida", status: false, "week day": "Thu" },
-      ],
-      []
-    );
-    expect(split.weeklyOff.DELHI).toBeUndefined();
-
-    const both = foldCalendar(
+  it("reads each warehouse's OWN building, never the places it delivers to", () => {
+    // The live rows, 18 Sep 2026. Jaipur is served from the Delhi building and
+    // is closed every day but Thursday; Noida closes Thursdays. Chennai and
+    // Hosur are served from Bangalore and close most of the week. Folding those
+    // catchments in made Delhi read as shut all week and Bangalore as shut
+    // every day except Thursday — the reverse of DT's own slots page.
+    // (An earlier version of this test required EVERY feeding building to
+    // close; that rule is what let the catchments in. Noida's Odoo warehouse is
+    // dormant — Delhi's movements all run through Gurgaon.)
+    const live = foldCalendar(
       [
         { city: "Gurgaon", status: true, "week day": "Thu" },
         { city: "Noida", status: true, "week day": "Thu" },
+        ...["Mon", "Tue", "Wed", "Fri", "Sat", "Sun"].map((d) => ({ city: "Jaipur", status: true, "week day": d })),
+        { city: "Bangalore", status: false, "week day": "Thu" },
+        ...["Mon", "Tue", "Wed", "Thu", "Fri", "Sun"].map((d) => ({ city: "Chennai", status: true, "week day": d })),
+        { city: "Pune", status: true, "week day": "Thu" },
       ],
-      []
+      [
+        { date: "14/9/2026", status: true, city: ["Pune", "Mumbai"] },
+        { date: "1/9/2026", status: true, city: ["Jaipur"] },
+      ]
     );
-    expect(both.weeklyOff.DELHI).toEqual([4]);
+    expect(live.weeklyOff.DELHI).toEqual([4]);
+    expect(live.weeklyOff.BANGALORE).toBeUndefined();
+    expect(live.weeklyOff.PUNE).toEqual([4]);
+    // A Jaipur-only holiday does not shut the Delhi building.
+    expect(live.holidays.DELHI).toBeUndefined();
+    expect(live.holidays.PUNE).toEqual(["2026-09-14"]);
   });
 
   it("keeps only active holidays, and spreads them across every listed city", () => {

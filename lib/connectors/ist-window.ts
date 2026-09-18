@@ -233,12 +233,34 @@ export const ODOO_OUT_DAY_START_MS = (15 * 60 * 60 + 30) * 1000;
  * whole engine ran on the 15:00 day, which already treated Odoo this way.
  */
 export function utcToOdooOutDate(
-  value: string | number | Date | null | undefined
+  value: string | number | Date | null | undefined,
+  /**
+   * Was the warehouse open on this date? A closed day has no 3pm handover, so
+   * the window runs on to 3pm of the next day the warehouse opens — decided
+   * 18 Sep 2026 for Delhi's 16th, with the 17th a Thursday week-off: its Odoo
+   * Out runs to 3pm on the 18th. Omitted = every day open.
+   */
+  isOpen?: (date: string) => boolean
 ): string | undefined {
   if (value === null || value === undefined || value === "") return undefined;
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return undefined;
-  const shifted = utcToIstDate(new Date(d.getTime() - ODOO_OUT_DAY_START_MS));
-  if (shifted === undefined) return undefined;
-  return usesCalendarDay(shifted) ? shifted : utcToBusinessDate(value);
+  let day = utcToIstDate(new Date(d.getTime() - ODOO_OUT_DAY_START_MS));
+  if (day === undefined) return undefined;
+  if (!usesCalendarDay(day)) return utcToBusinessDate(value);
+  // Step back over closed days to the last day that had movements. Bounded:
+  // a week of closures in a row is a calendar fault, not a long weekend, and
+  // must not walk a posting back across the cutover.
+  for (let i = 0; i < 7 && isOpen && !isOpen(day); i++) {
+    const prev = previousDate(day);
+    if (!usesCalendarDay(prev)) break;
+    day = prev;
+  }
+  return day;
+}
+
+/** "2026-09-17" → "2026-09-16". */
+function previousDate(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d) - DAY_MS).toISOString().slice(0, 10);
 }

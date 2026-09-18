@@ -77,6 +77,34 @@ interface MasterRow {
  * Gurgaon does not, DELHI still moves stock, and marking the city shut would
  * suppress real findings for a warehouse that was open all day.
  */
+/**
+ * The DT city name of each warehouse BUILDING — the only row whose opening
+ * hours are that warehouse's opening hours.
+ *
+ * THE BUG THIS FIXES (18 Sep 2026). The fold used normalizeCity, which maps
+ * every place a warehouse DELIVERS to onto that warehouse — right for a
+ * delivery, wrong for a calendar. Jaipur is served from the Delhi building and
+ * is closed every day but Thursday; Noida, Karnal and Panipat close Thursdays.
+ * Folded together, every weekday had a "closed" row and Delhi read as shut all
+ * week. Chennai and Hosur did the same to Bangalore, which read as shut every
+ * day except Thursday — the one day DT says it never closes. DT's own slots
+ * page was right throughout; the fold was reading the wrong buildings.
+ */
+const OWN_BUILDING: Record<City, string> = {
+  DELHI: "gurgaon",
+  MUMBAI: "mumbai",
+  PUNE: "pune",
+  HYDERABAD: "hyderabad",
+  BANGALORE: "bangalore",
+};
+
+/** The warehouse whose own building this DT city row describes, or null. */
+function buildingCity(raw: unknown): City | null {
+  const city = normalizeCity(raw);
+  if (!city) return null;
+  return String(raw ?? "").trim().toLowerCase() === OWN_BUILDING[city] ? city : null;
+}
+
 export function foldCalendar(
   weeklyOffRows: MasterRow[],
   holidayRows: MasterRow[]
@@ -84,7 +112,7 @@ export function foldCalendar(
   // city -> weekday -> { closed: how many warehouses close, total: how many exist }
   const weekTally = new Map<City, Map<number, { closed: number; total: number }>>();
   for (const r of weeklyOffRows) {
-    const city = normalizeCity(r.city);
+    const city = buildingCity(r.city);
     const day = WEEKDAY_INDEX[String(r["week day"] ?? "").trim().slice(0, 3).toLowerCase()];
     if (!city || day === undefined) continue;
     const perCity = weekTally.get(city) ?? new Map();
@@ -111,7 +139,8 @@ export function foldCalendar(
     if (!iso) continue;
     const cities = Array.isArray(r.city) ? r.city : [r.city];
     for (const raw of cities) {
-      const city = normalizeCity(raw);
+      // Same rule for a one-off closure: a Jaipur holiday does not shut Delhi.
+      const city = buildingCity(raw);
       if (!city) continue;
       const set = holidayTally.get(city) ?? new Set<string>();
       set.add(iso);

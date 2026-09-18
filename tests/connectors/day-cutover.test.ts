@@ -113,3 +113,22 @@ describe("Odoo Out — the team's 3pm window", () => {
     expect(utcToOdooOutDate(at("14:59:59"))).toBe("2026-09-15");
   });
 });
+
+describe("Odoo Out — a closed day moves the window's end", () => {
+  // Delhi, 16 Sep 2026 (Wed). The 17th was the Thursday week-off, so the 16th's
+  // dispatches were validated through to 3pm on the 18th: 81 postings, against
+  // 84 outward scans at the gate.
+  it("carries postings on and after a week-off back to the last open day", async () => {
+    const { utcToOdooOutDate } = await import("../../lib/connectors/ist-window");
+    const open = (d: string) => d !== "2026-09-17";
+    expect(utcToOdooOutDate(ist("2026-09-17", "11:00"), open)).toBe("2026-09-16");
+    expect(utcToOdooOutDate(ist("2026-09-17", "18:00"), open)).toBe("2026-09-16");
+    expect(utcToOdooOutDate(ist("2026-09-18", "14:59"), open)).toBe("2026-09-16");
+    expect(utcToOdooOutDate(ist("2026-09-18", "15:01"), open)).toBe("2026-09-18");
+  });
+
+  it("changes nothing when every day is open", async () => {
+    const { utcToOdooOutDate } = await import("../../lib/connectors/ist-window");
+    expect(utcToOdooOutDate(ist("2026-09-17", "18:00"), () => true)).toBe("2026-09-17");
+  });
+});

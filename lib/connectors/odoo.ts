@@ -34,6 +34,9 @@ import {
   utcToOdooOutDate,
 } from "./ist-window";
 import { normalizeOdooWarehouse } from "./odoo-mapping";
+import { createAdminClient } from "../supabase/admin";
+import { isCityClosed, type ClosureCalendar } from "../engine/schedule";
+import { CITIES } from "../sample-data";
 import { metabaseConfigured, runNativeSql } from "./metabase";
 
 // sml.date is the POSTING timestamp (Odoo stamps it at validation), not the
@@ -118,6 +121,30 @@ function str(v: unknown): string | undefined {
   return s === "" ? undefined : s;
 }
 
+/**
+ * The closure calendar, as mirrored into Supabase at the start of the run
+ * (pipeline step 1b, before any connector pulls). Needed here because a closed
+ * day moves the end of the Odoo Out window. Null on any failure — the engine's
+ * hardcoded week-offs then apply, which is what every run did before 0019.
+ */
+async function loadClosureCalendar(): Promise<ClosureCalendar | null> {
+  try {
+    const { data, error } = await createAdminClient()
+      .from("warehouse_calendar")
+      .select("city, weekday, holiday_date");
+    if (error || !data?.length) return null;
+    const weeklyOff: Record<string, number[]> = {};
+    const holidays: Record<string, string[]> = {};
+    for (const r of data as { city: string; weekday: number | null; holiday_date: string | null }[]) {
+      if (r.weekday !== null && r.weekday !== undefined) (weeklyOff[r.city] ??= []).push(r.weekday);
+      else if (r.holiday_date) (holidays[r.city] ??= []).push(r.holiday_date);
+    }
+    return { weeklyOff, holidays } as ClosureCalendar;
+  } catch {
+    return null;
+  }
+}
+
 export const odooConnector: Connector = {
   source: "ODOO",
   label: "Odoo ERP",
@@ -134,10 +161,20 @@ export const odooConnector: Connector = {
     // a PULL window either side of the day, because sml.date is a posting time
     // and a movement is routinely posted after its day has ended; which day a
     // posting is EVIDENCE for is decided by utcToDayDate below.
+    // A closed day after the run date pushes the Out window's end to 3pm of the
+    // next open day, so the pull has to reach that far. Widest across cities,
+    // because one query serves all five.
+    const cal = await loadClosureCalendar();
+    let closedAfter = 0;
+    for (let k = 1; k <= 4; k++) {
+      const d = new Date(Date.parse(runDate + "T00:00:00Z") + k * 86_400_000).toISOString().slice(0, 10);
+      if (!CITIES.some((c) => isCityClosed(c, d, cal))) break;
+      closedAfter = k;
+    }
     const { startUtc, endUtcExclusive } = daySpanToUtcWindow(
       runDate,
       POSTING_DAYS_BEFORE,
-      POSTING_DAYS_AFTER
+      POSTING_DAYS_AFTER + closedAfter
     );
     const table = await runNativeSql(dbId, buildQuery(startUtc, endUtcExclusive));
 
@@ -191,7 +228,7 @@ export const odooConnector: Connector = {
         // and sits on the calendar day.
         createdOn:
           direction === "OUT"
-            ? utcToOdooOutDate(r.date as string | null)
+            ? utcToOdooOutDate(r.date as string | null, (d) => !isCityClosed(city, d, cal))
             : utcToDayDate(r.date as string | null),
         // `recordCreatedOn` = the IST calendar date this stock_move_line RECORD
         // was created in Odoo (create_date, NOT sml.date). Used ONLY by the
