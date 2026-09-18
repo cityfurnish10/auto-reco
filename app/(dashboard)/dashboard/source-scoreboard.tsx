@@ -116,7 +116,9 @@ export default function SourceScoreboard({ agg, city, loading, businessDate, day
               business date <b className="text-text-secondary">{businessDate}</b> ·{" "}
               {/* A run from before 0049 carries no stamp; every such run used
                   the 15:00 rule, so that is the right fallback. */}
-              {dayDefinition === "calendar" ? "calendar day, midnight to midnight" : "3pm to 3pm"}
+              {dayDefinition === "calendar"
+                ? "calendar day · Odoo 3pm to 3pm, past any week-off"
+                : "3pm to 3pm"}
             </>
           ) : (
             "movements recorded for the day"

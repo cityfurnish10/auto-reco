@@ -214,9 +214,11 @@ export function daySpanToUtcWindow(
 // against Odoo's own Moves History (Done · Movement Type = Out · Date between)
 // and matched to the row.
 //
-// OUT ONLY. Inward is posted within minutes of the goods arriving (median 0.1
-// hours after the gate scan), so it belongs on the calendar day with the other
-// three books.
+// BOTH DIRECTIONS (widened from Out-only on 18 Sep 2026). Inward is posted
+// within minutes of arriving, so on its own it would sit on the calendar day —
+// but the owner reads Odoo's Moves History with one window for both, and Delhi's
+// inward for the 16th read 35 there against 30 on the calendar day. One window,
+// both ways, matches what Odoo shows.
 //
 // THE 30-SECOND GRACE. A batch submitted at 15:00 is stamped a few seconds
 // later: on the 16th, postings landed at 15:00:13 and 15:00:58. A sharp cut
@@ -251,12 +253,19 @@ export function utcToOdooOutDate(
   // Step back over closed days to the last day that had movements. Bounded:
   // a week of closures in a row is a calendar fault, not a long weekend, and
   // must not walk a posting back across the cutover.
-  for (let i = 0; i < 7 && isOpen && !isOpen(day); i++) {
-    const prev = previousDate(day);
+  // And if no open day turns up within the week, the calendar — not the
+  // posting — is wrong: keep the day the posting fell on. A calendar reading a
+  // warehouse as shut all week once filed every Delhi Out posting under the
+  // cutover date (18 Sep 2026); a single wrong input must not do that again.
+  let walked = day;
+  let found = !isOpen || isOpen(walked);
+  for (let i = 0; i < 7 && !found; i++) {
+    const prev = previousDate(walked);
     if (!usesCalendarDay(prev)) break;
-    day = prev;
+    walked = prev;
+    found = isOpen!(walked);
   }
-  return day;
+  return found ? walked : day;
 }
 
 /** "2026-09-17" → "2026-09-16". */

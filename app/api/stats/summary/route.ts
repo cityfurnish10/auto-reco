@@ -587,6 +587,10 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
       status: run.status,
       created_at: run.created_at,
       completed_at: run.completed_at,
+      // What business_date meant for this run (0049). Stamped on every run
+      // since the 13 Sep cutover and, until 18 Sep 2026, never passed on — so
+      // the scoreboard fell back to "3pm to 3pm" on calendar days.
+      day_definition: (run as { day_definition?: string }).day_definition ?? "business_15",
     },
     usedFallbackRun,
     calendar,

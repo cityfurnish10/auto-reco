@@ -223,13 +223,13 @@ export const odooConnector: Connector = {
         // Business date, not calendar: this has to agree with the pull window
         // above, or a posting made after 15:00 would be pulled for one day and
         // then attributed to another.
-        // Which day this posting is evidence for. Outward uses the 15:00 window
-        // the team works to (utcToOdooOutDate); inward is posted within minutes
-        // and sits on the calendar day.
-        createdOn:
-          direction === "OUT"
-            ? utcToOdooOutDate(r.date as string | null, (d) => !isCityClosed(city, d, cal))
-            : utcToDayDate(r.date as string | null),
+        // Which day this posting is evidence for: the 15:00 window the team
+        // works to, extended over week-offs — BOTH directions. Inward was on
+        // the calendar day until 18 Sep 2026, when the owner's Odoo check for
+        // Delhi's 16th (Done · In · GUR · 16 Sep 15:00 → 18 Sep 15:00) showed 35
+        // against our 30. The same window, both ways, is what Odoo's own
+        // Moves History is read with.
+        createdOn: utcToOdooOutDate(r.date as string | null, (d) => !isCityClosed(city, d, cal)),
         // `recordCreatedOn` = the IST calendar date this stock_move_line RECORD
         // was created in Odoo (create_date, NOT sml.date). Used ONLY by the
         // engine's "Odoo-only" flag to tell a genuine same-day movement the
