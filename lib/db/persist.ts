@@ -784,6 +784,16 @@ export async function resolveStaleOpenVariances(
 // Per-city rollup for the leaderboard (movements = accuracy denominator,
 // real_count = numerator, as-found at reconcile time). Upsert on
 // (business_date, city) so a re-run of a date overwrites rather than duplicates.
+/** A write that failed only because a hand-applied migration has not landed. */
+function isMissingColumnError(e: { code?: string; message?: string } | null | undefined): boolean {
+  if (!e) return false;
+  return (
+    e.code === "42703" ||
+    e.code === "PGRST204" ||
+    /does not exist|could not find/i.test(e.message ?? "")
+  );
+}
+
 export async function saveCityStats(
   db: DB,
   runId: string,
@@ -842,7 +852,12 @@ export async function saveCityStats(
     // this runs inside the nightly pipeline, so a hard failure here would mark
     // the WHOLE reconcile failed and produce no variances at all for the day,
     // purely because a cosmetic email column is missing.
-    if (error.code === "42703" || /does not exist/i.test(error.message)) {
+    // Postgres says 42703 / "does not exist"; PostgREST says PGRST204 / "Could
+    // not find the 'x' column ... in the schema cache". Matching only the first
+    // pair is how a missing 0048 failed an entire manual run on 18 Sep 2026 —
+    // the step-down below existed and never fired, because the error arrived
+    // in PostgREST's wording. createRun has always matched both; this now does.
+    if (isMissingColumnError(error)) {
       // STEP DOWN ONE MIGRATION AT A TIME. 0048's four columns are the newest,
       // and dropping straight to the pre-0012 set would throw away the
       // per-source counts the dashboard's scoreboard reads — turning a missing

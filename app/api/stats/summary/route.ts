@@ -379,14 +379,29 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
     }
   };
 
-  const [varRes, cityStatsRes, ledgerRows, calRows, gateCountRows] = await Promise.all([
-    readVariances(),
-    supabase
+  // The 0048 columns first, then without them. Migrations are applied by hand
+  // (trap 3), and on 18 Sep 2026 an unapplied 0048 made this whole read fail —
+  // every source on the scoreboard fell back to "No data" for every city,
+  // because one breakdown column did not exist yet. The breakdown is a nicety;
+  // the counts beside it are not.
+  const readCityStats = async () => {
+    const full = await supabase
       .from("run_city_stats")
       // One literal, however long: PostgREST infers the row type from the
       // string, and a concatenated one degrades every column to `unknown`.
       .select("city, pp_box_count, consumable_count, movements, phys_in, phys_out, sheet_in, sheet_out, dt_in, dt_out, odoo_in, odoo_out, reported_p, reported_s, reported_d, reported_o, sheet_dropped_in, sheet_dropped_out")
-      .eq("business_date", run.business_date),
+      .eq("business_date", run.business_date);
+    if (!full.error) return full;
+    const base = await supabase
+      .from("run_city_stats")
+      .select("city, pp_box_count, consumable_count, movements, phys_in, phys_out, sheet_in, sheet_out, dt_in, dt_out, odoo_in, odoo_out, reported_p, reported_s, reported_d, reported_o")
+      .eq("business_date", run.business_date);
+    return base as unknown as typeof full;
+  };
+
+  const [varRes, cityStatsRes, ledgerRows, calRows, gateCountRows] = await Promise.all([
+    readVariances(),
+    readCityStats(),
     readLedger(),
     readCalendar(),
     readGateCounts(),
