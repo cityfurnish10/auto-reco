@@ -689,6 +689,34 @@ function downloadTripCsv(trip: Trip) {
  * row whose photograph is recorded but missing from storage is a hole in the
  * evidence somebody should know about.
  */
+/**
+ * In place of a photo that cannot be shown. Three different facts, and a
+ * manager must not confuse them: none was taken; one was taken and the file
+ * never reached the server (the phone gave up uploading — 7 such photos from
+ * 12–13 Sep 2026); or the server could not be reached just now.
+ */
+function PhotoNotice({ kind, detail, compact }: {
+  kind: "not_taken" | "not_uploaded" | "error"; detail?: string; compact?: boolean;
+}) {
+  const text = {
+    not_taken: { title: "No photo taken", sub: "Nothing was photographed for this record." },
+    not_uploaded: { title: "Photo not uploaded", sub: "The phone recorded a photo, but the file never reached the server. It cannot be recovered from here." },
+    error: { title: "Photo could not be loaded", sub: detail ?? "Try again in a moment." },
+  }[kind];
+  const warn = kind !== "not_taken";
+  return (
+    <div className={`w-full ${compact ? "h-44" : "py-10"} rounded-control border border-dashed ${warn ? "border-warning/50" : "border-border"} bg-surface-elevated grid place-items-center text-center px-4`}>
+      <div>
+        <span className={`inline-flex ${warn ? "text-warning" : "text-text-muted"}`}>
+          <Icon name={warn ? "warning" : "camera"} size={compact ? 20 : 26} />
+        </span>
+        <p className={`mt-1.5 font-semibold ${compact ? "text-sm" : "text-base"} ${warn ? "text-warning" : "text-text-secondary"}`}>{text.title}</p>
+        <p className="text-xs text-text-muted mt-0.5 max-w-xs mx-auto">{text.sub}</p>
+      </div>
+    </div>
+  );
+}
+
 function PhotoViewer({ photo, onClose }: {
   /** An item photo (scanId) or an attendance selfie (checkId). */
   photo: { scanId?: string; checkId?: string; tripId?: string; label: string } | null; onClose: () => void;
@@ -717,10 +745,13 @@ function PhotoViewer({ photo, onClose }: {
     <Modal open onClose={onClose} title="Photo" subtitle={photo.label}
            size="md" level="stacked">
       {problem ? (
-        <p className="text-sm text-text-muted">{problem}</p>
+        <PhotoNotice
+          kind={/no photo/i.test(problem) ? "not_taken" : /missing|not found|could not be loaded/i.test(problem) ? "not_uploaded" : "error"}
+          detail={problem} />
       ) : url ? (
         /* eslint-disable-next-line @next/next/no-img-element -- a short-lived signed storage URL; next/image cannot optimise what it cannot refetch */
-        <img src={url} alt={photo.label} className="w-full rounded-control border border-border" />
+        <img src={url} alt={photo.label} className="w-full rounded-control border border-border"
+             onError={() => setProblem("the photo could not be loaded")} />
       ) : (
         <p className="text-sm text-text-muted">Loading…</p>
       )}
@@ -1682,7 +1713,7 @@ function DeviceList({ city, refresh }: { city: string | null; refresh: string })
 interface Check {
   id: string; guardId: string; guardName: string; city: string; trigger: string; capturedAt: string;
   matchScore: number | null; verdict: string; reviewState: string;
-  geoOk: boolean | null; selfieUrl: string | null;
+  geoOk: boolean | null; selfieUrl: string | null; hadSelfie?: boolean;
 }
 
 /**
@@ -2031,9 +2062,7 @@ function Reviews() {
                    URL that expires; next/image would cache a face photo. */
                 ? <img src={c.selfieUrl} alt={`Photo check for ${c.guardName}`}
                        className="w-full h-44 object-cover rounded-control" />
-                : <div className="w-full h-44 rounded-control bg-surface-elevated grid place-items-center text-text-muted text-sm">
-                    Photo expired or not taken
-                  </div>}
+                : <PhotoNotice kind={c.hadSelfie ? "not_uploaded" : "not_taken"} compact />}
               <div>
                 <div className="flex items-center gap-2">
                   <b className="text-text-primary">{c.guardName}</b>

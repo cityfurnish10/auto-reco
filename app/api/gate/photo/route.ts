@@ -75,7 +75,7 @@ export const GET = jsonRoute("gate/photo", async (req: NextRequest) => {
   if (!url) {
     return NextResponse.json({
       url: null,
-      reason: "the photo is recorded but the file is missing from storage",
+      reason: "the photo is recorded but the file is missing from storage — not uploaded",
     });
   }
   return NextResponse.json({ url }, { headers: { "Cache-Control": "no-store" } });

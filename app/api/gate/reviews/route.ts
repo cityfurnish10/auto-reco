@@ -78,6 +78,9 @@ export const GET = jsonRoute("gate/reviews", async (req: NextRequest) => {
       selfieUrl: r.selfie_path
         ? await signPhotoRead(admin, ATTENDANCE_BUCKET, r.selfie_path as string, 1800)
         : null,
+      // The record says a photo was taken. With no URL beside it, the file
+      // never reached storage — the screen says "not uploaded", not "not taken".
+      hadSelfie: !!r.selfie_path,
     }))
   );
   return NextResponse.json({ checks });
