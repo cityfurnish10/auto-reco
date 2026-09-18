@@ -31,6 +31,14 @@ export interface SourceRow {
   createdOn?: string | number; // Odoo posting date (Section 4 window key)
   recordCreatedOn?: string | number; // Odoo create_date (record birth; Odoo-only flag)
   movementDate?: string | number; // Odoo fallback
+  /**
+   * Odoo only: the sale order's Reference# when it is an ORDER TRANSFER
+   * ("OT-…"). A transfer re-points a unit between orders inside Odoo; nothing
+   * crosses the gate, so it can never be matched automatically. Kept rather
+   * than dropped (owner's decision, 18 Sep 2026) and raised as an OT CASE for
+   * the team to map by hand — never counted as a movement.
+   */
+  orderTransferRef?: string;
 }
 
 export type NormStatus =

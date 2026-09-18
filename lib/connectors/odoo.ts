@@ -203,10 +203,15 @@ export const odooConnector: Connector = {
       // Dropped here rather than in SQL so the count is observable, and dropped
       // at the connector rather than suppressed in the engine because there is
       // nothing to reconcile — the row should never have been a movement.
-      if (isOrderTransfer(r.reference_no)) {
-        orderTransfers++;
-        continue;
-      }
+      //
+      // KEPT, FLAGGED, since 18 Sep 2026. Dropping them silently meant the
+      // owner's Odoo screen read 84 where the tool read 81 and nothing said
+      // why. The engine now raises each as an OT CASE for manual mapping and
+      // leaves it out of every count.
+      const orderTransferRef = isOrderTransfer(r.reference_no)
+        ? String(r.reference_no).trim()
+        : undefined;
+      if (orderTransferRef) orderTransfers++;
 
       rows.push({
         source: "ODOO",
@@ -248,6 +253,7 @@ export const odooConnector: Connector = {
         // MODEL.md §10): these values don't map to the engine's REPAIR/REPLACE/
         // NEW_RENTAL vocabulary yet — passed through verbatim until confirmed.
         jobType: str(r.job_type),
+        ...(orderTransferRef ? { orderTransferRef } : {}),
       });
     }
     if (orderTransfers > 0) {
@@ -255,7 +261,7 @@ export const odooConnector: Connector = {
       // ever jumps, someone has started using order transfers for something
       // that IS a physical movement, and the engine would stop seeing it.
       console.info(
-        `[odoo] skipped ${orderTransfers} order-transfer line(s) for ${runDate} (Reference# starts OT-) — reassignments inside Odoo, no physical movement.`
+        `[odoo] ${orderTransfers} order-transfer line(s) for ${runDate} (Reference# starts OT-) — raised as OT CASE for manual mapping, not counted as movements.`
       );
     }
     return rows;

@@ -108,6 +108,14 @@ export const VARIANCE_META: Record<string, VarianceMeta> = {
     responsible: "odoo_team",
     note: "The floor confirmed this movement for the day, and the Odoo entry does exist — it was just posted a day late (the 1-day buffer picked it up). No action; the entry is made.",
   },
+  [VARIANCE.OT_CASE]: {
+    // REAL, because somebody has to act: the transfer re-points a unit between
+    // orders inside Odoo and no floor book can confirm it. Odoo team, because
+    // only Odoo holds the two orders it links.
+    bucket: "REAL",
+    responsible: "odoo_team",
+    note: "Order transfer in Odoo (Reference# OT-…) — nothing moved through the gate. Map it to the unit and order it re-points, then close.",
+  },
   [VARIANCE.ODOO_OUT_PENDING]: {
     // INFO, and it replaces a REAL "not in Odoo". Odoo DOES hold this dispatch —
     // an Out line reserved against the customer's sale order — and the gate or

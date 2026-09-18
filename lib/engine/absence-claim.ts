@@ -63,6 +63,8 @@ export const ABSENCE_CLAIM: Record<string, readonly SourceKey[]> = {
   [VARIANCE.ODOO_POSTED_LATE]: [],
   // Odoo is not absent — its Out is reserved, just not validated.
   [VARIANCE.ODOO_OUT_PENDING]: [],
+  // Not an absence at all — a transfer inside Odoo waiting to be mapped.
+  [VARIANCE.OT_CASE]: [],
   [VARIANCE.OPS_ODOO_NO_DT]: ["D"],
   [VARIANCE.DT_ODOO_NO_SHEET]: ["S"],
   [VARIANCE.GATE_OPS_ODOO_NO_DT]: ["D"],

@@ -21,6 +21,10 @@ export const VARIANCE = {
   FAILED_DELIVERY: "Failed Delivery — Return Not Logged Inward",
   SHEET_NOT_DONE_BUT_POSTED: "Ops Sheet Says Not Delivered — Posted Done in DT/Odoo",
   ODOO_ONLY_TODAY: "Odoo Entry Created Today — No Gate / Ops / DT Record",
+  // An Odoo line whose sale order is an ORDER TRANSFER (Reference# "OT-…").
+  // Cannot be matched automatically — nothing crosses the gate — so it is
+  // raised on its own for the team to map by hand. Owner's call, 18 Sep 2026.
+  OT_CASE: "OT CASE — Order Transfer in Odoo, Map Manually",
 
   // ── INFO — audit / posting-lag, no chase ───────────────────────────────
   // Measured 2026-07-20: 220/230 of these ALSO had a DT scan — Sheet+DT+Odoo,

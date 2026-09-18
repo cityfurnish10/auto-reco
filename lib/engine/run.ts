@@ -11,7 +11,7 @@ import {
   isValidBarcode,
   looksUnresolvedItem,
 } from "./barcode";
-import { applyBucket } from "./buckets";
+import { applyBucket, VARIANCE_META } from "./buckets";
 import { computeCountLayer } from "./counts";
 import { addDays, deriveRunDate, parseDate } from "./dates";
 import { detectDirectionConflicts } from "./direction-conflict";
@@ -131,7 +131,13 @@ export function runReconciliation(
   }
 
   // Section 4 — window the Odoo rows for this city (posting-date based).
-  const odooRaw = rows.filter((r) => r.source === "ODOO");
+  // ORDER TRANSFERS leave the reconciliation here and come back as OT CASEs.
+  // Nothing crosses the gate for a transfer, so matched normally it would read
+  // as "Odoo only" and send someone hunting a unit that never moved; dropped
+  // (as it was until 18 Sep 2026) it made Odoo's own screen read higher than
+  // the tool with nothing saying why. Raised once, on the day it posted.
+  const otRows = rows.filter((r) => r.source === "ODOO" && !!r.orderTransferRef);
+  const odooRaw = rows.filter((r) => r.source === "ODOO" && !r.orderTransferRef);
   const odooWindowed = filterOdooWindow(odooRaw, city, runDate, warnings);
   const nonOdoo = rows.filter((r) => r.source !== "ODOO");
 
@@ -800,6 +806,46 @@ export function runReconciliation(
     (c) => ({ ...c, date: c.date || runDate })
   );
   variances.push(...conflicts);
+
+  // One OT CASE per transferred unit posted on this day. It replaces any other
+  // row for the same unit and direction: whatever the floor books say, the
+  // transfer is what needs a human, and two rows for one unit would collide
+  // on the dedup key.
+  const otCases: typeof variances = [];
+  const otKeys = new Set<string>();
+  for (const r of otRows) {
+    const posted = typeof r.createdOn === "string" ? r.createdOn.slice(0, 10) : null;
+    if (posted !== runDate) continue;
+    const canonical = canonicalize(r.barcode);
+    const key = `${r.direction}::${canonical}`;
+    if (otKeys.has(key)) continue;
+    otKeys.add(key);
+    otCases.push({
+      barcode: canonical,
+      barcode_display: r.barcode,
+      city,
+      direction: r.direction,
+      variance_name: VARIANCE.OT_CASE,
+      priority: "Medium",
+      bucket: VARIANCE_META[VARIANCE.OT_CASE].bucket,
+      responsible: VARIANCE_META[VARIANCE.OT_CASE].responsible,
+      ticket_id: r.ticketId ?? null,
+      so_number: r.soNumber ?? null,
+      customer: r.customer ?? null,
+      product: r.product ?? null,
+      job_type: r.jobType ?? null,
+      date: runDate,
+      note: `Order transfer ${r.orderTransferRef} — map manually.`,
+      present: { P: false, S: false, D: false, O: true },
+    });
+  }
+  if (otCases.length) {
+    for (let i = variances.length - 1; i >= 0; i--) {
+      const v = variances[i];
+      if (otKeys.has(`${v.direction}::${v.barcode}`)) variances.splice(i, 1);
+    }
+    variances.push(...otCases);
+  }
 
   // Stamp which SOURCES reported for this city+run onto every row. Per-row
   // presence ("did this source see the unit") was set at emit time; this is the

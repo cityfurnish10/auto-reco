@@ -255,6 +255,16 @@ export const VARIANCE_LABELS: Record<VarianceName, LabelRule> = {
   [VARIANCE.FAILED_DELIVERY]: { base: UNCLOSED_RETURN },
   [VARIANCE.SHEET_NOT_DONE_BUT_POSTED]: { base: GHOST_DISPATCH },
   [VARIANCE.WRONG_SCAN]: { base: WRONG_UNIT },
+  // Tier 2: the unit is not lost — Odoo moved it between orders on paper. A
+  // person has to say which order it belongs to now.
+  [VARIANCE.OT_CASE]: {
+    base: {
+      display: "OT Case",
+      tier: 2,
+      risk: "Odoo moved this unit between orders (Reference# OT-…); no book on the floor can confirm a transfer, so it cannot be matched automatically.",
+      action: "Map the transfer to the unit and the order it now belongs to, then close.",
+    },
+  },
 
   // Direction splits. Outward = a unit left and no system knows (tier 1).
   // Inward = we are holding stock the books do not show (tier 2). Same name,
