@@ -19,6 +19,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { jsonRoute } from "@/lib/api/json-route";
 import { createClient } from "@/lib/supabase/server";
+import { dayToUtcWindow, usesCalendarDay } from "@/lib/connectors/ist-window";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +41,54 @@ export const GET = jsonRoute("source-rows", async (req: NextRequest) => {
   const city = sp.get("city");
   if (!date || !source || !SOURCES.includes(source as (typeof SOURCES)[number])) {
     return NextResponse.json({ error: "date and a valid source are required" }, { status: 400 });
+  }
+
+  // THE GATE IS READ FROM ITSELF, not from source_rows. A scan is a barcode and
+  // a time and nothing else — the connector passes on exactly that, so the
+  // copy in source_rows has no clock, no product, no customer (reported
+  // 18 Sep 2026: every column blank but the barcode). gate_scans holds the
+  // scan time AND the details looked up afterwards against Odoo and DT.
+  // Reading the table directly gives the same rows the figure counts —
+  // barcoded, recorded, that day — with everything known about them.
+  //
+  // The looked-up details are flagged, and the screen draws them differently:
+  // they are Odoo's answer about the unit, not something the guard asserted.
+  if (source === "PHYSICAL") {
+    let g = supabase
+      .from("gate_scans")
+      .select("written:barcode, direction, scanned_at, unit_product, task_customer, task_so, task_ticket, task_job_type, task_matched")
+      .eq("status", "recorded")
+      .not("barcode", "is", null)
+      .order("scanned_at", { ascending: true })
+      .limit(PAGE);
+    if (usesCalendarDay(date)) {
+      const w = dayToUtcWindow(date);
+      g = g.gte("scanned_at", w.startUtc).lt("scanned_at", w.endUtcExclusive);
+    } else {
+      g = g.eq("business_date", date);
+    }
+    if (city && city !== "ALL") g = g.eq("city", city);
+    if (direction === "IN" || direction === "OUT") g = g.eq("direction", direction);
+    const gr = await g;
+    if (gr.error) return NextResponse.json({ error: gr.error.message }, { status: 500 });
+    const grows = (gr.data ?? []) as Record<string, unknown>[];
+    return NextResponse.json({
+      rows: grows.map((r) => ({
+        barcodeAsWritten: (r.written as string) ?? "",
+        direction: r.direction as string,
+        status: "scanned",
+        jobType: (r.task_job_type as string) ?? null,
+        soNumber: (r.task_so as string) ?? null,
+        ticketId: (r.task_ticket as string) ?? null,
+        customer: (r.task_customer as string) ?? null,
+        product: (r.unit_product as string) ?? null,
+        recordedAt: (r.scanned_at as string) ?? null,
+        lookedUp: true,
+        lastKnown: !r.task_matched,
+      })),
+      pruned: false,
+      capped: grows.length === PAGE,
+    });
   }
 
   // Scoped to ONE run. source_rows keeps every re-check pass for a date, so an

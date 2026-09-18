@@ -37,6 +37,12 @@ export interface SourceCount {
    * outcome, so only the sheet ever has these.
    */
   notDone?: { in: number; out: number };
+  /**
+   * ALL CITIES only: the cities this source did not report for. A "Partial"
+   * badge that makes the reader open five tabs to find out which is a badge
+   * that does not get read.
+   */
+  missing?: string[];
 }
 
 interface CityAgg {
@@ -500,6 +506,7 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
   const covered = (cityStats ?? []).map((s) => byCityMap.get(s.city)).filter((c): c is CityAgg => !!c);
   for (const k of ["gate", "sheet", "dt", "odoo"] as const) {
     overall.sources[k].reported = covered.length > 0 && covered.every((c) => c.sources[k].reported);
+    overall.sources[k].missing = covered.filter((c) => !c.sources[k].reported).map((c) => c.city).sort();
   }
 
   // Counted extras per city — quantities, not rows: four PP boxes on one entry

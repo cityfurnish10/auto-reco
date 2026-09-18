@@ -339,6 +339,8 @@ export interface SourceCount {
    * Only the sheet carries an outcome, so only the sheet ever has these.
    */
   notDone?: { in: number; out: number };
+  /** ALL CITIES only: the cities this source did not report for. */
+  missing?: string[];
 }
 
 /** A city the current run did not cover — every figure unknown, not zero. */
@@ -374,6 +376,8 @@ export interface StatsResponse {
     status: string;
     created_at: string;
     completed_at: string | null;
+    /** What business_date meant for this run (0049). Absent before 0049. */
+    day_definition?: "calendar" | "business_15";
   } | null;
   usedFallbackRun: boolean;
   /**

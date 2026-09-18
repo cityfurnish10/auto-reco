@@ -535,6 +535,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         city={cityTab}
         loading={statsLoading}
         businessDate={stats?.run?.business_date}
+        dayDefinition={stats?.run?.day_definition}
       />
       {!statsLoading && (agg?.infoBucket ?? 0) > 0 && (
         <p className="text-xs text-text-disabled -mt-2">

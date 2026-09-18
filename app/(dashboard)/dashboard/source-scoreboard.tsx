@@ -57,6 +57,12 @@ interface Props {
   loading: boolean;
   /** The day these figures describe, for the caption. */
   businessDate?: string;
+  /**
+   * What that date MEANS (migration 0049). From 13 Sep 2026 a day is the
+   * calendar day; before, 15:00 to 15:00. Taken from the run rather than
+   * worked out here, because it is a fact about what the run did.
+   */
+  dayDefinition?: "calendar" | "business_15";
 }
 
 /** Which cell a manager clicked: one source, one direction (or both). */
@@ -76,7 +82,7 @@ const CODE: Record<OpenCell["source"], string> = {
   odoo: "ODOO",
 };
 
-export default function SourceScoreboard({ agg, city, loading, businessDate }: Props) {
+export default function SourceScoreboard({ agg, city, loading, businessDate, dayDefinition }: Props) {
   const [cell, setCell] = useState<OpenCell | null>(null);
   const all = city === "ALL";
   const rows = SOURCES.map((s) => ({ ...s, count: agg?.sources?.[s.key] }));
@@ -107,7 +113,10 @@ export default function SourceScoreboard({ agg, city, loading, businessDate }: P
         <p className="text-xs text-text-muted">
           {businessDate ? (
             <>
-              business date <b className="text-text-secondary">{businessDate}</b> · 3pm to 3pm
+              business date <b className="text-text-secondary">{businessDate}</b> ·{" "}
+              {/* A run from before 0049 carries no stamp; every such run used
+                  the 15:00 rule, so that is the right fallback. */}
+              {dayDefinition === "calendar" ? "calendar day, midnight to midnight" : "3pm to 3pm"}
             </>
           ) : (
             "movements recorded for the day"
@@ -203,8 +212,12 @@ export default function SourceScoreboard({ agg, city, loading, businessDate }: P
         ) : silent.length > 0 ? (
           <span className="text-status-warning flex items-center gap-1.5">
             <Icon name="warning" size={14} />
-            {silent.map((s) => s.label).join(", ")} is missing from at least one city, so those
-            totals cover only the cities that reported. Open a city tab to see which.
+            {silent
+              .map((s) => `${s.label} has nothing from ${
+                s.count?.missing?.length ? s.count.missing.map(titleCity).join(", ") : "at least one city"
+              }`)
+              .join(" · ")}
+            {" "}— those totals cover only the cities that did report.
           </span>
         ) : inSpread !== null && outSpread !== null ? (
           <span>
@@ -246,20 +259,27 @@ function Cell({ figure, onOpen, muted, suffix }: {
   const tone = muted ? "text-text-secondary" : "font-semibold text-text-primary";
   if (figure === null) return <td className={`text-right ${tone}`}>…</td>;
   if (typeof figure === "string") return <td className={`text-right ${tone}`}>{figure}</td>;
+  // THE WHOLE CELL IS THE TARGET. A button that fills a table cell by padding
+  // does not, reliably: the table's own cell padding wins over a utility and
+  // leaves a target the size of the digits (reported 18 Sep 2026). So the cell
+  // takes the click, and the button inside is only there for the keyboard —
+  // Enter on it bubbles to the same handler.
   return (
-    <td className="text-right p-0">
-      <button
-        type="button"
-        onClick={onOpen}
-        title="Open the rows behind this figure, exactly as the source sent them"
-        className={`w-full h-full px-4 py-2.5 text-right cursor-pointer hover:text-accent hover:underline ${tone}`}
-      >
+    <td
+      onClick={onOpen}
+      className={`text-right cursor-pointer hover:bg-surface-elevated hover:text-accent group ${tone}`}
+      title="Open the rows behind this figure, exactly as the source sent them"
+    >
+      <button type="button" className="group-hover:underline">
         {figure}
         {suffix && <span className="text-text-disabled">{suffix}</span>}
       </button>
     </td>
   );
 }
+
+/** "HYDERABAD" → "Hyderabad", for a sentence rather than a code. */
+const titleCity = (c: string) => c.charAt(0) + c.slice(1).toLowerCase();
 
 interface RawRow {
   barcodeAsWritten: string;
@@ -271,6 +291,10 @@ interface RawRow {
   customer: string | null;
   product: string | null;
   recordedAt: string | null;
+  /** Details found afterwards from Odoo/DT, not asserted by this source. */
+  lookedUp?: boolean;
+  /** The lookup settled on the unit's LAST task, not this movement's. */
+  lastKnown?: boolean;
 }
 
 /** The rows behind one figure, exactly as that book sent them. */
@@ -324,6 +348,12 @@ function SourceRowsModal({ cell, date, city, onClose }: {
       )}
       {rows && rows.length > 0 && (
         <>
+          {cell.source === "gate" && (
+            <p className="text-xs text-text-muted mb-2">
+              The guard records only the barcode and the time. Product, customer, order and ticket
+              are looked up afterwards from Odoo and shown in italics.
+            </p>
+          )}
           <p className="text-sm text-text-muted mb-3">
             {rows.length} row{rows.length === 1 ? "" : "s"}
             {capped && <span className="text-status-warning"> · showing the first 1,000 only</span>}
@@ -355,7 +385,14 @@ function SourceRowsModal({ cell, date, city, onClose }: {
                     <td className="px-3 py-1.5 border border-border whitespace-nowrap">{r.direction === "IN" ? "Inward" : "Outward"}</td>
                     <td className="px-3 py-1.5 border border-border font-mono whitespace-nowrap">{r.barcodeAsWritten || "—"}</td>
                     <td className="px-3 py-1.5 border border-border">{r.product ?? "—"}</td>
-                    <td className="px-3 py-1.5 border border-border">{r.customer ?? "—"}</td>
+                    <td className="px-3 py-1.5 border border-border">
+                      {r.customer ? (
+                        <span className={r.lookedUp ? "italic text-text-secondary" : undefined}
+                          title={r.lookedUp ? (r.lastKnown ? "Looked up from Odoo — where this unit was LAST seen, not necessarily this movement" : "Looked up from Odoo against this movement — the guard records only the barcode") : undefined}>
+                          {r.customer}{r.lookedUp && r.lastKnown && <span className="not-italic text-text-disabled"> (last known)</span>}
+                        </span>
+                      ) : "—"}
+                    </td>
                     <td className="px-3 py-1.5 border border-border font-mono whitespace-nowrap">{r.soNumber ?? "—"}</td>
                     <td className="px-3 py-1.5 border border-border font-mono whitespace-nowrap">{r.ticketId ?? "—"}</td>
                     <td className="px-3 py-1.5 border border-border whitespace-nowrap">{r.jobType ?? "—"}</td>
