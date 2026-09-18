@@ -17,6 +17,16 @@ export function pad(n: number): string {
 export function normalizeStatus(raw: string | undefined | null): NormStatus {
   if (!raw) return "unknown";
   const s = raw.toString().trim().toLowerCase().replace(/[\s-]+/g, "_");
+  // THE SHEET'S OWN SPELLINGS. Delhi's ops sheet writes "Delievered", "Not
+  // Delievered", "Not Delievred" and "Not Deivered" alongside the correct forms
+  // (every distinct value in September 2026). Only the correct spelling was
+  // known, so on 16 Sep 22 "Not Delievered" rows read as UNKNOWN — kept and
+  // counted as if the delivery had happened, where the same rows spelt
+  // correctly on the 14th were rightly left out. Any spelling of "delivered"
+  // now reads as one.
+  const deliveredLike = (w: string) => /^d[ei]{1,3}l?[ie]{0,3}ve?r?e?d$/.test(w);
+  if (s.startsWith("not_") && deliveredLike(s.slice(4))) return "not_done";
+  if (deliveredLike(s)) return "done";
   if (
     [
       // the movement physically completed

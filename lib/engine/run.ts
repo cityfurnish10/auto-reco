@@ -278,11 +278,14 @@ export function runReconciliation(
   }
 
   const byDir = (dir: Direction) => valid.filter((r) => r.direction === dir);
-  // The per-barcode ladder must see only serialized, valid units. The movement
-  // summary is different: it is the count each book recorded, so count-only
-  // PP/spare/consumable rows still belong in the email/dashboard totals.
-  const countableRows = [...valid, ...spareRows, ...ppBoxRows];
-  const countByDir = (dir: Direction) => countableRows.filter((r) => r.direction === dir);
+  // THE MOVEMENT COUNTS ARE BARCODES ONLY (owner's rule, 15 and 18 Sep 2026:
+  // "only count the barcode entries, nothing else"). They used to include PP
+  // box and spare lines on the grounds that the summary is what each book
+  // recorded — so Delhi's sheet read 91 outward on the 16th against 84 real
+  // barcodes, the other seven being three PP boxes and four free-text items
+  // ("Drill Maschine =01"). Those are counted by quantity on the Count-only
+  // card and nowhere else.
+  const countByDir = (dir: Direction) => valid.filter((r) => r.direction === dir);
   const inViews = buildViews(byDir("IN"), city, "IN");
   const outViews = buildViews(byDir("OUT"), city, "OUT");
   for (const v of Array.from(inViews.values())) v.date = runDate;

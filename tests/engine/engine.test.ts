@@ -415,7 +415,9 @@ describe("Failed delivery & PP boxes (ops-practice rules)", () => {
       "MUMBAI"
     );
     expect(res.summary.consumable_count).toBe(2);
-    expect(res.count_in.sheet_total).toBe(2);
+    // Counted by quantity on the Count-only card, never in the book's
+    // movement count, which is barcodes only (owner's rule, 18 Sep 2026).
+    expect(res.count_in.sheet_total).toBe(0);
     expect(res.variances.some((v) => v.barcode === canonicalize("WP water seal - 13"))).toBe(false);
     expect(res.variances.some((v) => v.barcode === canonicalize("Spin Motor - 3"))).toBe(false);
   });
@@ -509,7 +511,8 @@ describe("Failed delivery & PP boxes (ops-practice rules)", () => {
     // No longer a variance row — surfaced as a per-city count instead.
     expect(res.variances.some((v) => v.variance_name === "PP Box Movement (Count Only)")).toBe(false);
     expect(res.summary.pp_box_count).toBe(2);
-    expect(res.count_out.sheet_total).toBe(3);
+    // The two PP boxes are counted above; the movement count is barcodes only.
+    expect(res.count_out.sheet_total).toBe(1);
     // They must never run the normal ladder as fake barcodes.
     expect(res.variances.some((v) => v.variance_name === VARIANCE.SHEET_ONLY)).toBe(false);
   });

@@ -54,3 +54,15 @@ describe("OT CASE", () => {
     expect(other.variances.some((v) => v.variance_name === VARIANCE.OT_CASE)).toBe(false);
   });
 });
+
+describe("the ops sheet's own spellings", () => {
+  it("reads every spelling of delivered and not delivered", async () => {
+    const { normalizeStatus } = await import("../../lib/engine/util");
+    // Every distinct value Delhi's sheet used in September 2026.
+    for (const s of ["Delivered", "Delievered"]) expect(normalizeStatus(s)).toBe("done");
+    for (const s of ["Not Delivered", "Not delivered", "Not Delievered", "Not Delievred", "Not Deivered"])
+      expect(normalizeStatus(s)).toBe("not_done");
+    expect(normalizeStatus("received")).toBe("done");
+    expect(normalizeStatus("Not Done")).toBe("not_done");
+  });
+});
