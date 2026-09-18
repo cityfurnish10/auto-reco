@@ -94,23 +94,23 @@ describe("the seam — no movement in two days, none in none", () => {
 
 describe("Odoo Out — the team's 3pm window", () => {
   // Checked 18 Sep 2026 against Odoo's own Moves History for Delhi (Done ·
-  // Movement Type = Out · GUR · Date 15 Sep 15:00 → 16 Sep 15:00): 70 rows.
+  // Movement Type = Out · GUR · Date 15 Sep 15:00:00 → 16 Sep 15:00:00): 69.
   it("places a lunchtime posting on the previous day's movements", async () => {
     const { utcToOdooOutDate } = await import("../../lib/connectors/ist-window");
     expect(utcToOdooOutDate(ist("2026-09-16", "12:30"))).toBe("2026-09-15");
     expect(utcToOdooOutDate(ist("2026-09-15", "16:00"))).toBe("2026-09-15");
   });
 
-  it("keeps the 3pm batch together — 30 seconds of grace, no more", async () => {
+  it("cuts at exactly 15:00:00, as a clean Odoo date filter does", async () => {
     const { utcToOdooOutDate } = await import("../../lib/connectors/ist-window");
     const at = (hms: string) => {
-      const [h, m, s] = hms.split(":").map(Number);
-      return new Date(Date.UTC(2026, 8, 16, h, m, s) - 5.5 * 3600_000).toISOString();
+      const [h, m, sec] = hms.split(":").map(Number);
+      return new Date(Date.UTC(2026, 8, 16, h, m, sec) - 5.5 * 3600_000).toISOString();
     };
-    // The two postings that straddled the edge on the 16th.
-    expect(utcToOdooOutDate(at("15:00:13"))).toBe("2026-09-15");
-    expect(utcToOdooOutDate(at("15:00:58"))).toBe("2026-09-16");
+    // The posting that was briefly counted on the 15th through a 30s grace.
     expect(utcToOdooOutDate(at("14:59:59"))).toBe("2026-09-15");
+    expect(utcToOdooOutDate(at("15:00:00"))).toBe("2026-09-16");
+    expect(utcToOdooOutDate(at("15:00:13"))).toBe("2026-09-16");
   });
 });
 
@@ -130,5 +130,13 @@ describe("Odoo Out — a closed day moves the window's end", () => {
   it("changes nothing when every day is open", async () => {
     const { utcToOdooOutDate } = await import("../../lib/connectors/ist-window");
     expect(utcToOdooOutDate(ist("2026-09-17", "18:00"), () => true)).toBe("2026-09-17");
+  });
+});
+
+describe("Odoo Out — a broken calendar cannot move postings", () => {
+  it("ignores a calendar that says the warehouse never opens", async () => {
+    // 18 Sep 2026: exactly this filed every Delhi Out posting under the 13th.
+    const { utcToOdooOutDate } = await import("../../lib/connectors/ist-window");
+    expect(utcToOdooOutDate(ist("2026-09-17", "18:00"), () => false)).toBe("2026-09-17");
   });
 });

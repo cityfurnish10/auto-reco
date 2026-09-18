@@ -220,13 +220,13 @@ export function daySpanToUtcWindow(
 // inward for the 16th read 35 there against 30 on the calendar day. One window,
 // both ways, matches what Odoo shows.
 //
-// THE 30-SECOND GRACE. A batch submitted at 15:00 is stamped a few seconds
-// later: on the 16th, postings landed at 15:00:13 and 15:00:58. A sharp cut
-// gives 69 where the owner's Odoo filter showed 70; the whole 15:00 minute
-// gives 71. Thirty seconds keeps the posting that was plainly part of the 3pm
-// batch and sends the next one to the following day. The same instant ends one
-// day and starts the next, so no posting is ever counted twice.
-export const ODOO_OUT_DAY_START_MS = (15 * 60 * 60 + 30) * 1000;
+// EXACTLY 15:00:00 — no grace. A 30-second grace was added on 18 Sep 2026 to
+// match the owner's 70 for the 15th, which turned out to come from Odoo's date
+// picker carrying 19 stray seconds (15:00:19). Re-checked the same afternoon
+// with the filter set cleanly to 15:00:00 → 15:00:00: the posting at 15:00:13
+// on the 16th belongs to the 16th, the 15th is 69, and the tool now cuts
+// where that filter cuts.
+export const ODOO_OUT_DAY_START_MS = 15 * 60 * 60 * 1000;
 
 /**
  * A posting time → the day whose OUTWARD movements it is Odoo's evidence for.
