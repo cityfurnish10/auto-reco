@@ -19,21 +19,38 @@ interface BarcodeDetectorLike {
 }
 declare global {
   interface Window {
-    BarcodeDetector?: new (o?: { formats?: string[] }) => BarcodeDetectorLike;
+    BarcodeDetector?: (new (o?: { formats?: string[] }) => BarcodeDetectorLike) & {
+      getSupportedFormats?: () => Promise<string[]>;
+    };
   }
 }
 
 let native: BarcodeDetectorLike | null = null;
 let jsqr: typeof import("jsqr").default | null = null;
+let frame = 0;
 
+// A BROWSER CAN CLAIM TO READ QR CODES AND NEVER DO IT. 18 Sep 2026: Mahesh's
+// Realme phone opened the app in its own HeyTap browser (a Chrome 115 fork).
+// It has BarcodeDetector, so the app used it — and it returned "nothing in
+// view" for every frame, without ever throwing, because the forks ship the
+// API without the decoder behind it. The camera showed the sticker and nothing
+// registered. So: ask which formats are really supported, and keep the JS
+// decoder loaded on EVERY phone, trying it on alternate frames whenever the
+// native one comes back empty. A real Chrome still decodes natively in
+// milliseconds; a hollow one now falls back instead of failing silently.
 export async function initScanner(): Promise<"native" | "fallback"> {
-  if (typeof window !== "undefined" && window.BarcodeDetector) {
+  jsqr = (await import("jsqr")).default;
+  const BD = typeof window !== "undefined" ? window.BarcodeDetector : undefined;
+  if (BD) {
     try {
-      native = new window.BarcodeDetector({ formats: ["qr_code"] });
-      return "native";
+      const formats = BD.getSupportedFormats ? await BD.getSupportedFormats() : ["qr_code"];
+      if (formats.includes("qr_code")) {
+        native = new BD({ formats: ["qr_code"] });
+        return "native";
+      }
     } catch { native = null; }
   }
-  jsqr = (await import("jsqr")).default;
+  native = null;
   return "fallback";
 }
 
@@ -62,8 +79,12 @@ export async function decodeFrame(
   if (native) {
     try {
       const found = await native.detect(video);
-      return found[0]?.rawValue ? { value: found[0].rawValue } : null;
+      if (found[0]?.rawValue) return { value: found[0].rawValue };
     } catch { /* fall through to the JS decoder */ }
+    // Native saw nothing. Usually true — nothing is in view — but on a
+    // hollow detector it is always "nothing", so give the JS decoder every
+    // other frame. Half rate keeps a real Chrome's camera smooth.
+    if ((frame++ & 1) === 0) return null;
   }
   if (!jsqr) return null;
 
