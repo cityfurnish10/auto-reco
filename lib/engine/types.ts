@@ -39,6 +39,12 @@ export interface SourceRow {
    * the team to map by hand — never counted as a movement.
    */
   orderTransferRef?: string;
+  /**
+   * Delivery Tracker only, for DISPLAY: the item's physical status as DT holds
+   * it ("Done" / "Not Done"). The engine reads `status`; this is what the
+   * scoreboard's rows modal shows so an outward "Not Done" is visible as one.
+   */
+  physicalStatus?: string;
 }
 
 export type NormStatus =

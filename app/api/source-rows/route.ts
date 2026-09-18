@@ -109,7 +109,7 @@ export const GET = jsonRoute("source-rows", async (req: NextRequest) => {
   // caller can mistake it for the canonical fold (invariant 6).
   let q = supabase
     .from("source_rows")
-    .select("written:barcode, direction, status, job_type, so_number, ticket_id, customer, product, movement_date, created_on, ot:raw->>orderTransferRef")
+    .select("written:barcode, direction, status, job_type, so_number, ticket_id, customer, product, movement_date, created_on, ot:raw->>orderTransferRef, phys:raw->>physicalStatus")
     .eq("run_id", runId)
     .eq("source", source)
     .limit(PAGE);
@@ -139,7 +139,9 @@ export const GET = jsonRoute("source-rows", async (req: NextRequest) => {
     rows: rows.map((r) => ({
       barcodeAsWritten: (r.written as string) ?? "",
       direction: r.direction as string,
-      status: (r.status as string) ?? null,
+      // The Tracker's own word for the item ("Done" / "Not Done") where it has
+      // one; the engine's "done" says nothing a person can check.
+      status: (r.phys as string) ?? (r.status as string) ?? null,
       jobType: (r.job_type as string) ?? null,
       soNumber: (r.so_number as string) ?? null,
       ticketId: (r.ticket_id as string) ?? null,

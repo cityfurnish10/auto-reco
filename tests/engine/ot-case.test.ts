@@ -66,3 +66,15 @@ describe("the ops sheet's own spellings", () => {
     expect(normalizeStatus("Not Done")).toBe("not_done");
   });
 });
+
+describe("Delivery Tracker — which items count", () => {
+  it("outward: Done and Not Done, never Pending; inward: Done only", async () => {
+    const { keepDtItem } = await import("../../lib/connectors/dt");
+    expect(keepDtItem("OUT", "2")).toBe(true);
+    expect(keepDtItem("OUT", "3")).toBe(true);
+    expect(keepDtItem("OUT", "1")).toBe(false);
+    expect(keepDtItem("IN", "2")).toBe(true);
+    expect(keepDtItem("IN", "3")).toBe(false);
+    expect(keepDtItem("IN", "1")).toBe(false);
+  });
+});

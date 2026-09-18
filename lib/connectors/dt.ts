@@ -42,6 +42,20 @@ function dateStr(v: unknown): string | undefined {
   return String(v);
 }
 
+/**
+ * Which Delivery Tracker items count, by direction (owner's rule, 18 Sep 2026).
+ *
+ *   OUTWARD  Done AND Not Done — a delivery that did not complete still left
+ *            on the truck, so the Tracker is confirming the goods went out.
+ *            Pending has not happened and never counts.
+ *   INWARD   Done only, unchanged — a pickup that was not collected brought
+ *            nothing back through the gate.
+ */
+export function keepDtItem(direction: "IN" | "OUT", physicalStatus: string): boolean {
+  if (physicalStatus === "2") return true;
+  return direction === "OUT" && physicalStatus === "3";
+}
+
 export const dtConnector: Connector = {
   source: "DT",
   label: "Delivery Tracker",
@@ -140,8 +154,12 @@ export const dtConnector: Connector = {
           },
         },
         { $unwind: { path: "$items", preserveNullAndEmptyArrays: false } },
-        // Done-only rule (§15) — only physical status "2" enters the engine.
-        { $match: { "items.status": "2" } },
+        // Physical status: "1" Pending, "2" Done, "3" Not Done (confirmed
+        // against DT's own tasks, 18 Sep 2026 — a "1" item's task read "Pickup
+        // Scheduled"; a "3" item's task read "Pickup Done" with that item left
+        // behind). Pending never enters. Not Done is fetched for OUTWARD only —
+        // see keepDtItem below.
+        { $match: { "items.status": { $in: ["2", "3"] } } },
         // The old rule's cut: when the movement actually completed. Dropped on
         // the calendar path, where the scheduled day has already decided it —
         // keeping it there would re-impose the very boundary this replaced and
@@ -172,6 +190,7 @@ export const dtConnector: Connector = {
             subCategory: "$subCategory",
             movement: "$movement",
             clientStatus: "$items.client_Status",
+            physicalStatus: "$items.status",
             hasDeliveryId: {
               $cond: [{ $gt: [{ $ifNull: ["$items.deliveryId", null] }, null] }, true, false],
             },
@@ -205,6 +224,8 @@ export const dtConnector: Connector = {
           hasPickupDeliveryId: !!doc.hasPickupDeliveryId,
         });
         if (!direction) continue; // ambiguous (§14 rule 6) — skip
+        const physicalStatus = String(doc.physicalStatus ?? "");
+        if (!keepDtItem(direction, physicalStatus)) continue;
 
         const movementDate = dateStr(doc.movementDate);
         rows.push({
@@ -212,7 +233,11 @@ export const dtConnector: Connector = {
           city,
           direction,
           barcode,
-          status: "done", // pipeline already filtered to items.status === "2"
+          // "done" for the engine in both cases: an outward Not Done still went
+          // out on the truck — the goods crossed the gate, the delivery did
+          // not complete — and it is the crossing this reconciliation checks.
+          status: "done",
+          physicalStatus: physicalStatus === "3" ? "Not Done" : "Done",
           // `date` = the IST business date this row was reconciled for. The
           // rows are windowed on scheduledDate == runDate, so runDate IS the
           // business date; items.updatedAt (the completion timestamp, which can
