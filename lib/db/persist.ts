@@ -147,6 +147,10 @@ export async function loadRecentOdooPostings(
       .from("source_rows")
       .select("city, direction, barcode")
       .eq("source", "ODOO")
+      // Order transfers are stored since 18 Sep 2026 (raised as OT CASEs) but
+      // are not postings of a movement, so they must never excuse a missing
+      // Odoo entry on an earlier day.
+      .is("raw->>orderTransferRef", null)
       .in("business_date", dates)
       .order("id", { ascending: true })
       .range(from, from + 999);

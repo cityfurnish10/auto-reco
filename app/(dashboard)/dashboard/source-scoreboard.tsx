@@ -297,6 +297,8 @@ interface RawRow {
   lookedUp?: boolean;
   /** The lookup settled on the unit's LAST task, not this movement's. */
   lastKnown?: boolean;
+  /** Odoo order transfer (Reference# OT-…): listed, never counted. */
+  orderTransferRef?: string | null;
 }
 
 /** The rows behind one figure, exactly as that book sent them. */
@@ -367,8 +369,11 @@ function SourceRowsModal({ cell, date, city, onClose }: {
             {rows.length !== cell.figure && (
               <span>
                 {" · "}the board counts <b className="text-text-primary">{cell.figure}</b> of these
-                as movements — the rest are rows this source marked as not delivered, or lines
-                with no barcode (see Outcome)
+                as movements —{" "}
+                {cell.source === "odoo"
+                  ? `${rows.filter((r) => r.orderTransferRef).length} are order transfers (OT CASE), which are not movements`
+                  : "the rest are rows this source marked as not delivered, or lines with no barcode"}{" "}
+                (see Outcome)
               </span>
             )}
           </p>
@@ -402,7 +407,13 @@ function SourceRowsModal({ cell, date, city, onClose }: {
                         other three hard-code "done" because each filters to
                         completed rows upstream. Shown raw so a "Not Delivered"
                         is visible as the sheet wrote it. */}
-                    <td className="px-3 py-1.5 border border-border whitespace-nowrap">{r.status ?? "—"}</td>
+                    <td className="px-3 py-1.5 border border-border whitespace-nowrap">
+                      {r.orderTransferRef ? (
+                        <span className="badge badge-medium" title={`Order transfer ${r.orderTransferRef} — not a movement, not in the figure; raised as an OT CASE to map by hand`}>
+                          OT CASE
+                        </span>
+                      ) : (r.status ?? "—")}
+                    </td>
                     <td className="px-3 py-1.5 border border-border whitespace-nowrap tabular-nums text-xs text-text-muted">{istTime(r.recordedAt)}</td>
                   </tr>
                 ))}

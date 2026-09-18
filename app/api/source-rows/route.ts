@@ -109,7 +109,7 @@ export const GET = jsonRoute("source-rows", async (req: NextRequest) => {
   // caller can mistake it for the canonical fold (invariant 6).
   let q = supabase
     .from("source_rows")
-    .select("written:barcode, direction, status, job_type, so_number, ticket_id, customer, product, movement_date, created_on")
+    .select("written:barcode, direction, status, job_type, so_number, ticket_id, customer, product, movement_date, created_on, ot:raw->>orderTransferRef")
     .eq("run_id", runId)
     .eq("source", source)
     .limit(PAGE);
@@ -149,6 +149,9 @@ export const GET = jsonRoute("source-rows", async (req: NextRequest) => {
       // the sheet has none at all. Labelled on screen as "recorded at" rather
       // than as the moment the goods moved, which none of them is.
       recordedAt: (r.movement_date as string) ?? (r.created_on as string) ?? null,
+      // An order transfer is listed — it is on Odoo's own screen — but it is
+      // not a movement and not in the figure; the modal says so row by row.
+      orderTransferRef: (r.ot as string) ?? null,
     })),
     // An empty cell for a date outside retention is not the same claim as a
     // source that reported nothing, and must not render as one.
