@@ -193,49 +193,55 @@ function Activity({ user }: { user: SessionUser }) {
                     <tr key={tr.id} onClick={() => setOpen(tr)}
                         className={`border-t border-border hover:bg-surface-elevated cursor-pointer transition-colors duration-150${nested ? " text-[13px]" : ""}`}>
                       <td className={`py-2.5 font-medium text-text-primary whitespace-nowrap ${nested ? "pl-9 pr-4" : "px-4"}`}>{tr.guardName || "—"}</td>
-                      <td className="px-4 py-2.5 font-mono whitespace-nowrap">{tr.vehicleNo}</td>
+                      {/* As typed by the guard, with the stray spaces around
+                          dashes closed up so "MT - T - DL-1L" reads as one plate. */}
+                      <td className="px-4 py-2.5 font-medium tracking-wide whitespace-nowrap">{tr.vehicleNo.replace(/\s*-\s*/g, "-")}</td>
                       <td className="px-4 py-2.5">
                         <span className={`badge ${tr.direction === "OUT" ? "badge-medium" : "badge-info"}`}>
                           {tr.direction === "OUT" ? "Outward" : "Inward"}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 tabular-nums">
-                        {tr.itemCount}
-                        {tr.overrides > 0 && <span className="badge badge-high ml-2">{tr.overrides} override</span>}
+                      <td className="px-4 py-2.5">
+                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                        <span className="inline-block min-w-[1.5rem] text-right font-semibold tabular-nums">{tr.itemCount}</span>
+                        {tr.overrides > 0 && <span className="badge badge-high">{tr.overrides} override</span>}
                         {/* Two different problems, and a manager scanning this
                             column needs to tell them apart at a glance: the
                             truck left short, versus the guard took items back. */}
                         {tr.completeness && tr.completeness.missing.length > 0 && (
-                          <span className="badge badge-high ml-2">
+                          <span className="badge badge-high">
                             {tr.completeness.missing.length} short
                           </span>
                         )}
                         {tr.removed.length > 0 && (
-                          <span className="badge badge-medium ml-2">{tr.removed.length} removed</span>
+                          <span className="badge badge-medium">{tr.removed.length} removed</span>
                         )}
                         {/* Entered again for an item already recorded. Not in the
                             count to the left, and not in the reconciliation. */}
                         {tr.duplicates > 0 && (
-                          <span className="badge badge-high ml-2">{tr.duplicates} duplicate</span>
+                          <span className="badge badge-high">{tr.duplicates} duplicate</span>
                         )}
                         {tr.recordedLate && (
-                          <span className="badge badge-medium ml-2" title="The guard recorded this trip the next day, for this day">recorded late</span>
+                          <span className="badge badge-medium" title="The guard recorded this trip the next day, for this day">recorded late</span>
                         )}
                         {/* Typed rather than scanned. No barcode was read, so
                             the row rests entirely on the guard and the photo
                             they took — which is precisely what a manager is
                             here to look at. */}
                         {tr.manual > 0 && (
-                          <span className="badge badge-medium ml-2">{tr.manual} typed</span>
+                          <span className="badge badge-medium">{tr.manual} typed</span>
                         )}
+                        </span>
                       </td>
-                      <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{clock(tr.openedAt)}</td>
-                      <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap tabular-nums">{took(tr.durationSec)}</td>
+                      <td className="px-4 py-2.5 text-right text-text-secondary whitespace-nowrap tabular-nums">{clock(tr.openedAt)}</td>
+                      <td className="px-4 py-2.5 text-right text-text-secondary whitespace-nowrap tabular-nums">{took(tr.durationSec)}</td>
                       <td className="px-4 py-2.5">
                         <span className={`badge ${tr.status === "closed" ? "badge-done" : "badge-info"}`}>{tr.status}</span>
                       </td>
-                      <td className="px-4 py-2.5 text-text-muted" title={tr.hasVehiclePhoto ? "Vehicle photo taken — open the trip to view" : "No vehicle photo"}>
-                        {tr.hasVehiclePhoto ? <Icon name="camera" size={16} /> : "—"}
+                      <td className="px-4 py-2.5 text-center" title={tr.hasVehiclePhoto ? "Vehicle photo taken — open the trip to view" : "No vehicle photo"}>
+                        {tr.hasVehiclePhoto
+                          ? <span className="inline-flex text-success"><Icon name="camera" size={17} /></span>
+                          : <span className="text-text-disabled">—</span>}
                       </td>
                       <td className="px-2 text-text-muted"><Icon name="chevron_right" size={17} /></td>
                     </tr>
@@ -309,36 +315,33 @@ function Activity({ user }: { user: SessionUser }) {
 
       {d && !loadErr && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Stat label="Trips" value={d.totals.trips} />
-            <Stat label="Items" value={d.totals.items} />
-            {/* The number the pilot is judged on. Amber below 80% because a
-                falling share means guards are working around the scanner. */}
-            <Stat label="Scanned" value={d.totals.scannedShare === null ? "—" : `${d.totals.scannedShare}%`}
-                  tone={d.totals.scannedShare !== null && d.totals.scannedShare < 80 ? "warn" : "ok"} />
-            <Stat label="Overrides" value={d.totals.overrides}
-                  tone={d.totals.overrides > 0 ? "warn" : "ok"} />
+          {/* One card, two rows: what happened, then what needs a look.
+              Was eight separate tiles in two grids — twice the height, and a
+              warning figure read the same as a plain count. A "look at this"
+              figure is amber only when it is above zero. */}
+          <div className="card divide-y divide-border">
+            <FigureRow title="The day">
+              <Figure label="Trips" value={d.totals.trips} />
+              <Figure label="Items" value={d.totals.items} />
+              {/* The number the pilot is judged on. Amber below 80% because a
+                  falling share means guards are working around the scanner. */}
+              <Figure label="Scanned" value={d.totals.scannedShare === null ? "—" : `${d.totals.scannedShare}%`}
+                      warn={d.totals.scannedShare !== null && d.totals.scannedShare < 80} />
+              {/* THE ONLY PLACE THE MATCH APPEARS. The guard is never shown
+                  what was expected (tests/gate/independence.test.ts), so the
+                  check runs in the background and surfaces here. Shown as a
+                  share of trips CHECKED: a trip with no list to check against
+                  was not a false alarm, it was not an alarm. */}
+              <Figure label="Checked against plan"
+                      value={d.totals.tripsChecked > 0 ? `${d.totals.tripsChecked} of ${d.totals.trips}` : "—"} />
+            </FigureRow>
+            <FigureRow title="Needs a look">
+              <Figure label="Overrides" value={d.totals.overrides} warn={d.totals.overrides > 0} />
+              <Figure label="Left short" value={d.totals.tripsShort} warn={d.totals.tripsShort > 0} />
+              <Figure label="Items removed" value={d.totals.removed} warn={d.totals.removed > 0} />
+              <Figure label="Typed, not scanned" value={d.totals.manual} warn={d.totals.manual > 0} />
+            </FigureRow>
           </div>
-
-          {/* THIS IS THE ONLY PLACE THE MATCH APPEARS. The guard is never shown
-              what was expected — see tests/gate/independence.test.ts for why —
-              so the check runs in the background and surfaces here, after the
-              fact, for somebody who is not the person being checked.
-
-              Shown as a share of trips CHECKED rather than of all trips: a trip
-              that closed with no list to check against was not a false alarm,
-              it was not an alarm. */}
-          {d.totals.tripsChecked > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <Stat label="Checked against plan" value={`${d.totals.tripsChecked}/${d.totals.trips}`} />
-              <Stat label="Left short" value={d.totals.tripsShort}
-                    tone={d.totals.tripsShort > 0 ? "warn" : "ok"} />
-              <Stat label="Items removed" value={d.totals.removed}
-                    tone={d.totals.removed > 0 ? "warn" : "ok"} />
-              <Stat label="Typed, not scanned" value={d.totals.manual}
-                    tone={d.totals.manual > 0 ? "warn" : "ok"} />
-            </div>
-          )}
 
           {d.totals.duplicates > 0 && (
             <div className="card p-4 border border-warning/30 text-sm">
@@ -358,10 +361,11 @@ function Activity({ user }: { user: SessionUser }) {
               <table className="w-full text-sm">
                 <thead>
                   <tr>
-                    {["Guard", "Vehicle", "Direction", "Items", "Opened", "Time at gate", "Status", "Photo"].map((h) => (
-                      <th key={h} className="text-left px-4 py-2.5 text-xs uppercase tracking-wide text-text-muted whitespace-nowrap">{h}</th>
+                    {([["Guard", "left"], ["Vehicle", "left"], ["Direction", "left"], ["Items", "left"],
+                       ["Opened", "right"], ["Time at gate", "right"], ["Status", "left"], ["Photo", "center"]] as const).map(([h, al]) => (
+                      <th key={h} className={`text-${al} px-4 py-2.5 text-xs uppercase tracking-wide text-text-muted whitespace-nowrap border-b border-border bg-surface-elevated`}>{h}</th>
                     ))}
-                    <th className="w-10" />
+                    <th className="w-10 border-b border-border bg-surface-elevated" />
                   </tr>
                 </thead>
                 <tbody>
@@ -464,35 +468,44 @@ export function TripModal({ trip, onClose, onLookedUp }: {
   if (!trip) return null;
   return (
     <Modal open onClose={onClose}
-      title={`${trip.vehicleNo} · ${trip.direction === "OUT" ? "Outward" : "Inward"}`}
+      title={`${trip.vehicleNo.replace(/\s*-\s*/g, "-")} · ${trip.direction === "OUT" ? "Outward" : "Inward"}`}
       subtitle={`${trip.guardName} · ${trip.city}${trip.recordedLate ? " · recorded late, the next day" : ""}`} size="wide">
-      <div className="grid sm:grid-cols-2 gap-x-8 mb-5">
-        <Row k="Guard" v={trip.guardName || "—"} />
-        <Row k="Delivery agent" v={trip.driverName ?? "—"} />
-        <Row k="Opened" v={clock(trip.openedAt)} mono />
-        <Row k="Closed" v={trip.closedAt ? clock(trip.closedAt) : "still open"} mono />
-        {/* "Took" was a one-word column nobody could interpret. It is the
-            gap between the guard starting the trip and closing it — how long
-            the vehicle was at the gate. */}
-        <Row k="Time at gate" v={took(trip.durationSec)} mono />
+      {/* The trip's facts as a grid of labelled cells. Was two columns of
+          label … value rows, which drifted out of line whenever one side held
+          a button (the vehicle photo) and the other did not. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-border border border-border rounded-card overflow-hidden mb-5">
+        <Fact label="Guard">{trip.guardName || "—"}</Fact>
+        <Fact label="Delivery agent">{trip.driverName ?? "—"}</Fact>
+        <Fact label="Opened"><span className="tabular-nums">{clock(trip.openedAt)}</span></Fact>
+        <Fact label="Closed"><span className="tabular-nums">{trip.closedAt ? clock(trip.closedAt) : "still open"}</span></Fact>
+        {/* The gap between the guard starting the trip and closing it — how
+            long the vehicle was at the gate. */}
+        <Fact label="Time at gate"><span className="tabular-nums">{took(trip.durationSec)}</span></Fact>
+        <Fact label="Items">
+          <span className="tabular-nums">{trip.itemCount}</span>
+          {trip.manual > 0 && <span className="badge badge-medium ml-2">{trip.manual} typed</span>}
+          {trip.duplicates > 0 && (
+            <span className="block text-xs text-text-muted mt-0.5">{trip.duplicates} duplicate not counted</span>
+          )}
+        </Fact>
+        <Fact label="Against the plan">
+          {/* "0 of 0" read like a failure; it means the plan listed nothing. */}
+          {trip.completeness && trip.completeness.total > 0
+            ? <span className="tabular-nums">{trip.completeness.scanned} of {trip.completeness.total}</span>
+            : <span className="text-text-muted">{trip.completeness ? "no plan for this trip" : "not checked"}</span>}
+        </Fact>
         {/* How the stock was kept in the vehicle: photographed before
             unloading an inward truck, after loading an outward one. */}
-        <div className="flex justify-between items-center py-2 border-b border-border text-sm">
-          <span className="text-text-secondary">Vehicle photo</span>
+        <Fact label="Vehicle photo">
           {trip.hasVehiclePhoto ? (
-            <button className="btn btn-compact btn-secondary"
+            <button className="inline-flex items-center gap-1.5 text-accent font-medium hover:underline cursor-pointer"
                     onClick={() => setPhoto({ tripId: trip.id, label: `${trip.vehicleNo} · ${trip.direction === "OUT" ? "after loading" : "before unloading"}` })}>
-              <Icon name="camera" size={15} /> View vehicle photo
+              <Icon name="camera" size={16} /> View
             </button>
           ) : (
             <span className="text-text-muted">{trip.status === "open" ? "taken when the trip closes" : "none"}</span>
           )}
-        </div>
-        <Row k="Items" v={`${trip.itemCount}${trip.manual ? ` · ${trip.manual} typed` : ""}${trip.duplicates ? ` · ${trip.duplicates} duplicate not counted` : ""}`} />
-        {trip.completeness && (
-          <Row k="Against the plan"
-               v={`${trip.completeness.scanned} of ${trip.completeness.total}`} />
-        )}
+        </Fact>
       </div>
 
       {/* ── What the plan expected and the truck did not carry ───────────
@@ -2073,6 +2086,30 @@ const took = (secs: number | null) =>
 const time = (iso: string) =>
   new Date(iso).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
+function FigureRow({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-stretch">
+      <div className="px-4 pt-3 sm:py-4 sm:w-32 shrink-0 text-[11px] uppercase tracking-wider text-text-muted">{title}</div>
+      <div className="grid grid-cols-2 md:grid-cols-4 flex-1">{children}</div>
+    </div>
+  );
+}
+function Figure({ label, value, warn }: { label: string; value: string | number; warn?: boolean }) {
+  return (
+    <div className="px-4 py-3">
+      <div className={`text-2xl font-semibold tabular-nums leading-tight ${warn ? "text-warning" : "text-text-primary"}`}>{value}</div>
+      <div className="text-xs text-text-muted mt-0.5">{label}</div>
+    </div>
+  );
+}
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-surface-card px-4 py-3 min-w-0">
+      <div className="text-[11px] uppercase tracking-wider text-text-muted">{label}</div>
+      <div className="text-sm font-medium text-text-primary mt-1 truncate">{children}</div>
+    </div>
+  );
+}
 function Stat({ label, value, tone }: { label: string; value: string | number; tone?: "ok" | "warn" }) {
   return (
     <div className="card p-4">
