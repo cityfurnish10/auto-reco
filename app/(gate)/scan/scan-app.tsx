@@ -57,6 +57,15 @@ const CATS: Record<"IN" | "OUT", [string, string, IconName][]> = {
 const COUNTED = ["spare_part", "consumable", "pp_box", "sample"];
 const REASONS = ["rsnDamaged", "rsnLate", "rsnRepair", "rsnOther"];
 
+/** A random face check waits for this much quiet on the phone. */
+const RANDOM_CHECK_IDLE_MS = 20 * 60_000;
+
+/** Peak loading hours, IST: outward 9am–12pm, inward 6pm–9pm. No random check then. */
+function inPeakHours(nowMs: number): boolean {
+  const h = new Date(nowMs + 5.5 * 3600_000).getUTCHours();
+  return (h >= 9 && h < 12) || (h >= 18 && h < 21);
+}
+
 export default function GateApp() {
   const [screen, setScreen] = useState<Screen>("loading");
   const [lang, setLang] = useState<LangId>("en");
@@ -1068,7 +1077,7 @@ export default function GateApp() {
      Scheduled once and persisted. Drawing new times on each app start would
      let a guard avoid every prompt by reopening the app, and a check you can
      dodge is not a check. */
-  const scheduleChecks = useCallback((startedAt: number) => {
+  const scheduleChecks = useCallback((startedAt: number, forShift: string) => {
     const SHIFT_H = 9;
     const n = 2 + Math.floor(Math.random() * 2);          // two or three
     const times: number[] = [];
@@ -1080,7 +1089,7 @@ export default function GateApp() {
       times.push(Math.round(startedAt + lo + Math.random() * (hi - lo)));
     }
     setCheckTimes(times);
-    try { localStorage.setItem("gate.checks", JSON.stringify(times)); } catch { /* storage blocked */ }
+    try { localStorage.setItem("gate.checks", JSON.stringify({ shift: forShift, times })); } catch { /* storage blocked */ }
   }, []);
 
   useEffect(() => {
@@ -1090,13 +1099,35 @@ export default function GateApp() {
     const id = setTimeout(() => {
       let saved: string | null = null;
       try { saved = localStorage.getItem("gate.checks"); } catch { /* storage blocked */ }
+      // KEYED TO THE SHIFT (fixed 18 Sep 2026). The list used to be stored
+      // bare, so once a shift used up its checks the saved "[]" was read back
+      // for every later shift and no check was ever scheduled again — zero
+      // random checks arrived from 16 to 18 Sep. A list from another shift
+      // is now discarded and a fresh one drawn.
       if (saved) {
-        try { setCheckTimes(JSON.parse(saved) as number[]); return; } catch { /* corrupt */ }
+        try {
+          const p = JSON.parse(saved) as { shift?: string; times?: number[] };
+          if (p && p.shift === shiftId && Array.isArray(p.times)) { setCheckTimes(p.times); return; }
+        } catch { /* corrupt — draw afresh */ }
       }
-      scheduleChecks(shiftAt ? Date.parse(shiftAt) : Date.now());
+      scheduleChecks(shiftAt ? Date.parse(shiftAt) : Date.now(), shiftId);
     }, 0);
     return () => clearTimeout(id);
   }, [shiftId, shiftAt, scheduleChecks]);
+
+  // When the guard last touched the app. A random check waits for a guard who
+  // has been left alone for a while — see the gate below.
+  const lastTouchRef = useRef(0);
+  useEffect(() => {
+    lastTouchRef.current = Date.now();
+    const touch = () => { lastTouchRef.current = Date.now(); };
+    window.addEventListener("pointerdown", touch, { passive: true });
+    window.addEventListener("keydown", touch);
+    return () => {
+      window.removeEventListener("pointerdown", touch);
+      window.removeEventListener("keydown", touch);
+    };
+  }, []);
 
   useEffect(() => {
     if (!shiftId || checkTimes.length === 0) return;
@@ -1106,11 +1137,20 @@ export default function GateApp() {
       // quiet screen instead, which arrives within minutes.
       if (screen === "scan" || screen === "resolve" || screen === "manual"
           || screen === "randomcheck" || screen === "checkin") return;
+      // QUIET TIME ONLY (owner, 18 Sep 2026, after guards complained of checks
+      // during and after trips at peak). A due check waits — it is not dropped
+      // — until all three hold:
+      //   · no trip is open (loading, vehicle photo, closing: all off limits)
+      //   · nobody has touched the app for 20 minutes
+      //   · it is outside the peaks: outward 9am–12pm, inward 6pm–9pm IST
+      if (tripId) return;
+      if (Date.now() - lastTouchRef.current < RANDOM_CHECK_IDLE_MS) return;
+      if (inPeakHours(Date.now())) return;
       const due = checkTimes.find((t) => Date.now() >= t);
       if (!due) return;
       setCheckTimes((ts) => {
         const left = ts.filter((t) => t !== due);
-        try { localStorage.setItem("gate.checks", JSON.stringify(left)); } catch {}
+        try { localStorage.setItem("gate.checks", JSON.stringify({ shift: shiftId, times: left })); } catch {}
         return left;
       });
       setScreenBefore(screen);
@@ -1120,7 +1160,7 @@ export default function GateApp() {
       setScreen("randomcheck");
     }, 30_000);
     return () => clearInterval(id);
-  }, [shiftId, checkTimes, screen]);
+  }, [shiftId, checkTimes, screen, tripId]);
 
   async function submitRandomCheck() {
     const id = uid();
