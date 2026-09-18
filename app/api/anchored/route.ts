@@ -46,7 +46,7 @@ export const GET = jsonRoute("anchored", async (req: NextRequest) => {
   const date = sp.get("date");
   const city = sp.get("city");
   // Section 3's "each book as the source of truth" cards (18 Sep 2026):
-  //   truth=<book> [&vs=<book>&kind=matched|notMatched | &kind=all|allMatched] &direction=IN|OUT
+  //   truth=<book> [&vs=<book>&kind=matched|notMatched | &kind=all|allMatched|notAll] &direction=IN|OUT
   // A book's presence is its present_* flag, except Odoo, which is counted on
   // its own 3pm window (odoo_same_day) so the list ties to the scoreboard.
   const truth = sp.get("truth");
@@ -91,6 +91,10 @@ export const GET = jsonRoute("anchored", async (req: NextRequest) => {
       q = q.eq(COL[vs], kind === "matched");
     } else if (kind === "allMatched") {
       for (const [k, col] of Object.entries(COL)) if (k !== truth) q = q.eq(col, true);
+    } else if (kind === "notAll") {
+      // The complement of allMatched: at least one other book lacks it.
+      // "not.is.true" and not "eq.false" — odoo_same_day can be null.
+      q = q.or(Object.entries(COL).filter(([k]) => k !== truth).map(([, col]) => `${col}.not.is.true`).join(","));
     }
   } else
   // Each card is one presence pattern. Expressed as filters rather than read

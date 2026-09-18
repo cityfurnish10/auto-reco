@@ -4,7 +4,9 @@
 // ever sees their own city (enforced by RLS on the API; the city filter here
 // is belt-and-suspenders). Managers close variances with a reason (→ PATCH).
 
-import AnchoredCards from "./anchored-cards";
+import SourceTruthCards from "./source-truth-cards";
+import SourceScoreboard from "./source-scoreboard";
+import { DashSection, DayStatus } from "./dashboard-sections";
 import { VarianceName } from "@/components/variance-name";
 import InTransitSection from "./in-transit-section";
 import CountOnlyCard from "./count-only-card";
@@ -336,105 +338,49 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
         </div>
       )}
 
-      {/* KPI grid — loss-only. Posting-lag / hygiene (INFO) rows stay in the DB
-          for audit but are excluded from these counts (see hidden-count note). */}
-      {/* The figures could not be read. Every tile below shows an em dash rather
-          than a zero (see statFigure); this says why, and offers the retry. */}
-      {/* Items in transit — not losses, so above the loss tiles and the chase list. */}
-      <InTransitSection city={city} date={dateF} onOpen={(v) => setDetail(v)} />
       {statsError && (
         <ErrorState what="the figures" detail={statsError} onRetry={refetchStats} compact />
       )}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <button
-          onClick={() => setListRequest({ bucket: "REAL", status: "ALL", title: "All loss variances" })}
-          className="kpi-tile kpi-tile--danger card-hover text-left group cursor-pointer"
-        >
-          <div className="p-2 bg-danger-soft text-danger rounded-control w-fit mb-4"><Icon name="warning" size={22} /></div>
-          <p className="kpi-label group-hover:underline">Not accounted for</p>
-          <h3 className="kpi-value text-danger mt-1">{statFigure(statsLoading, statsError, cityAgg?.real)}</h3>
-          <span className="text-xs text-text-muted mt-1 block">{rateCaption(cityAgg)}</span>
-        </button>
-        <button
-          onClick={() => setListRequest({ bucket: "REAL", status: "open", title: "Open losses" })}
-          className="kpi-tile card-hover text-left group cursor-pointer"
-        >
-          <div className="p-2 bg-accent-soft text-accent rounded-control w-fit mb-4"><Icon name="pending_actions" size={22} /></div>
-          <p className="kpi-label group-hover:underline">Still open</p>
-          <h3 className="kpi-value mt-1">{statFigure(statsLoading, statsError, cityAgg?.openReal)}</h3>
-          <span className="text-xs text-text-muted mt-1 block">{queueCaption(cityAgg)}</span>
-        </button>
-        <button
-          onClick={() =>
-            setListRequest({ bucket: "REAL", status: "pending_approval", title: "Awaiting approval" })
-          }
-          className="kpi-tile card-hover text-left group cursor-pointer"
-        >
-          <div className="p-2 bg-surface-elevated rounded-control text-accent w-fit mb-4"><Icon name="approval" size={22} /></div>
-          <p className="kpi-label group-hover:underline">With the admin</p>
-          {/* REAL-scoped, matching the list this tile opens. */}
-          <h3 className="kpi-value mt-1">{statFigure(statsLoading, statsError, cityAgg?.pendingApprovalReal)}</h3>
-          <span className="text-xs text-text-muted mt-1 block">
-            {(cityAgg?.pendingApprovalReal ?? 0) > 0
-              ? "Submitted — nothing more for you to do on these"
-              : "Nothing waiting on the admin"}
-          </span>
-        </button>
-        <button
-          onClick={() => setListRequest({ bucket: "REAL", status: "closed", title: "Closed variances" })}
-          className="kpi-tile kpi-tile--success card-hover text-left group cursor-pointer"
-        >
-          <div className="p-2 bg-success-soft text-success rounded-control w-fit mb-4"><Icon name="task_alt" size={22} /></div>
-          <p className="kpi-label group-hover:underline">Closed today</p>
-          {/* LOSSES ONLY, matching the list this tile opens — it used to count
-              every bucket, so the number and the list behind it disagreed. */}
-          <h3 className="kpi-value mt-1">{statFigure(statsLoading, statsError, cityAgg?.closedReal)}</h3>
-          <span className="text-xs text-text-muted mt-1 block">{closedCaption(cityAgg)}</span>
-          {/* Pending-list items are stored as closed, so they land in the count
-              above. Naming them stops the tile reading as "all finished". */}
-          {(cityAgg?.pendingListReal ?? 0) > 0 && (
-            <span className="text-xs text-status-warning mt-1 block">
-              {cityAgg?.pendingListReal} on the pending list
-            </span>
-          )}
-        </button>
-      </div>
-      {!statsLoading && (cityAgg?.infoBucket ?? 0) > 0 && (
-        <p className="text-xs text-text-disabled -mt-2">
-          {cityAgg?.infoBucket} more items were checked and need nothing from you — late Odoo
-          postings, barcode typos, paperwork written a day either side.{" "}
-          <button
-            onClick={() =>
-              setListRequest({
-                bucket: "INFO",
-                status: "ALL",
-                title: "Posting-lag & hygiene entries",
-              })
-            }
-            className="underline hover:text-text-secondary"
-          >
-            View the list
-          </button>
-        </p>
-      )}
 
-      {/* The day read against the gate — the same five groups the admin view
-          shows, scoped by RLS to this manager's own city. */}
-      <AnchoredCards
-        agg={cityAgg}
-        city={city}
-        loading={statsLoading}
-        businessDate={stats?.run?.business_date}
-      />
+      {/* The same four numbered sections as the admin view (18 Sep 2026),
+          scoped by RLS to this manager's own city. See dashboard-sections.tsx. */}
+      <DashSection n={1} title="Day status" subtitle="Can this day be judged yet, and what is open">
+        <DayStatus agg={cityAgg} loading={statsLoading} error={statsError} onOpenList={setListRequest} />
+        <InTransitSection city={city} date={dateF} onOpen={(v) => setDetail(v)} />
+      </DashSection>
 
-      {/* Count-only movements — PP boxes, spares, consumables and the gate's
-          own hand-counted items. Not variances: no serial to reconcile. */}
-      <CountOnlyCard
-        agg={cityAgg}
-        city={city}
-        loading={statsLoading}
-        businessDate={stats?.run?.business_date}
-      />
+      <DashSection
+        n={2}
+        title="What moved"
+        subtitle="Barcoded units each book recorded · click any figure to see its rows"
+      >
+        <SourceScoreboard
+          agg={cityAgg}
+          city={city}
+          loading={statsLoading}
+          businessDate={stats?.run?.business_date}
+          dayDefinition={stats?.run?.day_definition}
+        />
+        <CountOnlyCard
+          agg={cityAgg}
+          city={city}
+          loading={statsLoading}
+          businessDate={stats?.run?.business_date}
+        />
+      </DashSection>
+
+      <DashSection
+        n={3}
+        title="Do the books agree"
+        subtitle="Each book in turn as the source of truth · units, one per barcode per direction"
+      >
+        <SourceTruthCards
+          agg={cityAgg}
+          city={city}
+          loading={statsLoading}
+          businessDate={stats?.run?.business_date}
+        />
+      </DashSection>
 
       {/* Variance table */}
       <section className="card overflow-hidden flex flex-col">
@@ -654,10 +600,10 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
 
         {/* Tablet/desktop: full table (md+) */}
         <div className="overflow-x-auto hidden md:block">
-          <table className="table-clean">
+          <table className="table-clean table-wide">
             <thead>
               <tr>
-                <th className="w-10">
+                <th className="w-10 col-pin col-pin-1">
                   <SelectAllCheckbox
                     checked={sel.allVisibleSelected}
                     indeterminate={sel.someVisibleSelected}
@@ -665,21 +611,13 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                     label={`Select all ${rows.length} rows on this page`}
                   />
                 </th>
-                <SortHeader label="Date" sortKey="date" state={sort} onSort={applySort} />
-                <SortHeader label="Item" sortKey="product" state={sort} onSort={applySort} />
-                <SortHeader label="Barcode" sortKey="barcode" state={sort} onSort={applySort} />
-                <SortHeader label="Ticket" sortKey="ticket" state={sort} onSort={applySort} />
-                <SortHeader label="Raised by" sortKey="source" state={sort} onSort={applySort} />
-                <SortHeader label="Job type" sortKey="jobType" state={sort} onSort={applySort} />
-                <SortHeader label="SO" sortKey="so" state={sort} onSort={applySort} />
+                <SortHeader label="Barcode" sortKey="barcode" state={sort} onSort={applySort} className="col-pin col-pin-2" />
+                {/* Same columns as the admin table: one per book, did it record this unit? */}
+                <th className="text-center w-[76px]" title="Guard Check">Guard</th>
+                <th className="text-center w-[76px]" title="Manual Sheet">Sheet</th>
+                <th className="text-center w-[76px]" title="Delivery Tracker">Tracker</th>
+                <th className="text-center w-[76px]" title="Odoo">Odoo</th>
                 <SortHeader label="Problem" sortKey="variance" state={sort} onSort={applySort} />
-                <SortHeader
-                  label="Priority"
-                  sortKey="priority"
-                  state={sort}
-                  onSort={applySort}
-                  title="Sort by severity — High, Medium, Info"
-                />
                 <SortHeader label="Status" sortKey="status" state={sort} onSort={applySort} />
                 <SortHeader
                   label="Open for"
@@ -698,38 +636,43 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                   onClick={() => openDetail(v)}
                   className={`cursor-pointer ${sel.has(v.id) ? "bg-accent-soft" : ""}`}
                 >
-                  <td onClick={(e) => e.stopPropagation()}>
+                  <td onClick={(e) => e.stopPropagation()} className="col-pin col-pin-1">
                     <RowCheckbox
                       checked={sel.has(v.id)}
                       onChange={(shift) => onRowCheck(v.id, shift)}
                       label={`Select ${shownBarcode(v)}`}
                     />
                   </td>
-                  <td className="whitespace-nowrap text-text-secondary">{v.business_date}</td>
-                  <td className="max-w-[200px] truncate" title={v.product ?? ""}>{v.product ?? "—"}</td>
-                  <td>
+                  <td className="col-pin col-pin-2">
                     {/* A <tr> can't take focus — this is the keyboard route in. */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         openDetail(v);
                       }}
-                      className="font-mono font-semibold text-text-primary hover:text-accent hover:underline"
+                      className="font-mono font-semibold text-text-primary hover:text-accent hover:underline whitespace-nowrap"
                     >
                       {shownBarcode(v)}
                     </button>
+                    {q && <span className="block text-[11px] text-text-muted">{v.business_date}</span>}
+                    {v.product && (
+                      <span className="block text-[11px] text-text-muted truncate max-w-[180px]" title={v.product}>
+                        {v.product}
+                      </span>
+                    )}
                   </td>
-                  <td className="text-text-secondary">{v.ticket_id ?? "—"}</td>
-                  <td><SourceBadge source={v.variance_source} /></td>
-                  <td className="text-text-secondary text-xs">{opsTypeLabel(v.job_type)}</td>
-                  <td className="text-text-secondary whitespace-nowrap">{v.so_number ?? "—"}</td>
-                  <td className="min-w-[200px] max-w-[260px]" title={v.note ?? ""}>
+                  <BookTick present={v.present_p} reported={v.reported_p} />
+                  <BookTick present={v.present_s} reported={v.reported_s} />
+                  <BookTick present={v.present_d} reported={v.reported_d} />
+                  <BookTick present={v.present_o} reported={v.reported_o} />
+                  <td className="min-w-[240px]" title={v.note ?? ""}>
                     <VarianceName name={v.variance_name} ctx={{ direction: v.direction, jobType: v.job_type, bucket: v.bucket, note: v.note }} />
-                    {/* A rejected submission used to look identical to one
-                        nobody had touched — the admin's note was a hover
-                        tooltip on the status badge, so on the desktop table the
-                        only place the manager would ever see it, they wouldn't.
-                        It is now on the row itself. */}
+                    <span className="block text-[11px] text-text-muted mt-0.5">
+                      {v.direction === "IN" ? "Inward" : v.direction === "OUT" ? "Outward" : v.direction}
+                      {v.priority === "High" && <span className="text-danger"> · urgent</span>}
+                    </span>
+                    {/* A rejected submission must be visible on the row itself —
+                        the manager would never find it in a tooltip. */}
                     {v.status !== "closed" && v.rejection_note && (
                       <span className="mt-1 flex items-start gap-1.5 text-xs text-danger">
                         <Icon name="error" size={14} className="mt-px" />
@@ -737,7 +680,6 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                       </span>
                     )}
                   </td>
-                  <td><span className={PRIORITY_BADGE[v.priority]}>{v.priority}</span></td>
                   <td>
                     <span className={`${STATUS_BADGE[v.status]} uppercase`} title={v.closure_reason ?? v.rejection_note ?? undefined}>
                       {STATUS_LABEL[v.status]}
@@ -768,10 +710,10 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                   </td>
                 </tr>
               ))}
-              {loading && rows.length === 0 && <TableBodySkeleton cols={13} />}
+              {loading && rows.length === 0 && <TableBodySkeleton cols={10} />}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={13}>
+                  <td colSpan={10}>
                     <EmptyState
                       error={error}
                       what="these items"
@@ -854,5 +796,17 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
         }}
       />
     </div>
+  );
+}
+
+/** Did this book record the unit? — for a book that did not report, a dash, never a cross. */
+function BookTick({ present, reported }: { present?: boolean; reported?: boolean }) {
+  if (reported === false) {
+    return <td className="text-center text-text-disabled" title="This book did not report that day">—</td>;
+  }
+  return present ? (
+    <td className="text-center text-success font-semibold" title="Recorded">✓</td>
+  ) : (
+    <td className="text-center text-danger font-semibold" title="Not recorded">✗</td>
   );
 }

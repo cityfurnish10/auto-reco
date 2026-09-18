@@ -101,6 +101,22 @@ export default function SourceScoreboard({ agg, city, loading, businessDate, day
     const vals = reporting.map((c) => c[dir]);
     return Math.max(...vals) - Math.min(...vals);
   };
+  // Three states per book, and they must not collapse into two: still
+  // loading, did not report, and reported a figure (including a real zero).
+  // ALL CITIES sums five warehouses; a city without data makes the total
+  // PARTIAL there rather than blanking real scans elsewhere. On one city a
+  // gap makes the figure unknown.
+  const cols = rows.map((r) => {
+    const c = r.count;
+    const gap = !!c && !c.reported;
+    return {
+      ...r,
+      unread: loading || !c,
+      down: gap && !all,
+      partial: gap && all,
+      dropped: (c?.notDone?.in ?? 0) + (c?.notDone?.out ?? 0),
+    };
+  });
   const inSpread = spread("in");
   const outSpread = spread("out");
 
@@ -126,78 +142,68 @@ export default function SourceScoreboard({ agg, city, loading, businessDate, day
         </p>
       </div>
 
+      {/* Sources across, directions down (transposed 18 Sep 2026 at the
+          owner's request): the four books sit side by side, so reading a row
+          left to right IS the comparison. */}
       <div className="overflow-x-auto">
         <table className="table-clean">
           <thead>
             <tr>
-              <th className="min-w-[160px]">Source</th>
-              <th className="text-right min-w-[90px]">Inward</th>
-              <th className="text-right min-w-[90px]">Outward</th>
-              <th className="text-right min-w-[90px]">Total</th>
+              <th className="min-w-[90px]"></th>
+              {cols.map((r) => (
+                <th key={r.key} className={`text-right min-w-[130px] align-bottom ${r.down ? "opacity-60" : ""}`}>
+                  <span className="normal-case" title={r.hint}>{r.label}</span>
+                  {r.down && (
+                    <span className="badge badge-suppressed uppercase ml-2" title="This source did not report for this city and day — a connector failure, a gate that never synced, or a sheet not filed yet. The blanks are unknown, not zero.">
+                      No data
+                    </span>
+                  )}
+                  {r.partial && (
+                    <span className="badge badge-suppressed uppercase ml-2" title="At least one city has no figure from this source for this day, so the totals beside it cover only the cities that did report. Open a single city tab to see which.">
+                      Partial
+                    </span>
+                  )}
+                  {/* WHY THE SHEET CAN BE SMALLER. Rows its own outcome column
+                      marks "Not Delivered" are not movements and are left out —
+                      invisible until somebody counted the tab by hand and found
+                      91 where the board said 78. */}
+                  {!r.unread && !r.down && r.dropped > 0 && (
+                    <span
+                      className="block text-[11px] font-normal normal-case tracking-normal text-text-muted"
+                      title="Rows the sheet itself marks as not delivered or cancelled. They are not movements, so they are not counted here — this is the difference between the sheet's row count and the figure below it."
+                    >
+                      {r.dropped} not delivered
+                    </span>
+                  )}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => {
-              const c = r.count;
-              // Three states, and they must not collapse into two: still
-              // loading, did not report, and reported a figure (including a
-              // real zero).
-              const unread = loading || !c;
-              // ALL CITIES sums five warehouses and asks every one of them to
-              // have reported. Usually one has not — only Delhi is on the gate
-              // app — and blanking the row there would hide 88 real outward
-              // scans to report an absence in Mumbai. So across cities a gap
-              // makes the total PARTIAL; on a single city it makes it unknown.
-              const gap = !!c && !c.reported;
-              const down = gap && !all;
-              const partial = gap && all;
-              const dropped = (c?.notDone?.in ?? 0) + (c?.notDone?.out ?? 0);
-              return (
-                <tr key={r.key} className={down ? "opacity-60" : undefined}>
-                  <td>
-                    <span className="text-text-primary font-medium" title={r.hint}>
-                      {r.label}
-                    </span>
-                    {down && (
-                      <span className="badge badge-suppressed uppercase ml-2" title="This source did not report for this city and day — a connector failure, a gate that never synced, or a sheet not filed yet. The blanks are unknown, not zero.">
-                        No data
-                      </span>
-                    )}
-                    {partial && (
-                      <span className="badge badge-suppressed uppercase ml-2" title="At least one city has no figure from this source for this day, so the totals beside it cover only the cities that did report. Open a single city tab to see which.">
-                        Partial
-                      </span>
-                    )}
-                    {/* WHY THIS COLUMN IS SMALLER THAN THE SHEET. Rows the
-                        sheet's own outcome column marks "Not Delivered" are not
-                        movements and are left out — correct, and invisible until
-                        somebody counted the tab by hand and found 91 where the
-                        board said 78. Only the sheet can have these: it is the
-                        one source that records an outcome. */}
-                    {!unread && !down && dropped > 0 && (
-                      <span
-                        className="text-xs text-text-muted ml-2"
-                        title="Rows the sheet itself marks as not delivered or cancelled. They are not movements, so they are not counted here — this is the difference between the sheet's row count and the figure beside it."
-                      >
-                        · {dropped} not delivered
-                      </span>
-                    )}
-                  </td>
-                  {/* EVERY FIGURE OPENS ITS OWN ROWS. A count on its own can
-                      only be trusted or doubted; the rows behind it can be
-                      checked. Asked for 16 Sep 2026 after "why does the sheet
-                      say 91 and the board say 78" took a database query to
-                      answer. */}
-                  <Cell figure={unread ? null : down ? "—" : c!.in}
-                    onOpen={() => setCell({ source: r.key, direction: "IN", label: `${r.label} · inward`, figure: c!.in })} />
-                  <Cell figure={unread ? null : down ? "—" : c!.out}
-                    onOpen={() => setCell({ source: r.key, direction: "OUT", label: `${r.label} · outward`, figure: c!.out })} />
-                  <Cell muted suffix={partial && !unread ? "+" : undefined}
-                    figure={unread ? null : down ? "—" : c!.in + c!.out}
-                    onOpen={() => setCell({ source: r.key, direction: "BOTH", label: `${r.label} · both ways`, figure: c!.in + c!.out })} />
-                </tr>
-              );
-            })}
+            {(["IN", "OUT", "BOTH"] as const).map((dir) => (
+              <tr key={dir} className={dir === "BOTH" ? "border-t-2 border-border" : undefined}>
+                <td className={dir === "BOTH" ? "text-text-muted" : "text-text-primary font-medium"}>
+                  {dir === "IN" ? "Inward" : dir === "OUT" ? "Outward" : "Total"}
+                </td>
+                {/* EVERY FIGURE OPENS ITS OWN ROWS. A count on its own can
+                    only be trusted or doubted; the rows behind it can be
+                    checked. */}
+                {cols.map((r) => {
+                  const c = r.count;
+                  const n = !c ? 0 : dir === "IN" ? c.in : dir === "OUT" ? c.out : c.in + c.out;
+                  const side = dir === "IN" ? "inward" : dir === "OUT" ? "outward" : "both ways";
+                  return (
+                    <Cell
+                      key={r.key}
+                      muted={dir === "BOTH"}
+                      suffix={dir === "BOTH" && r.partial && !r.unread ? "+" : undefined}
+                      figure={r.unread ? null : r.down ? "—" : n}
+                      onOpen={() => setCell({ source: r.key, direction: dir, label: `${r.label} · ${side}`, figure: n })}
+                    />
+                  );
+                })}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

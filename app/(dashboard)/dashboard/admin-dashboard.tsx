@@ -904,13 +904,6 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 <th className="text-center w-[76px]" title="Odoo">Odoo</th>
                 <SortHeader label="Problem" sortKey="variance" state={sort} onSort={applySort} />
                 {cityTab === "ALL" && <SortHeader label="City" sortKey="city" state={sort} onSort={applySort} />}
-                <SortHeader
-                  label="Team"
-                  sortKey="responsible"
-                  state={sort}
-                  onSort={applySort}
-                  title="Sort by the team that has to fix it"
-                />
                 <SortHeader label="Status" sortKey="status" state={sort} onSort={applySort} />
                 <SortHeader
                   label="Open for"
@@ -970,9 +963,6 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     </span>
                   </td>
                   {cityTab === "ALL" && <td className="whitespace-nowrap">{v.city}</td>}
-                  <td className="text-text-secondary whitespace-nowrap">
-                    {responsibleLabel(v.responsible)}
-                  </td>
                   <td>
                     <span
                       className={`${STATUS_BADGE[v.status]} uppercase`}
@@ -1049,10 +1039,10 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                   </td>
                 </tr>
               ))}
-              {loading && rows.length === 0 && <TableBodySkeleton cols={15} />}
+              {loading && rows.length === 0 && <TableBodySkeleton cols={14} />}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={15}>
+                  <td colSpan={14}>
                     <EmptyState
                       error={error}
                       what="these items"
