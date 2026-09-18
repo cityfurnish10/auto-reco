@@ -14,6 +14,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { jsonRoute } from "@/lib/api/json-route";
 import { createClient } from "@/lib/supabase/server";
 import { PENDING_LIST_REASON } from "@/lib/ui/closure-reasons";
+import { usesCalendarDay } from "@/lib/connectors/ist-window";
+import { isCityClosed } from "@/lib/engine/schedule";
+import { addDays } from "@/lib/engine/dates";
+import type { City } from "@/lib/sample-data";
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -44,6 +48,23 @@ export interface SourceCount {
    */
   missing?: string[];
 }
+
+type TruthSource = "gate" | "sheet" | "dt" | "odoo";
+interface TruthCounts {
+  /** Units this book has. */
+  saw: number;
+  /** …of which every other book has too. */
+  allMatched: number;
+  /** …matched / not matched by each other book. */
+  vs: Partial<Record<TruthSource, { matched: number; notMatched: number }>>;
+}
+const TRUTH_SOURCES: TruthSource[] = ["gate", "sheet", "dt", "odoo"];
+const emptyTruth = (): Record<TruthSource, Record<"IN" | "OUT", TruthCounts>> => {
+  const one = (): TruthCounts => ({ saw: 0, allMatched: 0, vs: {} });
+  const out = {} as Record<TruthSource, Record<"IN" | "OUT", TruthCounts>>;
+  for (const s of TRUTH_SOURCES) out[s] = { IN: one(), OUT: one() };
+  return out;
+};
 
 interface CityAgg {
   city: string;
@@ -148,6 +169,16 @@ interface CityAgg {
    * for the guard's absence is the failure this shape exists to avoid — so
    * `notSeenByGate` is a group of its own, never a variance count.
    */
+  /**
+   * Each book in turn as the source of truth (owner's design, 18 Sep 2026):
+   * of the units THIS book has, how many all four agree on, and how many each
+   * of the other three matches. Units, per direction, from the movement ledger.
+   * Odoo is counted on its own 3pm window (odoo_same_day), the same rule as the
+   * scoreboard's Odoo column, so a card's denominator ties to that table.
+   */
+  truth: Record<TruthSource, Record<"IN" | "OUT", TruthCounts>>;
+  /** When Odoo's window for this day closes (ISO), or null on a 15:00-rule day. */
+  odooWindowEnd: string | null;
   anchored: {
     /** Movements the gate witnessed — the denominator of the three below. */
     gateSaw: number;
@@ -198,6 +229,8 @@ function emptyAgg(city: string): CityAgg {
       odoo: { in: 0, out: 0, reported: false },
     },
     gateCount: { in: 0, out: 0, items: 0 },
+    truth: emptyTruth(),
+    odooWindowEnd: null,
     anchored: {
       gateSaw: 0, confirmedAll: 0, gateNotOdoo: 0, gateNotSheet: 0,
       gateNotDt: 0, notSeenByGate: 0, gateReported: false,
@@ -279,6 +312,9 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
     is_movement: boolean;
     /** The gate reported at all for this city and day (invariant 2). */
     reported_p: boolean;
+    direction: "IN" | "OUT";
+    /** Odoo posted it inside this day's own 3pm window — the scoreboard's Odoo. */
+    odoo_same_day: boolean;
   }
 
   // THE FOUR READS BELOW RUN CONCURRENTLY.
@@ -337,7 +373,7 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
       for (let from = 0; ; from += 1000) {
         const { data: page, error } = await supabase
           .from("movement_events")
-          .select("city, present_p, present_s, present_d, present_o, is_movement, reported_p")
+          .select("city, present_p, present_s, present_d, present_o, is_movement, reported_p, direction, odoo_same_day")
           .eq("business_date", run.business_date)
           // Latest run only — the ledger never deletes, so rows the newest run no
           // longer emits (merged/parked OCR artifacts) linger under older run_ids
@@ -539,6 +575,25 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
       overall.floorNotInOdoo += 1;
     }
 
+    // Each book as the source of truth, in turn.
+    const has: Record<TruthSource, boolean> = {
+      gate: m.present_p, sheet: m.present_s, dt: m.present_d, odoo: !!m.odoo_same_day,
+    };
+    const dir = m.direction === "IN" ? "IN" : "OUT";
+    for (const target of [agg, overall]) {
+      for (const src of TRUTH_SOURCES) {
+        if (!has[src]) continue;
+        const t = target.truth[src][dir];
+        t.saw += 1;
+        const others = TRUTH_SOURCES.filter((o) => o !== src);
+        if (others.every((o) => has[o])) t.allMatched += 1;
+        for (const o of others) {
+          const v = (t.vs[o] ??= { matched: 0, notMatched: 0 });
+          if (has[o]) v.matched += 1; else v.notMatched += 1;
+        }
+      }
+    }
+
     // The same rows read with the gate as the anchor. Counted here rather than
     // in a second pass because this loop already walks every movement of the
     // day and the ledger is the only place the four presence flags live
@@ -578,6 +633,22 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
     }
     calendar = { weeklyOff, holidays };
   }
+
+  // WHEN ODOO'S WINDOW FOR THIS DAY CLOSES — 3pm on the next day the warehouse
+  // opens (18 Sep 2026 rules). Before then Odoo's figure is still filling in,
+  // and section 1 of the dashboard says so rather than letting a half-posted
+  // day read as a finished one. Only for calendar-day runs; the old 15:00 days
+  // closed on their own boundary.
+  const windowEnd = (city: string): string | null => {
+    const d0 = String(run.business_date).slice(0, 10);
+    if (!usesCalendarDay(d0)) return null;
+    let d = addDays(d0, 1);
+    for (let i = 0; i < 7 && isCityClosed(city as City, d, calendar); i++) d = addDays(d, 1);
+    return new Date(`${d}T15:00:00+05:30`).toISOString();
+  };
+  for (const agg of byCityMap.values()) agg.odooWindowEnd = windowEnd(agg.city);
+  const ends = (cityStats ?? []).map((s) => windowEnd(s.city)).filter((e): e is string => !!e).sort();
+  overall.odooWindowEnd = ends.length ? ends[ends.length - 1] : null;
 
   return NextResponse.json({
     run: {

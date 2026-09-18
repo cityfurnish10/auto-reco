@@ -5,8 +5,10 @@
 // Date, City, Item Name, Barcode, Ticket ID, Source, Ops Type, SO Number,
 // Variance, Priority, Status. Defaults to the REAL + open "chase list".
 
-import AnchoredCards from "./anchored-cards";
+import SourceTruthCards from "./source-truth-cards";
+import { DashSection, DayStatus } from "./dashboard-sections";
 import { sourceLabel } from "@/lib/ui/source-names";
+import { variancePhrase } from "@/lib/ui/variance-phrases";
 import { VarianceName } from "@/components/variance-name";
 import InTransitSection from "./in-transit-section";
 import SourceScoreboard from "./source-scoreboard";
@@ -91,6 +93,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
   // whose badge counts across all dates; cleared the moment a date is picked.
   const [allDates, setAllDates] = useState(false);
   const [page, setPage] = useState(1);
+  const [moreFilters, setMoreFilters] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [rejecting, setRejecting] = useState<{ id: string; product: string; barcode: string } | null>(null);
@@ -440,9 +443,6 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         </div>
       </div>
 
-      {/* Items in transit — not losses, so above the loss tiles and the chase list. */}
-      <InTransitSection city={cityTab} date={dateF} onOpen={(v) => setDetail(v)} />
-
       {/* The figures could not be read. Every number below shows an em dash
           rather than a zero (see statFigure); this says why, and offers the
           retry. */}
@@ -450,120 +450,50 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         <ErrorState what="the figures" detail={statsError} onRetry={refetchStats} compact />
       )}
 
-      {/* The chase list, in one line.
-          This replaced three KPI tiles. They answered "how much is on my list",
-          which is a one-line question that was taking a third of the first
-          screen; the scoreboard below answers "did the four records of today's
-          movements agree", which nothing answered at all. Every figure here is
-          still a click into the same filtered list the tiles opened, and every
-          one is counted over LOSSES only, matching what the click shows. */}
-      <div className="card px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-        <button
-          onClick={() => setListRequest({ bucket: "REAL", status: "ALL", title: "All loss variances" })}
-          className="flex items-baseline gap-1.5 hover:text-accent cursor-pointer group"
-          title="Open every loss variance"
-        >
-          <b className="text-lg font-bold text-text-primary group-hover:text-accent">
-            {statFigure(statsLoading, statsError, agg?.real)}
-          </b>
-          <span className="text-text-secondary group-hover:underline">to chase</span>
-        </button>
-        <span className="text-border">|</span>
-        <button
-          onClick={() => setListRequest({ bucket: "REAL", status: "open", title: "Open losses" })}
-          className="flex items-baseline gap-1.5 hover:text-accent cursor-pointer group"
-          title="Open the losses awaiting action"
-        >
-          <b className="text-lg font-bold text-danger">
-            {statFigure(statsLoading, statsError, agg?.openReal)}
-          </b>
-          <span className="text-text-secondary group-hover:underline">still open</span>
-        </button>
-        <span className="text-border">|</span>
-        <button
-          onClick={() => setListRequest({ bucket: "REAL", status: "closed", title: "Resolved losses" })}
-          className="flex items-baseline gap-1.5 hover:text-accent cursor-pointer group"
-          title="Open the resolved losses"
-        >
-          <b className="text-lg font-bold text-text-primary group-hover:text-accent">
-            {statFigure(statsLoading, statsError, agg?.closedReal)}
-          </b>
-          <span className="text-text-secondary group-hover:underline">closed</span>
-        </button>
-        {(agg?.pendingApprovalReal ?? 0) > 0 && (
-          <>
-            <span className="text-border">|</span>
-            <button
-              onClick={() =>
-                setListRequest({
-                  bucket: "REAL",
-                  status: "pending_approval",
-                  title: "Awaiting your approval",
-                })
-              }
-              className="text-accent font-semibold hover:underline cursor-pointer"
-            >
-              {agg?.pendingApprovalReal} pending approval
-            </button>
-          </>
-        )}
-        {(agg?.high ?? 0) > 0 && <span className="badge badge-high">{agg?.high} urgent</span>}
-        {/* Pending-list items are stored as closed, so they land in the count
-            above. Naming them stops "closed" reading as "all finished". */}
-        {(agg?.pendingListReal ?? 0) > 0 && (
-          <Link href="/pending-list" className="text-xs text-status-warning hover:underline">
-            {agg?.pendingListReal} on the pending list
-          </Link>
-        )}
-        <span className="text-xs text-text-muted ml-auto">{rateCaption(agg)}</span>
-      </div>
+      {/* FOUR NUMBERED SECTIONS, in the order anybody reads a day (18 Sep 2026
+          — the page had grown into an unsectioned pile). See
+          dashboard-sections.tsx. */}
+      <DashSection n={1} title="Day status" subtitle="Can this day be judged yet, and what is open">
+        <DayStatus agg={agg} loading={statsLoading} error={statsError} onOpenList={setListRequest} />
+        {/* Items in transit — not losses: out of the warehouse, Odoo Out not
+            yet validated. */}
+        <InTransitSection city={cityTab} date={dateF} onOpen={(v) => setDetail(v)} />
+      </DashSection>
 
-      {/* The day read against the gate. Above the raw counts because it is the
-          question that decides what anyone does next; the scoreboard below is
-          what each book counted, which is the evidence for it. */}
-      <AnchoredCards
-        agg={agg}
-        city={cityTab}
-        loading={statsLoading}
-        businessDate={stats?.run?.business_date}
-      />
+      <DashSection
+        n={2}
+        title="What moved"
+        subtitle="Barcoded units each book recorded · click any figure to see its rows"
+      >
+        <SourceScoreboard
+          agg={agg}
+          city={cityTab}
+          loading={statsLoading}
+          businessDate={stats?.run?.business_date}
+          dayDefinition={stats?.run?.day_definition}
+        />
+        {/* Not barcoded, so not in the table above: PP boxes, spares,
+            consumables and the gate's hand-counted items. */}
+        <CountOnlyCard
+          agg={agg}
+          city={cityTab}
+          loading={statsLoading}
+          businessDate={stats?.run?.business_date}
+        />
+      </DashSection>
 
-      {/* Did the four books agree? — the day-level question the variance list
-          can only answer one unit at a time. */}
-      <SourceScoreboard
-        agg={agg}
-        city={cityTab}
-        loading={statsLoading}
-        businessDate={stats?.run?.business_date}
-        dayDefinition={stats?.run?.day_definition}
-      />
-      {!statsLoading && (agg?.infoBucket ?? 0) > 0 && (
-        <p className="text-xs text-text-disabled -mt-2">
-          {agg?.infoBucket} more items were checked and need nothing from you — late Odoo
-          postings, barcode typos, paperwork written a day either side.{" "}
-          <button
-            onClick={() =>
-              setListRequest({
-                bucket: "INFO",
-                status: "ALL",
-                title: "Posting-lag & hygiene entries",
-              })
-            }
-            className="underline hover:text-text-secondary"
-          >
-            View the list
-          </button>
-        </p>
-      )}
-
-      {/* Count-only movements — PP boxes, spares, consumables and the gate's
-          own hand-counted items. Not variances: no serial to reconcile. */}
-      <CountOnlyCard
-        agg={agg}
-        city={cityTab}
-        loading={statsLoading}
-        businessDate={stats?.run?.business_date}
-      />
+      <DashSection
+        n={3}
+        title="Do the books agree"
+        subtitle="Each book in turn as the source of truth · units, one per barcode per direction"
+      >
+        <SourceTruthCards
+          agg={agg}
+          city={cityTab}
+          loading={statsLoading}
+          businessDate={stats?.run?.business_date}
+        />
+      </DashSection>
 
       {/* City-wise breakdown */}
       {cityTab === "ALL" && stats && stats.byCity.length > 0 && (
@@ -674,119 +604,137 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         </div>
       )}
 
-      {/* Variance table — rows open the detail dialog */}
+      {/* Section 4 — the units that do not line up. Rows open the detail
+          dialog, which carries item, customer, SO, ticket and the evidence. */}
+      <DashSection
+        n={4}
+        title="Variances"
+        subtitle={
+          <>
+            {loading ? "Loading…" : `${total} record${total === 1 ? "" : "s"}`}
+            {/* Always name the date in effect — see the note in the header. */}
+            {!q && businessDate && (
+              <span>
+                {" "}· business date <b className="text-text-secondary">{businessDate}</b>
+                {!dateF && " (latest run)"}
+              </span>
+            )}
+            {q && <span className="text-accent"> · results for “{q}” across all dates (filters paused)</span>}
+            {sortDegraded && (
+              <span className="text-status-warning"> · sorted alphabetically (migration 0011 not applied)</span>
+            )}
+          </>
+        }
+      >
       <div className="card overflow-hidden">
-        <div className="p-4 border-b border-border bg-surface-elevated flex flex-col lg:flex-row justify-between lg:items-center gap-4">
-          <div>
-            <h3 className="font-headline text-lg text-text-primary">
-              {cityTab === "ALL" ? "All Cities" : cityTab} Variances
-            </h3>
-            <p className="text-xs text-text-muted mt-0.5">
-              {loading ? "Loading…" : `${total} record${total === 1 ? "" : "s"}`}
-              {/* Always name the date in effect. A blank picker used to mean
-                  "every date ever", which quietly disagreed with the KPI tiles
-                  above; it now resolves to the latest run and says so. */}
-              {!q && businessDate && (
-                <span>
-                  {" "}· business date <b className="text-text-secondary">{businessDate}</b>
-                  {!dateF && " (latest run)"}
-                </span>
-              )}
-              {q && <span className="text-accent"> · results for “{q}” across all dates (filters paused)</span>}
-              {/* Never present an alphabetical order as if it were the severity
-                  order that was asked for — see migration 0011. */}
-              {sortDegraded && (
-                <span className="text-status-warning">
-                  {" "}· sorted alphabetically (migration 0011 not applied)
-                </span>
-              )}
-            </p>
+        {/* ONE FILTER ROW. The four a person reaches for every day — search,
+            status, team, problem — sit here; the rest are one click away
+            under "More filters". The row used to be nine controls wrapping
+            into two uneven lines (18 Sep 2026). */}
+        <div className="p-3 border-b border-border bg-surface-elevated flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[220px]">
+            <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search barcode, ticket, SO"
+              className="input-clean pl-9 w-full"
+            />
+            {searchInput && (
+              <button
+                onClick={() => setSearchInput("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
+                title="Clear"
+              >
+                <Icon name="close" size={16} />
+              </button>
+            )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative w-full sm:w-56">
-              <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-              <input
-                type="text"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Search barcode / ticket / SO…"
-                className="input-clean pl-9 w-full"
-              />
-              {searchInput && (
-                <button
-                  onClick={() => setSearchInput("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
-                  title="Clear"
-                >
-                  <Icon name="close" size={16} />
-                </button>
-              )}
-            </div>
-            {/* The date picker moved to the page header — it governs the KPI
-                tiles and city breakdown too, not just this table. */}
-            <select value={bucket} onChange={(e) => resetPage(setBucket)(e.target.value as Bucket | "ALL")} className="input-clean font-semibold cursor-pointer">
-              <option value="ALL">All items</option>
-              <option value="REAL">Needs chasing</option>
-              <option value="INFO">Needs nothing</option>
+          <select value={status} onChange={(e) => resetPage(setStatus)(e.target.value as VarianceStatus | "ALL" | "ACTIVE")} className="input-clean cursor-pointer" title="Status">
+            {/* "Needs action" spans open + in_progress. Flagging moves a row
+                to in_progress, and a plain "open" filter hid exactly the rows
+                the flag was meant to escalate. */}
+            <option value="ACTIVE">Still needs someone</option>
+            <option value="open">Open only</option>
+            <option value="in_progress">Flagged / in progress</option>
+            <option value="pending_approval">Pending approval</option>
+            <option value="closed">Closed</option>
+            <option value="ALL">Any status</option>
+          </select>
+          <select
+            value={responsible}
+            onChange={(e) => resetPage(setResponsible)(e.target.value)}
+            className="input-clean cursor-pointer"
+            title="Filter to the team that owns these"
+          >
+            <option value="ALL">All teams</option>
+            {responsibles.map((f) => (
+              <option key={f.value} value={f.value}>
+                {responsibleLabel(f.value)} ({f.real})
+              </option>
+            ))}
+          </select>
+          {/* Problem — by its structured phrase, not the engine's long name,
+              which ran off the control ("OT CASE — Order Transfer i…"). */}
+          <select
+            value={varianceName}
+            onChange={(e) => resetPage(setVarianceName)(e.target.value)}
+            className="input-clean cursor-pointer max-w-[260px]"
+            title="Filter to one kind of problem"
+          >
+            <option value="ALL">All problems</option>
+            {varianceNames.map((f) => (
+              <option key={f.value} value={f.value}>
+                {variancePhrase(f.value) ?? f.value} ({f.real})
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => setMoreFilters((v) => !v)}
+            className={`btn btn-compact ${moreFilters || bucket !== "REAL" || source !== "ALL" || priority !== "ALL" || opsType !== "ALL" ? "btn-secondary text-accent" : "btn-ghost"}`}
+            title="Needs action, raised by, priority, job type"
+          >
+            <Icon name="filter" size={16} /> More filters
+          </button>
+          <button
+            onClick={exportCsv}
+            disabled={total === 0 || exporting}
+            title={`Download all ${total} matching row${total === 1 ? "" : "s"} as CSV`}
+            className="btn btn-primary disabled:opacity-40 ml-auto"
+          >
+            <Icon
+              name={exporting ? "progress_activity" : "download"}
+              size={18}
+              className={exporting ? "animate-spin" : ""}
+            />
+            {exporting ? "Exporting…" : `Export ${total || ""}`.trim()}
+          </button>
+        </div>
+        {moreFilters && (
+          <div className="px-3 py-2 border-b border-border flex flex-wrap items-center gap-2">
+            <select value={bucket} onChange={(e) => resetPage(setBucket)(e.target.value as Bucket | "ALL")} className="input-clean cursor-pointer" title="Action needed">
+              <option value="REAL">Needs action</option>
+              <option value="INFO">No action needed</option>
+              <option value="ALL">Both</option>
             </select>
-            <select value={source} onChange={(e) => resetPage(setSource)(e.target.value as VarianceSource | "ALL")} className="input-clean font-semibold cursor-pointer">
-              <option value="ALL">Raised by any check</option>
+            <select value={source} onChange={(e) => resetPage(setSource)(e.target.value as VarianceSource | "ALL")} className="input-clean cursor-pointer" title="Raised by">
+              <option value="ALL">Raised by any book</option>
               {SOURCES.map((s) => <option key={s} value={s}>{sourceLabel(s)}</option>)}
             </select>
-            <select value={priority} onChange={(e) => resetPage(setPriority)(e.target.value as Priority | "ALL")} className="input-clean font-semibold cursor-pointer">
+            <select value={priority} onChange={(e) => resetPage(setPriority)(e.target.value as Priority | "ALL")} className="input-clean cursor-pointer" title="Priority">
               <option value="ALL">Any priority</option>
               <option value="High">High</option>
               <option value="Medium">Medium</option>
               <option value="Info">Info</option>
             </select>
-            <select value={status} onChange={(e) => resetPage(setStatus)(e.target.value as VarianceStatus | "ALL" | "ACTIVE")} className="input-clean font-semibold cursor-pointer">
-              {/* "Needs action" spans open + in_progress. Flagging moves a row
-                  to in_progress, and a plain "open" filter hid exactly the rows
-                  the flag was meant to escalate. */}
-              <option value="ACTIVE">Still needs someone</option>
-              <option value="open">Open only</option>
-              <option value="in_progress">Flagged / in progress</option>
-              <option value="pending_approval">Pending Approval</option>
-              <option value="closed">Closed</option>
-              <option value="ALL">Any status</option>
-            </select>
-            {/* Variance type — this is what makes the digest's "Top Gap: 57
-                losses share one cause" line actionable. */}
-            <select
-              value={varianceName}
-              onChange={(e) => resetPage(setVarianceName)(e.target.value)}
-              className="input-clean cursor-pointer max-w-[220px]"
-              title="Filter to one kind of variance"
-            >
-              <option value="ALL">All problem types</option>
-              {varianceNames.map((f) => (
-                <option key={f.value} value={f.value}>
-                  {f.value} ({f.real})
-                </option>
-              ))}
-            </select>
-            {/* Owner — triage is a routing job, and this is the routing field. */}
-            <select
-              value={responsible}
-              onChange={(e) => resetPage(setResponsible)(e.target.value)}
-              className="input-clean cursor-pointer"
-              title="Filter to the team that owns these"
-            >
-              <option value="ALL">All teams</option>
-              {responsibles.map((f) => (
-                <option key={f.value} value={f.value}>
-                  {responsibleLabel(f.value)} ({f.real})
-                </option>
-              ))}
-            </select>
-            {/* Ops type. Options come from the data, and the "(none)" bucket is
-                explicit because job_type is null on a large share of rows — a
-                filter that could not reach them would hide real losses. */}
+            {/* Ops type. The "(none)" bucket is explicit because job_type is
+                null on a large share of rows. */}
             <select
               value={opsType}
               onChange={(e) => resetPage(setOpsType)(e.target.value)}
-              className="input-clean cursor-pointer max-w-[200px]"
-              title="Filter to one ops type"
+              className="input-clean cursor-pointer max-w-[220px]"
+              title="Job type"
             >
               <option value="ALL">All job types</option>
               {opsTypes.map((f) => (
@@ -795,21 +743,8 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                 </option>
               ))}
             </select>
-            <button
-              onClick={exportCsv}
-              disabled={total === 0 || exporting}
-              title={`Download all ${total} matching row${total === 1 ? "" : "s"} as CSV`}
-              className="btn btn-primary disabled:opacity-40"
-            >
-              <Icon
-                name={exporting ? "progress_activity" : "download"}
-                size={18}
-                className={exporting ? "animate-spin" : ""}
-              />
-              {exporting ? "Exporting…" : `Export ${total || ""}`.trim()}
-            </button>
           </div>
-        </div>
+        )}
 
         {/* Mobile: card list (below md). The whole card opens the detail dialog,
             same as a desktop row — managers work from a phone, and without this
@@ -960,28 +895,21 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     label={`Select all ${rows.length} rows on this page`}
                   />
                 </th>
-                <SortHeader label="Date" sortKey="date" state={sort} onSort={applySort} className="col-pin col-pin-2" />
-                <SortHeader label="Barcode" sortKey="barcode" state={sort} onSort={applySort} className="col-pin col-pin-3" />
-                <SortHeader label="City" sortKey="city" state={sort} onSort={applySort} />
-                <SortHeader label="Item" sortKey="product" state={sort} onSort={applySort} />
-                <SortHeader label="Ticket" sortKey="ticket" state={sort} onSort={applySort} />
-                <SortHeader label="Raised by" sortKey="source" state={sort} onSort={applySort} />
-                <SortHeader label="Job type" sortKey="jobType" state={sort} onSort={applySort} />
-                <SortHeader label="SO" sortKey="so" state={sort} onSort={applySort} />
+                <SortHeader label="Barcode" sortKey="barcode" state={sort} onSort={applySort} className="col-pin col-pin-2" />
+                {/* One column per book: did it record this unit? The whole
+                    story of a variance at a glance, before its name. */}
+                <th className="text-center w-[76px]" title="Guard Check">Guard</th>
+                <th className="text-center w-[76px]" title="Manual Sheet">Sheet</th>
+                <th className="text-center w-[76px]" title="Delivery Tracker">Tracker</th>
+                <th className="text-center w-[76px]" title="Odoo">Odoo</th>
                 <SortHeader label="Problem" sortKey="variance" state={sort} onSort={applySort} />
+                {cityTab === "ALL" && <SortHeader label="City" sortKey="city" state={sort} onSort={applySort} />}
                 <SortHeader
                   label="Team"
                   sortKey="responsible"
                   state={sort}
                   onSort={applySort}
                   title="Sort by the team that has to fix it"
-                />
-                <SortHeader
-                  label="Priority"
-                  sortKey="priority"
-                  state={sort}
-                  onSort={applySort}
-                  title="Sort by urgency — High, Medium, Info"
                 />
                 <SortHeader label="Status" sortKey="status" state={sort} onSort={applySort} />
                 <SortHeader
@@ -1008,8 +936,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                       label={`Select ${shownBarcode(v)}`}
                     />
                   </td>
-                  <td className="whitespace-nowrap text-text-secondary col-pin col-pin-2">{v.business_date}</td>
-                  <td className="col-pin col-pin-3">
+                  <td className="col-pin col-pin-2">
                     {/* A <tr> can't take focus — this is the keyboard route in. */}
                     <button
                       onClick={(e) => {
@@ -1020,20 +947,32 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
                     >
                       {shownBarcode(v)}
                     </button>
+                    {/* The date is the section's own date, so it is shown per
+                        row only when the list spans several — a search. */}
+                    {(q || allDates) && (
+                      <span className="block text-[11px] text-text-muted">{v.business_date}</span>
+                    )}
+                    {v.product && (
+                      <span className="block text-[11px] text-text-muted truncate max-w-[180px]" title={v.product}>
+                        {v.product}
+                      </span>
+                    )}
                   </td>
-                  <td>{v.city}</td>
-                  <td className="max-w-[200px] truncate" title={v.product ?? ""}>{v.product ?? "—"}</td>
-                  <td className="text-text-secondary">{v.ticket_id ?? "—"}</td>
-                  <td><SourceBadge source={v.variance_source} /></td>
-                  <td className="text-text-secondary text-xs">{opsTypeLabel(v.job_type)}</td>
-                  <td className="text-text-secondary whitespace-nowrap">{v.so_number ?? "—"}</td>
-                  <td className="min-w-[200px] max-w-[260px]" title={v.note ?? ""}>
+                  <BookTick present={v.present_p} reported={v.reported_p} />
+                  <BookTick present={v.present_s} reported={v.reported_s} />
+                  <BookTick present={v.present_d} reported={v.reported_d} />
+                  <BookTick present={v.present_o} reported={v.reported_o} />
+                  <td className="min-w-[240px]" title={v.note ?? ""}>
                     <VarianceName name={v.variance_name} ctx={{ direction: v.direction, jobType: v.job_type, bucket: v.bucket, note: v.note }} />
+                    <span className="block text-[11px] text-text-muted mt-0.5">
+                      {v.direction === "IN" ? "Inward" : v.direction === "OUT" ? "Outward" : v.direction}
+                      {v.priority === "High" && <span className="text-danger"> · urgent</span>}
+                    </span>
                   </td>
+                  {cityTab === "ALL" && <td className="whitespace-nowrap">{v.city}</td>}
                   <td className="text-text-secondary whitespace-nowrap">
                     {responsibleLabel(v.responsible)}
                   </td>
-                  <td><span className={PRIORITY_BADGE[v.priority]}>{v.priority}</span></td>
                   <td>
                     <span
                       className={`${STATUS_BADGE[v.status]} uppercase`}
@@ -1152,6 +1091,7 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
           </div>
         </div>
       </div>
+      </DashSection>
       {rejecting && (
         <CloseVarianceModal
           itemName={rejecting.product}
@@ -1201,5 +1141,20 @@ export default function AdminDashboard({ user }: { user: SessionUser }) {
         onDone={refreshAll}
       />
     </section>
+  );
+}
+
+/**
+ * One book's verdict on one unit: ✓ recorded it, ✗ did not, — did not report
+ * at all that day (never counted as missing — invariant 2).
+ */
+function BookTick({ present, reported }: { present?: boolean; reported?: boolean }) {
+  if (reported === false) {
+    return <td className="text-center text-text-disabled" title="This book did not report that day">—</td>;
+  }
+  return present ? (
+    <td className="text-center text-success font-semibold" title="Recorded">✓</td>
+  ) : (
+    <td className="text-center text-danger font-semibold" title="Not recorded">✗</td>
   );
 }

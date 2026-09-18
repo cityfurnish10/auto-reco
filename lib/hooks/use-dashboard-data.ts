@@ -317,6 +317,10 @@ export interface CityAgg {
    * is authoritative, its absence is a coverage question until the guards cover
    * the whole day. See app/(dashboard)/dashboard/anchored-cards.tsx.
    */
+  /** Each book as the source of truth, per direction — see source-truth-cards.tsx. */
+  truth: Record<TruthSource, Record<"IN" | "OUT", TruthCounts>>;
+  /** When Odoo's window for this day closes (ISO); null on a 15:00-rule day. */
+  odooWindowEnd?: string | null;
   anchored: {
     gateSaw: number;
     confirmedAll: number;
@@ -327,6 +331,13 @@ export interface CityAgg {
     /** False = the gate did not report; every figure above is unknown, not 0. */
     gateReported: boolean;
   };
+}
+
+export type TruthSource = "gate" | "sheet" | "dt" | "odoo";
+export interface TruthCounts {
+  saw: number;
+  allMatched: number;
+  vs: Partial<Record<TruthSource, { matched: number; notMatched: number }>>;
 }
 
 export interface SourceCount {
@@ -361,6 +372,12 @@ export function emptyCityAgg(city: string): CityAgg {
       odoo: { in: 0, out: 0, reported: false },
     },
     gateCount: { in: 0, out: 0, items: 0 },
+    truth: {
+      gate: { IN: { saw: 0, allMatched: 0, vs: {} }, OUT: { saw: 0, allMatched: 0, vs: {} } },
+      sheet: { IN: { saw: 0, allMatched: 0, vs: {} }, OUT: { saw: 0, allMatched: 0, vs: {} } },
+      dt: { IN: { saw: 0, allMatched: 0, vs: {} }, OUT: { saw: 0, allMatched: 0, vs: {} } },
+      odoo: { IN: { saw: 0, allMatched: 0, vs: {} }, OUT: { saw: 0, allMatched: 0, vs: {} } },
+    },
     anchored: {
       gateSaw: 0, confirmedAll: 0, gateNotOdoo: 0, gateNotSheet: 0,
       gateNotDt: 0, notSeenByGate: 0, gateReported: false,

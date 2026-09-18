@@ -492,7 +492,7 @@ body {
      appear, and Item and Problem were squeezed to a word each on a laptop.
      A minimum width turns the squeeze back into a scroll. */
   .table-wide {
-    min-width: 1180px;
+    min-width: 1040px;
   }
 
   /* Pinned first columns.
@@ -535,15 +535,13 @@ body {
     padding-left: 12px;
     padding-right: 0;
   }
+  /* Since 18 Sep 2026 the pinned pair is the checkbox and the BARCODE (with
+     its product beneath) — the date moved into the section heading, as the
+     whole list is one day. The seam sits on the last pinned column. */
   .table-clean .col-pin-2 {
     left: 44px;
-    width: 104px;
-    min-width: 104px;
-  }
-  .table-clean .col-pin-3 {
-    left: 148px;
-    /* The seam. Without it the pinned block and the scrolling columns read as
-       one grid and the sticky behaviour looks like a rendering fault. */
+    width: 210px;
+    min-width: 210px;
     box-shadow: 6px 0 8px -6px rgba(0, 0, 0, 0.18);
   }
 

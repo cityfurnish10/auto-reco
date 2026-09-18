@@ -45,7 +45,14 @@ export const GET = jsonRoute("anchored", async (req: NextRequest) => {
   const bucket = sp.get("bucket") as AnchoredBucket | null;
   const date = sp.get("date");
   const city = sp.get("city");
-  if (!bucket || !date) {
+  // Section 3's "each book as the source of truth" cards (18 Sep 2026):
+  //   truth=<book> [&vs=<book>&kind=matched|notMatched | &kind=all|allMatched] &direction=IN|OUT
+  // A book's presence is its present_* flag, except Odoo, which is counted on
+  // its own 3pm window (odoo_same_day) so the list ties to the scoreboard.
+  const truth = sp.get("truth");
+  const COL: Record<string, string> = { gate: "present_p", sheet: "present_s", dt: "present_d", odoo: "odoo_same_day" };
+  if (truth && !COL[truth]) return NextResponse.json({ error: "unknown truth source" }, { status: 400 });
+  if (!truth && !bucket || !date) {
     return NextResponse.json({ error: "bucket and date required" }, { status: 400 });
   }
 
@@ -67,12 +74,25 @@ export const GET = jsonRoute("anchored", async (req: NextRequest) => {
   // further, and can never widen it.
   let q = supabase
     .from("movement_events")
-    .select("barcode, barcode_display, direction, job_type, so_number, ticket_id, customer, product, present_p, present_s, present_d, present_o")
+    .select("barcode, barcode_display, direction, job_type, so_number, ticket_id, customer, product, present_p, present_s, present_d, present_o, odoo_same_day")
     .eq("run_id", runId)
     .eq("is_movement", true)
     .limit(PAGE);
   if (city && city !== "ALL") q = q.eq("city", city);
 
+  const direction = sp.get("direction");
+  if (direction === "IN" || direction === "OUT") q = q.eq("direction", direction);
+
+  if (truth) {
+    q = q.eq(COL[truth], true);
+    const kind = sp.get("kind");
+    const vs = sp.get("vs");
+    if (vs && COL[vs] && (kind === "matched" || kind === "notMatched")) {
+      q = q.eq(COL[vs], kind === "matched");
+    } else if (kind === "allMatched") {
+      for (const [k, col] of Object.entries(COL)) if (k !== truth) q = q.eq(col, true);
+    }
+  } else
   // Each card is one presence pattern. Expressed as filters rather than read
   // and sifted in memory, so a 2,000-row day does not travel to draw 20 rows.
   if (bucket === "notSeenByGate") {
@@ -104,7 +124,7 @@ export const GET = jsonRoute("anchored", async (req: NextRequest) => {
       product: (r.product as string) ?? null,
       seenBy: [
         r.present_p ? "Guard Check" : null,
-        r.present_o ? "Odoo" : null,
+        (truth ? r.odoo_same_day : r.present_o) ? "Odoo" : null,
         r.present_s ? "Manual Sheet" : null,
         r.present_d ? "Delivery Tracker" : null,
       ].filter(Boolean).join(", "),
