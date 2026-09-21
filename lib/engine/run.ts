@@ -17,6 +17,7 @@ import { addDays, deriveRunDate, parseDate } from "./dates";
 import { detectDirectionConflicts } from "./direction-conflict";
 import { classify, duplicateHit } from "./ladder";
 import { filterOdooWindow } from "./odoo-window";
+import { utcToIstDate } from "../connectors/ist-window";
 import { isCityOff } from "./schedule";
 import { computeSuppressions } from "./suppressions";
 import { isSpareJobType, normalizeJobType, normalizeStatus } from "./util";
@@ -634,7 +635,20 @@ export function runReconciliation(
       );
       if (!sheetOutFailed || !sheetBackIn) continue;
       const dt = rows.filter((r) => r.source === "DT");
-      if (dt.length !== 1 || !/not\s*done/i.test(dt[0].physicalStatus ?? "")) continue;
+      if (dt.length !== 1) continue;
+      // "NOT DONE" HAS TWO SPELLINGS IN THIS BOOK (owner, 21 Sep 2026).
+      //
+      // The plain one, and the one the Tracker leaves behind after a retry: it
+      // keeps ONE row per job and rewrites it, so the 18th's "Not Done" became
+      // "Done" the moment the 20th's attempt succeeded. The completion time
+      // stays, and a row sitting on the 18th that completed on the 20th says
+      // the same thing the erased value said — this day's attempt failed.
+      // Delhi's 18th: 10 of 131 Tracker rows carry a later completion date.
+      //
+      // Only ever a LATER day. An earlier one is a re-date or a backfill and
+      // must not silence a leg.
+      const finishedLater = (utcToIstDate(dt[0].movementDate) ?? "") > runDate;
+      if (!/not\s*done/i.test(dt[0].physicalStatus ?? "") && !finishedLater) continue;
       suppressed.add(`IN::${canon}`);
       suppressed.add(`OUT::${canon}`);
       notDeliveredUnits.add(canon);

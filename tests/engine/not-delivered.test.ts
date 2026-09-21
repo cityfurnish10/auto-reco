@@ -42,11 +42,32 @@ describe("not delivered — out and back the same day", () => {
     expect(res.warnings.join(" ")).toContain("went out and came back the same day");
   });
 
-  it("still raises when the tracker says the delivery was done", () => {
+  it("still raises when the tracker says the delivery was done that same day", () => {
     const res = run([
       gate("OUT"), gate("IN"),
       sheet("OUT", "Not Delievered"), sheet("IN", "Received"),
-      dt("Done"),
+      { ...dt("Done"), movementDate: `${D}T14:10:00.000Z` },
+    ]);
+    expect(res.variances.filter((v) => v.barcode_display === BC).length).toBeGreaterThan(0);
+  });
+
+  // The Tracker keeps one row per job and rewrites it, so the 18th's "Not
+  // Done" reads "Done" once the 20th's retry succeeds. The completion time is
+  // what survives, and it says the same thing.
+  it("raises nothing when the tracker row says Done but completed on a later day", () => {
+    const res = run([
+      gate("OUT"), gate("IN"),
+      sheet("OUT", "Not Delievered"), sheet("IN", "Received"),
+      { ...dt("Done"), movementDate: "2026-09-20T13:39:36.001Z" },
+    ]);
+    expect(res.variances.filter((v) => v.barcode_display === BC)).toHaveLength(0);
+  });
+
+  it("does not silence a leg on an EARLIER completion date", () => {
+    const res = run([
+      gate("OUT"), gate("IN"),
+      sheet("OUT", "Not Delievered"), sheet("IN", "Received"),
+      { ...dt("Done"), movementDate: "2026-09-15T10:00:00.000Z" },
     ]);
     expect(res.variances.filter((v) => v.barcode_display === BC).length).toBeGreaterThan(0);
   });
