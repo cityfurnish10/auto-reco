@@ -596,6 +596,56 @@ export function runReconciliation(
   //     own gate (createdTodayFlag, above) already requires
   //     !recentFloor.has(canonical). So every row this removes was INFO.
   //
+  // NOT DELIVERED, AGREED BY ALL THREE FLOOR BOOKS (owner's rule, 21 Sep 2026).
+  //
+  // The guard records the unit out AND back, the ops sheet says the outward was
+  // Not Delivered and the inward Received, and the Delivery Tracker holds a
+  // single row for the unit saying Not Done. Those three together are a failed
+  // delivery that came home the same day: nothing was lost, Odoo is right to
+  // hold no posting, and neither leg is a variance.
+  //
+  // WHY THE EXISTING FAILED-DELIVERY RULE MISSES IT. "Done wins across sources"
+  // fires first: the guard's gate entry hard-codes "done" (it means the unit
+  // crossed the gate, not that the delivery succeeded), so the sheet's
+  // Not Delivered never reaches notDoneRows and the unit grades as an ordinary
+  // movement. Measured on Delhi 14–19 Sep 2026: 43 units went out and came back
+  // on the floor books, and every one of them raised variances — usually two.
+  //
+  // Strict by choice: the owner asked for the version that needs the Tracker's
+  // own Not Done row, not the wider "sheet says Not Delivered" one. A unit the
+  // Tracker knows nothing about still grades as before.
+  const notDeliveredUnits = new Set<string>();
+  {
+    const byCanon = new Map<string, SourceRow[]>();
+    for (const r of preFilter) {
+      const k = canonicalize(r.barcode);
+      byCanon.set(k, [...(byCanon.get(k) ?? []), r]);
+    }
+    for (const [canon, rows] of byCanon) {
+      const guard = rows.filter((r) => r.source === "PHYSICAL");
+      const guardBothWays =
+        guard.some((r) => r.direction === "IN") && guard.some((r) => r.direction === "OUT");
+      if (!guardBothWays) continue;
+      const sheetOutFailed = rows.some(
+        (r) => r.source === "SHEET" && r.direction === "OUT" && normalizeStatus(r.status) === "not_done"
+      );
+      const sheetBackIn = rows.some(
+        (r) => r.source === "SHEET" && r.direction === "IN" && normalizeStatus(r.status) === "done"
+      );
+      if (!sheetOutFailed || !sheetBackIn) continue;
+      const dt = rows.filter((r) => r.source === "DT");
+      if (dt.length !== 1 || !/not\s*done/i.test(dt[0].physicalStatus ?? "")) continue;
+      suppressed.add(`IN::${canon}`);
+      suppressed.add(`OUT::${canon}`);
+      notDeliveredUnits.add(canon);
+    }
+  }
+  if (notDeliveredUnits.size > 0) {
+    warnings.push(
+      `${notDeliveredUnits.size} unit${notDeliveredUnits.size === 1 ? "" : "s"} went out and came back the same day — not delivered, confirmed by the gate, the sheet and the tracker; neither leg raised`
+    );
+  }
+
   // A SEPARATE SET, NOT `suppressed`. detectDirectionConflicts skips any pair
   // with a suppressed leg, so folding these keys into `suppressed` would also
   // silence a REAL same-day-replacement CROSS row. The two consumers below are

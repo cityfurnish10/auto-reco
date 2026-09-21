@@ -14,6 +14,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { runAllCities, type MultiCityRun } from "../engine/run";
 import { guardTruncatedSheet } from "./sheet-guard";
 import { pullAll } from "../connectors";
+import { carryForwardFrozenDt } from "./freeze";
 import { fetchOdooPendingOut, fetchOdooPostingsAfter } from "../connectors/odoo";
 import { processPendingGuardUploads } from "../connectors/ocr/process";
 import { readWarehouseCalendar } from "../connectors/warehouse-calendar";
@@ -155,8 +156,12 @@ export async function runReconcilePipeline(
       pipelineWarnings,
       truncatedCities
     ).catch(() => pulledReported);
-    for (const w of pipelineWarnings) console.warn(`[reconcile] ${w}`);
 
+    // 1b. The Tracker rewrites its own rows, so a re-run of an old date reads
+    //     today's opinion of it. Anything the first pull of this date saw and
+    //     this one has lost comes back, marked frozen. See freeze.ts.
+    await carryForwardFrozenDt(db, runDate, runId, rowsByCity, pipelineWarnings).catch(() => 0);
+    for (const w of pipelineWarnings) console.warn(`[reconcile] ${w}`);
 
     // 2. Persist the complete raw feed (pruned after 7 days).
     const sourceRowsStored = await saveSourceRows(db, runId, runDate, rowsByCity);
