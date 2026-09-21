@@ -734,6 +734,23 @@ export async function resolveStaleOpenVariances(
         // this run, exactly like the superseded branch it shares.
         supersededIds.push(row.id as string);
       } else if (
+        row.direction === "CROSS" &&
+        suppressedUnits.has(`IN::${row.barcode}`) &&
+        suppressedUnits.has(`OUT::${row.barcode}`)
+      ) {
+        // A CROSS row asserts that one unit both arrived AND left today. When
+        // the run withheld BOTH legs the assertion has nothing left to stand
+        // on, so the row goes with them.
+        //
+        // It needs its own branch because a CROSS row has no ledger key of its
+        // own — migration 0015 CHECKs movement_events.direction IN ('IN','OUT')
+        // — so `suppressedUnits.has("CROSS::…")` can never be true and the row
+        // fell through to the full-coverage branch instead, surviving as an
+        // INFO "gap cleared". Owner, 21 Sep 2026, on fridge APZQN422041372:
+        // both legs correctly withheld as a failed delivery, and the pair was
+        // still announced as a replacement to confirm.
+        supersededIds.push(row.id as string);
+      } else if (
         absenceContradicted(
           row.variance_name,
           reportedOf(row),

@@ -72,6 +72,11 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
   // user deliberately picked is not silently reset to the latest run.
   const [dateF, setDateF] = useStickyState("manager.businessDate", ""); // "" = latest run
   const [page, setPage] = useState(1);
+  // GROUP BY BARCODE. One unit's problems arrive as several rows — an inward,
+  // an outward, sometimes a cross-check — and they are almost always closed by
+  // the same explanation. Grouping sorts by barcode and lets one click select
+  // the whole unit, which the existing bulk Resolve then closes together.
+  const [groupBarcode, setGroupBarcode] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [submitting, setSubmitting] = useState<{ id: string; product: string; barcode: string } | null>(null);
   const [listRequest, setListRequest] = useState<ListModalRequest | null>(null);
@@ -172,6 +177,14 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
   // Selection deliberately survives paging — see use-selection.ts.
   const visibleIds = useMemo(() => rows.map((r) => r.id), [rows]);
   const sel = useSelection(visibleIds);
+  // barcode → the ids for it ON THIS PAGE. Paging is server-side, so a unit
+  // whose rows straddle a page boundary groups within each page; sorting by
+  // barcode (which the toggle does) keeps that rare.
+  const barcodeGroups = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const r of rows) m.set(shownBarcode(r), [...(m.get(shownBarcode(r)) ?? []), r.id]);
+    return m;
+  }, [rows]);
   const lastClicked = useRef<string | null>(null);
 
   // Shift-click selects the run between the two clicked rows, as in a file
@@ -494,6 +507,13 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                 </option>
               ))}
             </select>
+            <label className="flex items-center gap-2 text-sm ml-auto cursor-pointer select-none" title="Sort by barcode and keep one unit's rows together, so they can be resolved in one go">
+              <input type="checkbox" checked={groupBarcode} onChange={(e) => {
+                setGroupBarcode(e.target.checked);
+                if (e.target.checked) applySort({ key: "barcode", dir: "asc" });
+              }} />
+              Group by barcode
+            </label>
             <button
               onClick={exportCsv}
               disabled={total === 0 || exporting}
@@ -636,7 +656,11 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                 <tr
                   key={v.id}
                   onClick={() => openDetail(v)}
-                  className={`cursor-pointer ${sel.has(v.id) ? "bg-accent-soft" : ""}`}
+                  className={`cursor-pointer ${sel.has(v.id) ? "bg-accent-soft" : ""} ${
+                    groupBarcode && (barcodeGroups.get(shownBarcode(v))?.length ?? 0) > 1
+                      ? "border-l-2 border-accent"
+                      : ""
+                  }`}
                 >
                   <td onClick={(e) => e.stopPropagation()} className="col-pin col-pin-1">
                     <RowCheckbox
@@ -662,6 +686,23 @@ export default function ManagerDashboard({ user }: { user: SessionUser }) {
                         {v.product}
                       </span>
                     )}
+                    {/* One unit, several problems. The chip says how many and
+                        selects them all, so the bulk bar can close the unit in
+                        one action with one reason. */}
+                    {(barcodeGroups.get(shownBarcode(v))?.length ?? 0) > 1 &&
+                      barcodeGroups.get(shownBarcode(v))![0] === v.id && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const ids = barcodeGroups.get(shownBarcode(v)) ?? [];
+                            sel.selectRange(ids, !ids.every((id) => sel.has(id)));
+                          }}
+                          className="mt-1 badge badge-info hover:underline cursor-pointer"
+                          title="Select every row for this unit"
+                        >
+                          {barcodeGroups.get(shownBarcode(v))!.length} problems · select all
+                        </button>
+                      )}
                   </td>
                   <BookTick present={v.present_p} reported={v.reported_p} />
                   <BookTick present={v.present_s} reported={v.reported_s} />
