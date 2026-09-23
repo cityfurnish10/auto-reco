@@ -238,6 +238,15 @@ export const STRINGS: Record<string, Row> = {
   askManager:{en:"Ask your manager for a pairing link.",hi:"मैनेजर से जोड़ने का लिंक मांगें।",mr:"मॅनेजरकडून जोडणीची लिंक मागा.",kn:"ಮ್ಯಾನೇಜರ್‌ರಿಂದ ಜೋಡಣೆ ಲಿಂಕ್ ಕೇಳಿ.",te:"మేనేజర్‌ను పెయిరింగ్ లింక్ అడగండి."},
   retry:{en:"Try again",hi:"फिर कोशिश करें",mr:"पुन्हा प्रयत्न करा",kn:"ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ",te:"మళ్లీ ప్రయత్నించండి"},
   cameraBlocked:{en:"Camera permission is needed to scan",hi:"स्कैन के लिए कैमरा की अनुमति चाहिए",mr:"स्कॅनसाठी कॅमेरा परवानगी हवी",kn:"ಸ್ಕ್ಯಾನ್‌ಗೆ ಕ್ಯಾಮೆರಾ ಅನುಮತಿ ಬೇಕು",te:"స్కాన్ కోసం కెమెరా అనుమతి కావాలి"},
+  // WHY THREE MESSAGES AND NOT ONE. Every camera failure used to read
+  // "Camera permission is needed", including the common one that has nothing
+  // to do with permission: the camera is still held by the screen before.
+  // Mahesh, 23 Sep 2026 21:26 — his previous trip had taken its vehicle photo
+  // and three scans eleven minutes earlier, so permission was plainly granted;
+  // the phone simply had not released the camera yet.
+  cameraBusy:{en:"The camera is busy — close any other camera app and try again",hi:"कैमरा व्यस्त है — दूसरा कैमरा ऐप बंद करके फिर कोशिश करें",mr:"कॅमेरा व्यस्त आहे — दुसरे कॅमेरा अ‍ॅप बंद करून पुन्हा प्रयत्न करा",kn:"ಕ್ಯಾಮೆರಾ ಬಳಕೆಯಲ್ಲಿದೆ — ಬೇರೆ ಕ್ಯಾಮೆರಾ ಆ್ಯಪ್ ಮುಚ್ಚಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ",te:"కెమెరా బిజీగా ఉంది — వేరే కెమెరా యాప్ మూసి మళ్లీ ప్రయత్నించండి"},
+  cameraNone:{en:"No camera found on this phone",hi:"इस फोन में कैमरा नहीं मिला",mr:"या फोनमध्ये कॅमेरा सापडला नाही",kn:"ಈ ಫೋನ್‌ನಲ್ಲಿ ಕ್ಯಾಮೆರಾ ಸಿಗಲಿಲ್ಲ",te:"ఈ ఫోన్‌లో కెమెరా కనబడలేదు"},
+  cameraAllowHow:{en:"Tap the lock icon beside the web address, then Permissions, then Camera, then Allow.",hi:"वेब पते के पास ताले के निशान पर टैप करें, फिर Permissions, फिर Camera, फिर Allow चुनें।",mr:"वेब पत्त्याजवळील कुलूप चिन्हावर टॅप करा, नंतर Permissions, नंतर Camera, नंतर Allow निवडा.",kn:"ವೆಬ್ ವಿಳಾಸದ ಪಕ್ಕದ ಬೀಗದ ಚಿಹ್ನೆ ಒತ್ತಿ, ನಂತರ Permissions, ನಂತರ Camera, ನಂತರ Allow ಆಯ್ಕೆಮಾಡಿ.",te:"వెబ్ చిరునామా పక్కన ఉన్న తాళం గుర్తును నొక్కి, తర్వాత Permissions, తర్వాత Camera, తర్వాత Allow ఎంచుకోండి."},
 };
 
 export function makeT(lang: LangId) {

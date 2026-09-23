@@ -809,21 +809,53 @@ export default function GateApp() {
      they can be saved, neither could be completed. */
   const itemVidRef = useRef<HTMLVideoElement>(null);
   const itemStream = useRef<MediaStream | null>(null);
-  const [itemCam, setItemCam] = useState<"off" | "starting" | "live" | "blocked">("off");
+  // WHY THE CAMERA DID NOT OPEN, not just THAT it did not. Every failure used
+  // to land on "blocked", which says "permission" to a guard who has already
+  // granted it — Mahesh, 23 Sep 2026: vehicle photo and three scans at 21:15,
+  // then "permission needed" at 21:26 on the next trip, because the phone had
+  // not released the camera from the screen before.
+  const [itemCam, setItemCam] = useState<"off" | "starting" | "live" | "denied" | "busy" | "none">("off");
 
   const openItemCamera = useCallback(async () => {
     setItemCam("starting");
+    // Let go of anything we are still holding first. The scanner and this
+    // viewfinder are two streams on ONE device, and a phone that has not
+    // released the first refuses the second — the commonest failure here, and
+    // the one that reads least like what it is.
+    itemStream.current?.getTracks().forEach((t) => t.stop());
+    itemStream.current = null;
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+
+    const attempt = () => navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+    });
     try {
-      const st = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-      });
+      let st: MediaStream;
+      try {
+        st = await attempt();
+      } catch (e) {
+        // A device still being released answers "not readable". Wait for the
+        // hand-over and ask once more before telling the guard anything.
+        const name = (e as { name?: string })?.name ?? "";
+        if (name !== "NotReadableError" && name !== "AbortError") throw e;
+        await new Promise((r) => setTimeout(r, 700));
+        st = await attempt();
+      }
       itemStream.current = st;
       if (itemVidRef.current) {
         itemVidRef.current.srcObject = st;
         await itemVidRef.current.play().catch(() => {});
       }
       setItemCam("live");
-    } catch { setItemCam("blocked"); }
+    } catch (e) {
+      const name = (e as { name?: string })?.name ?? "";
+      setItemCam(
+        name === "NotAllowedError" || name === "SecurityError" ? "denied"
+        : name === "NotFoundError" || name === "OverconstrainedError" ? "none"
+        : "busy"
+      );
+    }
   }, []);
 
   const closeItemCamera = useCallback(() => {
@@ -2611,7 +2643,7 @@ function PhotoBox({ t, photo, url, cam, videoRef, onOpen, onShoot, onRetake }: {
   photo: Blob | null;
   /** Object URL of the captured frame, so the guard sees what they took. */
   url: string | null;
-  cam: "off" | "starting" | "live" | "blocked";
+  cam: "off" | "starting" | "live" | "denied" | "busy" | "none";
   videoRef: React.RefObject<HTMLVideoElement | null>;
   onOpen: () => void;
   onShoot: () => void;
@@ -2629,8 +2661,13 @@ function PhotoBox({ t, photo, url, cam, videoRef, onOpen, onShoot, onRetake }: {
           <div className="gphotoempty">
             <Icon name={cam === "starting" ? "progress_activity" : "camera"}
                   size={34} className={cam === "starting" ? "gspinicon" : ""} />
-            <span>{cam === "blocked" ? t("cameraBlocked")
+            <span>{cam === "denied" ? t("cameraBlocked")
+                 : cam === "busy" ? t("cameraBusy")
+                 : cam === "none" ? t("cameraNone")
                  : cam === "starting" ? t("starting") : t("photoNeeded")}</span>
+            {/* Only a denial can be fixed from the browser's own menu, and a
+                guard cannot be expected to know where that menu is. */}
+            {cam === "denied" && <span className="gsub">{t("cameraAllowHow")}</span>}
           </div>
         )}
         {/* Corner marks, the same language as the scanner's reticle, so the
@@ -2649,8 +2686,11 @@ function PhotoBox({ t, photo, url, cam, videoRef, onOpen, onShoot, onRetake }: {
           </button>
         ) : (
           <button className="gbtn sm primary" onClick={onOpen} disabled={cam === "starting"}>
-            <Icon name="camera" size={17} />
-            {cam === "blocked" ? t("cameraBlocked") : t("takePicture")}
+            {/* THE BUTTON SAYS WHAT TAPPING DOES. It used to repeat the error,
+                so the one control that could fix the problem read as a label
+                and guards stopped tapping it. */}
+            <Icon name={cam === "off" || cam === "starting" ? "camera" : "refresh"} size={17} />
+            {cam === "off" || cam === "starting" ? t("takePicture") : t("retry")}
           </button>
         )}
       </div>
