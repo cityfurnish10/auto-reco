@@ -20,7 +20,7 @@ import { MongoClient } from "mongodb";
 import type { Connector, CityTaggedRow } from "./types";
 import { normalizeCity } from "./types";
 import { dayToUtcWindow, istDayToUtcWindow, usesCalendarDay } from "./ist-window";
-import { deriveDtDirection, DT_EXCLUDED_JOB_TYPES } from "./dt-mapping";
+import { deriveDtDirection } from "./dt-mapping";
 
 const DT_PARENT_COLLECTION = process.env.DT_TASKS_COLLECTION ?? "deliveries";
 /** One row per delivery ATTEMPT, with a date that never moves. See the pull. */
@@ -151,12 +151,11 @@ export const dtConnector: Connector = {
                   ],
                 }
               : { scheduledDate: { $gte: scanStart, $lt: scanEnd } }),
-            email: { $not: { $regex: "cityfurnish\\.com$", $options: "i" } },
-            $nor: [
-              { firstName: { $regex: "cityfurnish", $options: "i" } },
-              { lastName: { $regex: "cityfurnish", $options: "i" } },
-            ],
-            jobType: { $nin: DT_EXCLUDED_JOB_TYPES },
+            // NO SOURCE-SIDE FILTERING (owner, 24 Sep 2026). The staff-account
+            // and job-type filters that used to sit here decided what counted
+            // as a movement before anyone could see the row — 38 of Delhi's
+            // outward units vanished on 22 Sep alone. What should not count is
+            // now decided by the engine, in the open. See DT_EXCLUDED_JOB_TYPES.
           },
         },
         {
