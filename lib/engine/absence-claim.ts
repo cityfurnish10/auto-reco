@@ -65,6 +65,8 @@ export const ABSENCE_CLAIM: Record<string, readonly SourceKey[]> = {
   [VARIANCE.ODOO_OUT_PENDING]: [],
   // Not an absence at all — a transfer inside Odoo waiting to be mapped.
   [VARIANCE.OT_CASE]: [],
+  // Accuses no book of missing anything — it is about the clock.
+  [VARIANCE.ODD_HOUR_TRIP]: [],
   [VARIANCE.OPS_ODOO_NO_DT]: ["D"],
   [VARIANCE.DT_ODOO_NO_SHEET]: ["S"],
   [VARIANCE.GATE_OPS_ODOO_NO_DT]: ["D"],

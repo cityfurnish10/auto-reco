@@ -25,6 +25,13 @@ export const VARIANCE = {
   // Cannot be matched automatically — nothing crosses the gate — so it is
   // raised on its own for the team to map by hand. Owner's call, 18 Sep 2026.
   OT_CASE: "OT CASE — Order Transfer in Odoo, Map Manually",
+  /**
+   * A trip the gate opened at an hour this warehouse does not work.
+   * Raised per TRIP, not per unit — the question is about the trip — and the
+   * only variance in the system not produced by the per-barcode ladder. See
+   * lib/reconcile/odd-hour-trips.ts.
+   */
+  ODD_HOUR_TRIP: "ODD HOUR TRIP — Movement at a Time the Gate Rarely Sees",
 
   // ── INFO — audit / posting-lag, no chase ───────────────────────────────
   // Measured 2026-07-20: 220/230 of these ALSO had a DT scan — Sheet+DT+Odoo,

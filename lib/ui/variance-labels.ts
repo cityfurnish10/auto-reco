@@ -257,6 +257,14 @@ export const VARIANCE_LABELS: Record<VarianceName, LabelRule> = {
   [VARIANCE.WRONG_SCAN]: { base: WRONG_UNIT },
   // Tier 2: the unit is not lost — Odoo moved it between orders on paper. A
   // person has to say which order it belongs to now.
+  [VARIANCE.ODD_HOUR_TRIP]: {
+    base: {
+      display: "Odd-hour trip",
+      tier: 1,
+      risk: "The gate opened this trip at an hour the warehouse rarely moves stock — outward in the evening or night, inward in the morning.",
+      action: "Ask the guard and the warehouse who authorised the trip, and confirm the stock on it is accounted for.",
+    },
+  },
   [VARIANCE.OT_CASE]: {
     base: {
       display: "OT Case",

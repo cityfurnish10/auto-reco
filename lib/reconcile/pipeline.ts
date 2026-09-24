@@ -15,6 +15,7 @@ import { runAllCities, type MultiCityRun } from "../engine/run";
 import { guardTruncatedSheet } from "./sheet-guard";
 import { pullAll } from "../connectors";
 import { carryForwardFrozenDt } from "./freeze";
+import { raiseOddHourTrips } from "./odd-hour-trips";
 import { fetchOdooPendingOut, fetchOdooPostingsAfter } from "../connectors/odoo";
 import { processPendingGuardUploads } from "../connectors/ocr/process";
 import { readWarehouseCalendar } from "../connectors/warehouse-calendar";
@@ -286,6 +287,11 @@ export async function runReconcilePipeline(
         return { superseded: 0, resolvedLate: 0, byCity: {} };
       }
     );
+
+    // 4b-2. Trips opened at an hour the warehouse does not work — one row per
+    //       trip, from the gate's own times. After the stale pass, which skips
+    //       this name because the ladder never emits it.
+    await raiseOddHourTrips(db, runId, runDate, pipelineWarnings).catch(() => 0);
 
     // 4c. Per-city rollup for the leaderboard (movements + REAL count per city).
     await saveCityStats(db, runId, runDate, run.perCity, reportedByCity);

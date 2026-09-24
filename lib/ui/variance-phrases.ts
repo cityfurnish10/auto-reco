@@ -35,6 +35,7 @@ const PHRASE: Record<string, string> = {
   "Wrong Barcode Scanned in DT": `Wrong unit scanned · ${S.dt}`,
   "Same Unit In + Out Today — Confirm Replacement": "Same unit in and out · Confirm replacement",
   "Failed Delivery — Return Not Logged Inward": "Failed delivery · Return not logged inward",
+  "ODD HOUR TRIP — Movement at a Time the Gate Rarely Sees": `Odd hour · Trip at a time the gate rarely sees`,
   "OT CASE — Order Transfer in Odoo, Map Manually": `OT case · Order transfer in ${S.odoo}, map by hand`,
   "Ops Sheet Says Not Delivered — Posted Done in DT/Odoo": `${S.sheet} says not delivered · ${S.odoo} and ${S.dt} say done`,
 

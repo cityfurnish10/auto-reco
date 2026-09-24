@@ -108,6 +108,16 @@ export const VARIANCE_META: Record<string, VarianceMeta> = {
     responsible: "odoo_team",
     note: "The floor confirmed this movement for the day, and the Odoo entry does exist — it was just posted a day late (the 1-day buffer picked it up). No action; the entry is made.",
   },
+  [VARIANCE.ODD_HOUR_TRIP]: {
+    // REAL and High (owner, 24 Sep 2026). Measured on the gate app, 1 Aug –
+    // 23 Sep: 123 of 141 outward trips opened between 9am and noon and exactly
+    // one ever opened after 9pm; 103 of 124 inward trips opened between 6pm
+    // and 10pm and two ever opened after midnight. A movement at the wrong end
+    // of the clock is rare enough to be worth a person's attention every time.
+    bucket: "REAL",
+    responsible: "warehouse_team",
+    note: "The gate opened this trip at an hour the warehouse rarely moves stock. Confirm who authorised it.",
+  },
   [VARIANCE.OT_CASE]: {
     // REAL, because somebody has to act: the transfer re-points a unit between
     // orders inside Odoo and no floor book can confirm it. Odoo team, because

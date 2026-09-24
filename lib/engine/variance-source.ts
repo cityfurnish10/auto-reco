@@ -17,6 +17,7 @@ const SOURCE_OF: Record<string, SourceLabel> = {
   [VARIANCE.ODOO_POSTED_LATE]: "Odoo",
   [VARIANCE.ODOO_OUT_PENDING]: "Odoo",
   [VARIANCE.OT_CASE]: "Odoo",
+  [VARIANCE.ODD_HOUR_TRIP]: "Physical",
   [VARIANCE.FLOOR_DT_NOT_ODOO]: "Odoo",
   [VARIANCE.GATE_OPS_NO_DT_ODOO]: "Odoo",
   [VARIANCE.PICKUP_ODOO_OPEN]: "Odoo",

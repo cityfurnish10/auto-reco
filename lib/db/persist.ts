@@ -8,6 +8,7 @@ import type { CityRunResult, ReportedSources, SourceFlags, SourceRow } from "../
 import { absenceContradicted } from "../engine/absence-claim";
 import type { MultiCityRun } from "../engine/run";
 import { varianceSource } from "../engine/variance-source";
+import { VARIANCE } from "../engine/variance-names";
 import { RESOLVED_LATE_NOTE } from "../engine/resolution";
 import { canonicalize } from "../engine/barcode";
 import { addDays } from "../engine/dates";
@@ -723,6 +724,11 @@ export async function resolveStaleOpenVariances(
     const supersededIds: string[] = [];
     const resolvedIds: string[] = [];
     for (const row of data ?? []) {
+      // RAISED OUTSIDE THE LADDER, so "this run did not emit it" proves
+      // nothing. The odd-hour trip check runs on gate_trips after the engine
+      // (lib/reconcile/odd-hour-trips.ts) and re-upserts its own rows every
+      // run; without this skip the stale pass would retire them minutes later.
+      if (row.variance_name === VARIANCE.ODD_HOUR_TRIP) continue;
       const key = `${row.direction}::${row.barcode}::${row.variance_name}`;
       if (emittedKeys.has(key)) continue; // still current — upsert refreshed it
       const unit = `${row.direction}::${row.barcode}`;
