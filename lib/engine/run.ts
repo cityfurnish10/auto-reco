@@ -18,7 +18,7 @@ import { detectDirectionConflicts } from "./direction-conflict";
 import { classify, duplicateHit } from "./ladder";
 import { filterOdooWindow } from "./odoo-window";
 import { utcToIstDate } from "../connectors/ist-window";
-import { isCityOff } from "./schedule";
+import { isCityClosed, type ClosureCalendar } from "./schedule";
 import { computeSuppressions } from "./suppressions";
 import { isSpareJobType, normalizeJobType, normalizeStatus } from "./util";
 import { grammarSuspect, isSummaryLine } from "./ocr-noise";
@@ -112,7 +112,23 @@ export function runReconciliation(
   // not validated, around the run date — supplied live by the pipeline
   // (fetchOdooPendingOut), empty in demo/tests. Drives the ODOO_OUT_PENDING
   // demotion below.
-  pendingOdooOut: ReadonlySet<string> = new Set()
+  pendingOdooOut: ReadonlySet<string> = new Set(),
+  /**
+   * WHAT THE WAREHOUSE ACTUALLY DID, from the delivery app's own calendar
+   * (synced into warehouse_calendar; supplied by the pipeline, absent in demo
+   * and most tests).
+   *
+   * Until 25 Sep 2026 this check read the hardcoded WEEKLY_OFF_DAY map while
+   * the dashboards and Odoo's window read the synced calendar, so the two
+   * disagreed about the same Thursday: the calendar had Delhi shut, the map
+   * had it working, and the engine judged a closed warehouse as an open one.
+   * Policy and practice differ too — the owner's rule is Thursday off in every
+   * city but Bangalore, and on 24 Sep Mumbai and Pune worked theirs — so the
+   * calendar, which records what happened, is the one to believe.
+   *
+   * Absent, isCityClosed falls back to the literal map exactly as before.
+   */
+  calendar?: ClosureCalendar | null
 ): CityRunResult {
   const warnings: string[] = [];
   const rows = allRows;
@@ -421,7 +437,7 @@ export function runReconciliation(
   // Odoo record CREATED that day is data entry about another day's movement —
   // never a same-day REAL. (Floor rows appearing on an off day still run the
   // normal ladder: activity on a closed day is exactly what should surface.)
-  const offDay = isCityOff(city, runDate);
+  const offDay = isCityClosed(city, runDate, calendar);
   if (offDay) {
     warnings.push(
       `${city} weekly off (${runDate}) — floor sources are expected absent; Odoo-only rows cannot be same-day REAL.`
@@ -1102,7 +1118,9 @@ export function runAllCities(
   recentFloorByCity?: Partial<Record<City, ReadonlySet<string>>>,
   fallbackDate?: string,
   recentOdooByCity?: Partial<Record<City, ReadonlySet<string>>>,
-  pendingOdooOutByCity?: Partial<Record<City, ReadonlySet<string>>>
+  pendingOdooOutByCity?: Partial<Record<City, ReadonlySet<string>>>,
+  /** The synced warehouse calendar — see runReconciliation's last argument. */
+  calendar?: ClosureCalendar | null
 ): MultiCityRun {
   const perCity: CityRunResult[] = [];
   const skipped: { city: City; error: string }[] = [];
@@ -1120,7 +1138,8 @@ export function runAllCities(
           recentFloorByCity?.[city] ?? new Set(),
           fallbackDate,
           recentOdooByCity?.[city] ?? new Set(),
-          pendingOdooOutByCity?.[city] ?? new Set()
+          pendingOdooOutByCity?.[city] ?? new Set(),
+          calendar
         )
       );
     } catch (err) {

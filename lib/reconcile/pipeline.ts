@@ -15,6 +15,8 @@ import { runAllCities, type MultiCityRun } from "../engine/run";
 import { guardTruncatedSheet } from "./sheet-guard";
 import { pullAll } from "../connectors";
 import { carryForwardFrozenDt } from "./freeze";
+import type { ClosureCalendar } from "../engine/schedule";
+import { readStoredClosureCalendar } from "../db/persist";
 import { raiseOddHourTrips } from "./odd-hour-trips";
 import { fetchOdooPendingOut, fetchOdooPostingsAfter } from "../connectors/odoo";
 import { processPendingGuardUploads } from "../connectors/ocr/process";
@@ -113,10 +115,23 @@ export async function runReconcilePipeline(
     //     decides whether an absent register is a schedule or an alarm.
     //     Best-effort by design: every reader falls back to WEEKLY_OFF_DAY, so
     //     a Mongo hiccup costs the holiday list for a day and nothing else.
+    // Kept, not just written: the ENGINE now judges an off day from this
+    // calendar too (25 Sep 2026). It used to read the hardcoded weekly map
+    // while everything else read the synced one, so on a Thursday the engine
+    // called Delhi open and the dashboard called it shut. Whatever the app's
+    // calendar says the warehouse did is what all of them now believe.
+    let closureCalendar: ClosureCalendar | null = null;
     const calendarRows = await readWarehouseCalendar()
-      .then((cal) => (cal ? syncWarehouseCalendar(db, cal) : 0))
+      .then(async (cal) => {
+        if (!cal) return 0;
+        closureCalendar = cal as unknown as ClosureCalendar;
+        return syncWarehouseCalendar(db, cal);
+      })
       .catch(() => 0);
     if (calendarRows > 0) console.log(`[reconcile] warehouse calendar: ${calendarRows} rows`);
+    // Mongo unreachable this run: fall back to the copy the last successful
+    // sync left behind, and only then to the literal map inside the engine.
+    if (!closureCalendar) closureCalendar = await readStoredClosureCalendar(db);
 
     // 1. Pull all 4 sources (tolerant of individual failures).
     const { rowsByCity, results, presentSources, reportedByCity: pulledReported } =
@@ -257,7 +272,8 @@ export async function runReconcilePipeline(
       recentFloorByCity,
       runDate,
       recentOdooByCity,
-      pendingOdooOutByCity
+      pendingOdooOutByCity,
+      closureCalendar
     );
     for (const s of run.skipped) {
       console.warn(`reconcile skipped ${s.city}: ${s.error}`);

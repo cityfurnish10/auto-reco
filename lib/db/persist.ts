@@ -11,6 +11,7 @@ import { varianceSource } from "../engine/variance-source";
 import { VARIANCE } from "../engine/variance-names";
 import { RESOLVED_LATE_NOTE } from "../engine/resolution";
 import { canonicalize } from "../engine/barcode";
+import type { ClosureCalendar } from "../engine/schedule";
 import { addDays } from "../engine/dates";
 import type { ConnectorResult } from "../connectors/types";
 import { RUN_SNAPSHOT_SCHEMA, type RunCitySnapshot } from "../reconcile/run-snapshot";
@@ -1375,6 +1376,31 @@ function warnNo0015(): void {
  * back to WEEKLY_OFF_DAY, which makes an unapplied 0019 a no-op rather than a
  * failed run.
  */
+/**
+ * The closure calendar as last synced — what each warehouse ACTUALLY does.
+ *
+ * The engine needs it (25 Sep 2026) and cannot fetch: it is pure. The pipeline
+ * reads it here when Mongo is unreachable, so one bad read does not send the
+ * run back to the literal weekly map for every city.
+ */
+export async function readStoredClosureCalendar(db: DB) {
+  try {
+    const { data, error } = await db
+      .from("warehouse_calendar")
+      .select("city, weekday, holiday_date");
+    if (error || !data?.length) return null;
+    const weeklyOff: Record<string, number[]> = {};
+    const holidays: Record<string, string[]> = {};
+    for (const r of data as { city: string; weekday: number | null; holiday_date: string | null }[]) {
+      if (r.weekday !== null && r.weekday !== undefined) (weeklyOff[r.city] ??= []).push(r.weekday);
+      else if (r.holiday_date) (holidays[r.city] ??= []).push(r.holiday_date);
+    }
+    return { weeklyOff, holidays } as ClosureCalendar;
+  } catch {
+    return null;
+  }
+}
+
 export async function syncWarehouseCalendar(
   db: DB,
   cal: { weeklyOff: Partial<Record<string, number[]>>; holidays: Partial<Record<string, string[]>> }

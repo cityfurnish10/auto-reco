@@ -69,8 +69,13 @@ export function isCityClosed(
   const wd = weekdayOf(businessDate);
   if (wd === null) return false;
   if (cal?.holidays?.[city]?.includes(businessDate)) return true;
-  const weekly = cal?.weeklyOff?.[city];
-  if (weekly) return weekly.includes(wd);
+  // A SUPPLIED CALENDAR IS THE WHOLE ANSWER, including for a city it does not
+  // mention — the delivery app lists the days a warehouse is SHUT, so no entry
+  // means it works seven days. Falling back per city used to let the literal
+  // map overrule it: on Thursday 24 Sep 2026 the app's calendar had Mumbai
+  // working and the map had it off, and the map won, so the engine expected
+  // nothing of a warehouse that ran a full day.
+  if (cal?.weeklyOff) return (cal.weeklyOff[city] ?? []).includes(wd);
   return isCityOff(city, businessDate);
 }
 
