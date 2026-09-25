@@ -85,56 +85,56 @@ interface LabelRule {
 // and two names sharing a label cannot drift apart.
 
 const SYSTEM_ONLY_ODOO: VarianceLabel = {
-  display: "Only in Odoo",
+  display: "Missing on ground",
   tier: 1,
   risk: "Odoo booked a customer movement today that nobody at the gate, on the sheet or in the app saw.",
   action: "Confirm the unit moved, or cancel the Odoo entry.",
 };
 
 const SYSTEM_ONLY_APP: VarianceLabel = {
-  display: "Only in the tracker",
+  display: "Missing on ground",
   tier: 1,
   risk: "Only the delivery app says this unit moved; nobody on the floor logged it.",
   action: "Confirm the unit physically left, or void the app entry.",
 };
 
 const OFF_SYSTEM_GATE: VarianceLabel = {
-  display: "Only the gate saw it",
+  display: "Missing in system",
   tier: 1,
   risk: "Only the guard saw this unit leave — nothing else in the business recorded it.",
   action: "Trace the unit, then record it on the sheet, the app and Odoo.",
 };
 
 const OFF_SYSTEM_SHEET: VarianceLabel = {
-  display: "Only the sheet has it",
+  display: "Missing in system",
   tier: 1,
   risk: "Only the ops sheet says this moved; the guard, the app and Odoo have nothing.",
   action: "Confirm the movement happened, then record it everywhere.",
 };
 
 const OFF_SYSTEM_FLOOR: VarianceLabel = {
-  display: "Not in tracker or Odoo",
+  display: "Missing in system",
   tier: 1,
   risk: "The unit left the gate and neither the delivery app nor Odoo knows it went.",
   action: "Find the order, scan it in the app, post it in Odoo.",
 };
 
 const UNLOGGED_ARRIVAL_GATE: VarianceLabel = {
-  display: "Only the gate saw it arrive",
+  display: "Missing in system · arrival",
   tier: 2,
   risk: "A unit came in past the guard and no system has it — we are holding stock the books do not show.",
   action: "Add it to the sheet and book it into Odoo.",
 };
 
 const UNLOGGED_ARRIVAL_SHEET: VarianceLabel = {
-  display: "Only the sheet has it arriving",
+  display: "Missing in system · arrival",
   tier: 2,
   risk: "The sheet has an arrival nothing else recorded, so the count on hand is unproven.",
   action: "Confirm the unit is on the floor and book it in.",
 };
 
 const UNLOGGED_ARRIVAL_FLOOR: VarianceLabel = {
-  display: "Arrival not in tracker or Odoo",
+  display: "Missing in system · arrival",
   tier: 2,
   risk: "Both floor books have the arrival; the app and Odoo do not, so it is not counted as available.",
   action: "Scan it in the app and post the receipt in Odoo.",
@@ -352,7 +352,7 @@ export const VARIANCE_LABELS: Record<VarianceName, LabelRule> = {
   // ── Tier 3 ────────────────────────────────────────────────────────────────
   [VARIANCE.ODOO_ONLY]: {
     base: ODOO_DELAY(
-      "Only in Odoo, posted late",
+      "Missing on ground · posted late",
       "An older Odoo entry was posted today; the floor records for it sit on the day it actually moved."
     ),
   },

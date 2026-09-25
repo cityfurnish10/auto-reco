@@ -18,7 +18,7 @@ const row = (over: Partial<AgeingRow> = {}): AgeingRow => ({
   city: "DELHI",
   direction: "OUT",
   barcode: "B1",
-  variance_name: VARIANCE.GATE_ONLY, // tier 1, "Only the gate saw it"
+  variance_name: VARIANCE.GATE_ONLY, // tier 1, "Missing in system"
   job_type: null,
   bucket: "REAL",
   note: null,
@@ -141,7 +141,7 @@ describe("summariseAgeing — the table", () => {
     const s = summariseAgeing(rows, REPORT, FRESH);
     expect(s.cities.map((c) => c.city)).toEqual(["DELHI", "PUNE"]);
     expect(s.cities[0].items).toBe(7);
-    expect(s.cities[0].kinds[0]).toEqual({ label: "Only the gate saw it", count: 5 });
+    expect(s.cities[0].kinds[0]).toEqual({ label: "Missing in system", count: 5 });
     expect(s.total).toBe(8);
   });
 
