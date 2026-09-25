@@ -188,3 +188,32 @@ describe("Hobby cron jitter cannot move the target date", () => {
     expect(reconcileTargetDate(atIst("2026-07-29", 15, 1))).toBe("2026-07-27");
   });
 });
+
+// A WEEK-OFF PUSHES A DAY'S BOOKS FORWARD (owner, 25 Sep 2026).
+//
+// Delhi and Hyderabad shut on Thursdays, so Wednesday's ops sheets are filled
+// on Friday. Wednesday is first judged on Thursday at 17:00, without them; the
+// ordinary re-check (primary - 2) would not come back to it until Saturday.
+describe("re-check after a week-off", () => {
+  const at = (iso: string) => new Date(iso);
+
+  it("re-runs the day before the closed day, not two days back", () => {
+    // Friday 25 Sep 2026, 17:00 IST. Primary = Thursday 24th (a week-off for
+    // Delhi and Hyderabad), so the second pass takes Wednesday the 23rd.
+    const now = at("2026-09-25T11:30:00Z");
+    expect(reconcileTargetDate(now)).toBe("2026-09-24");
+    expect(recheckTargetDate(now)).toBe("2026-09-23");
+  });
+
+  it("keeps the ordinary two-day re-check on an ordinary day", () => {
+    // Wednesday 23 Sep: primary = Tuesday 22nd, nobody shut, so re-check = 20th.
+    const now = at("2026-09-23T11:30:00Z");
+    expect(reconcileTargetDate(now)).toBe("2026-09-22");
+    expect(recheckTargetDate(now)).toBe("2026-09-20");
+  });
+
+  it("the follow-up email reports the date the re-check just re-ran", () => {
+    const now = at("2026-09-25T11:30:00Z");
+    expect(followupTargetDate(now)).toBe(recheckTargetDate(now));
+  });
+});

@@ -61,6 +61,8 @@
 // their tests agree on the target regardless of the hour the job fires.
 
 import { addDays } from "../engine/dates";
+import { isCityOff } from "../engine/schedule";
+import { CITIES } from "../sample-data";
 import { utcToBusinessDate, usesCalendarDay } from "../connectors/ist-window";
 import { utcToIstDate } from "../connectors/ist-window";
 
@@ -155,7 +157,22 @@ export function digestTargetDate(now: Date = new Date()): string {
 // A third pass was the obvious alternative and does not fit the 60s ceiling
 // (a pass is p50 36s).
 export function recheckTargetDate(now: Date = new Date()): string {
-  return addDays(reconcileTargetDate(now), -2);
+  const primary = reconcileTargetDate(now);
+  // A WEEK-OFF PUSHES A DAY'S BOOKS FORWARD, so the re-check has to follow.
+  //
+  // Owner, 25 Sep 2026: "on Thursdays warehouses are non-operational, so their
+  // next day data update across sources happens on Friday, for Wednesday."
+  // Wednesday is first judged on Thursday at 17:00 — while the closed cities'
+  // ops sheets for it do not exist yet — and the ordinary re-check two days
+  // back would not return to it until Saturday. When the primary target is a
+  // day those warehouses were shut, the second pass re-runs the day BEFORE it
+  // instead: Friday's run re-judges Wednesday, the afternoon its books arrive.
+  //
+  // Read from the literal week-off map rather than the synced calendar because
+  // this file is pure and runs before anything is fetched; the map and the
+  // calendar agree on the weekly rule (see lib/engine/schedule.ts).
+  const closedForSome = CITIES.some((c) => isCityOff(c, primary));
+  return addDays(primary, closedForSome ? -1 : -2);
 }
 
 // The business date whose follow-up email is due this afternoon. Same day the
