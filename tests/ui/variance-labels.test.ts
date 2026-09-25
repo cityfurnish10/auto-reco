@@ -120,12 +120,12 @@ describe("variance labels — context refinements", () => {
     const n = VARIANCE.REPLACEMENT_CONFIRM;
     // A swap type survived the engine's suppression => a completed swap.
     for (const jobType of ["REPLACE", "NEW_RENTAL", "REPAIR"]) {
-      expect(labelFor(n, { direction: "CROSS", jobType }).display).toBe("Same-Day Replacement");
+      expect(labelFor(n, { direction: "CROSS", jobType }).display).toBe("Same-day replacement");
       expect(tierOf(n, { direction: "CROSS", jobType })).toBe(3);
     }
     // No swap paperwork — including a null job type — is a real conflict.
     for (const jobType of [null, undefined, "DELIVERY", "PICKUP"]) {
-      expect(labelFor(n, { direction: "CROSS", jobType }).display).toBe("Direction Conflict");
+      expect(labelFor(n, { direction: "CROSS", jobType }).display).toBe("Same unit in and out");
       expect(tierOf(n, { direction: "CROSS", jobType })).toBe(1);
     }
   });
@@ -157,12 +157,19 @@ describe("variance labels — vocabulary", () => {
     expect(text).not.toMatch(/(?<![A-Za-z])[PSDO](?![A-Za-z])/);
   });
 
-  it("labels are title-case phrases, not sentences", () => {
+  // PLAIN WORDS, NOT A VOCABULARY (owner, 25 Sep 2026). The labels used to be
+  // coined terms — "Register Gap", "Ghost Dispatch", "Off-System Movement" —
+  // which a reader had to be taught, and which repeated what the four tick
+  // columns already show. They now say the problem in the words a warehouse
+  // manager would use: "Not posted in Odoo", "Only the gate saw it". Still a
+  // phrase, still capitalised, still no full stop; the cap is what fits the
+  // Problem column on a laptop.
+  it("labels are short plain phrases, not sentences", () => {
     for (const n of NAMES) {
       const d = labelFor(n).display;
       expect(d).toMatch(/^[A-Z]/);
       expect(d).not.toMatch(/[.!?]$/);
-      expect(d.length).toBeLessThanOrEqual(28);
+      expect(d.length).toBeLessThanOrEqual(34);
     }
   });
 
@@ -189,7 +196,7 @@ describe("variance labels — the engine's downgrade wins", () => {
         if (asFound.tier !== 1) continue;
         const downgraded = labelFor(n, { ...ctx, bucket: "INFO" });
         expect(downgraded.tier, `${n} stayed tier 1 despite bucket INFO`).not.toBe(1);
-        expect(downgraded.display).toBe("Cleared on Re-check");
+        expect(downgraded.display).toBe("Cleared on re-check");
         expect(downgraded.action).toBe("None.");
       }
     }
@@ -204,10 +211,10 @@ describe("variance labels — the engine's downgrade wins", () => {
   });
 
   it("does not disturb tier 2 or 3 rows, which are INFO by nature", () => {
-    // Register Gap etc. are INFO-bucket by design and must stay tier 2 —
+    // The "missing from one book" labels are INFO-bucket by design and must stay tier 2 —
     // a blanket "INFO means tier 3" would empty the amber tier.
     const regGap = labelFor(VARIANCE.OPS_ODOO_NO_GATE, { bucket: "INFO" });
-    expect(regGap.display).toBe("Register Gap");
+    expect(regGap.display).toBe("Missing from the gate register");
     expect(regGap.tier).toBe(2);
   });
 });
@@ -223,19 +230,19 @@ describe("a cleared gap is recognised by two different signals", () => {
   // which empties the whole amber tier. Five of the six tier-2 names are
   // natural INFO, so that is not a corner case, it is the majority.
   const REAL_TIER2 = VARIANCE.PICKUP_ODOO_OPEN;   // "Odoo Entry Missing"
-  const INFO_TIER2 = VARIANCE.OPS_ODOO_NO_GATE;   // "Register Gap"
+  const INFO_TIER2 = VARIANCE.OPS_ODOO_NO_GATE;   // "Missing from the gate register"
 
   it("clears a REAL-named tier-2 row when the bucket was downgraded", () => {
     expect(labelFor(REAL_TIER2, { direction: "OUT" }).tier).toBe(2);
     const cleared = labelFor(REAL_TIER2, { direction: "OUT", bucket: "INFO" });
-    expect(cleared.display).toBe("Cleared on Re-check");
+    expect(cleared.display).toBe("Cleared on re-check");
     expect(cleared.tier).toBe(3);
   });
 
   it("does NOT clear a naturally-INFO row just because it is INFO", () => {
     // The regression this whole design turns on.
     const asFound = labelFor(INFO_TIER2, { direction: "OUT", bucket: "INFO" });
-    expect(asFound.display).toBe("Register Gap");
+    expect(asFound.display).toBe("Missing from the gate register");
     expect(asFound.tier).toBe(2);
   });
 
@@ -245,7 +252,7 @@ describe("a cleared gap is recognised by two different signals", () => {
       bucket: "INFO",
       note: RESOLVED_LATE_NOTE,
     });
-    expect(cleared.display).toBe("Cleared on Re-check");
+    expect(cleared.display).toBe("Cleared on re-check");
     expect(cleared.tier).toBe(3);
   });
 
@@ -258,7 +265,7 @@ describe("a cleared gap is recognised by two different signals", () => {
   it("never promotes a tier-3 row — it is already 'no action'", () => {
     const t3 = labelFor(VARIANCE.DUPLICATE, { bucket: "INFO", note: RESOLVED_LATE_NOTE });
     expect(t3.tier).toBe(3);
-    expect(t3.display).toBe("Barcode Read Error");
+    expect(t3.display).toBe("Logged twice");
   });
 
   it("keeps the note constant in one place, so writer and reader cannot drift", () => {

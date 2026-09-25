@@ -85,84 +85,84 @@ interface LabelRule {
 // and two names sharing a label cannot drift apart.
 
 const SYSTEM_ONLY_ODOO: VarianceLabel = {
-  display: "System-Only Entry",
+  display: "Only in Odoo",
   tier: 1,
   risk: "Odoo booked a customer movement today that nobody at the gate, on the sheet or in the app saw.",
   action: "Confirm the unit moved, or cancel the Odoo entry.",
 };
 
 const SYSTEM_ONLY_APP: VarianceLabel = {
-  display: "System-Only Entry",
+  display: "Only in the tracker",
   tier: 1,
   risk: "Only the delivery app says this unit moved; nobody on the floor logged it.",
   action: "Confirm the unit physically left, or void the app entry.",
 };
 
 const OFF_SYSTEM_GATE: VarianceLabel = {
-  display: "Off-System Movement",
+  display: "Only the gate saw it",
   tier: 1,
   risk: "Only the guard saw this unit leave — nothing else in the business recorded it.",
   action: "Trace the unit, then record it on the sheet, the app and Odoo.",
 };
 
 const OFF_SYSTEM_SHEET: VarianceLabel = {
-  display: "Off-System Movement",
+  display: "Only the sheet has it",
   tier: 1,
   risk: "Only the ops sheet says this moved; the guard, the app and Odoo have nothing.",
   action: "Confirm the movement happened, then record it everywhere.",
 };
 
 const OFF_SYSTEM_FLOOR: VarianceLabel = {
-  display: "Off-System Movement",
+  display: "Not in tracker or Odoo",
   tier: 1,
   risk: "The unit left the gate and neither the delivery app nor Odoo knows it went.",
   action: "Find the order, scan it in the app, post it in Odoo.",
 };
 
 const UNLOGGED_ARRIVAL_GATE: VarianceLabel = {
-  display: "Unlogged Arrival",
+  display: "Only the gate saw it arrive",
   tier: 2,
   risk: "A unit came in past the guard and no system has it — we are holding stock the books do not show.",
   action: "Add it to the sheet and book it into Odoo.",
 };
 
 const UNLOGGED_ARRIVAL_SHEET: VarianceLabel = {
-  display: "Unlogged Arrival",
+  display: "Only the sheet has it arriving",
   tier: 2,
   risk: "The sheet has an arrival nothing else recorded, so the count on hand is unproven.",
   action: "Confirm the unit is on the floor and book it in.",
 };
 
 const UNLOGGED_ARRIVAL_FLOOR: VarianceLabel = {
-  display: "Unlogged Arrival",
+  display: "Arrival not in tracker or Odoo",
   tier: 2,
   risk: "Both floor books have the arrival; the app and Odoo do not, so it is not counted as available.",
   action: "Scan it in the app and post the receipt in Odoo.",
 };
 
 const UNCLOSED_RETURN: VarianceLabel = {
-  display: "Unclosed Return",
+  display: "Return not logged",
   tier: 1,
   risk: "The delivery did not happen, so the unit should be back — but nobody logged it coming in.",
   action: "Find the unit and write it into the inward register.",
 };
 
 const GHOST_DISPATCH: VarianceLabel = {
-  display: "Ghost Dispatch",
+  display: "Sheet says not delivered",
   tier: 1,
   risk: "The floor says this was not delivered while the app or Odoo says it went — one of them is wrong about a unit leaving the building.",
   action: "Establish whether the unit left, then correct the record that is wrong.",
 };
 
 const DIRECTION_CONFLICT: VarianceLabel = {
-  display: "Direction Conflict",
+  display: "Same unit in and out",
   tier: 1,
   risk: "The same unit is booked out and in on one order with nothing saying it was a swap — one of the two is probably a double count.",
   action: "Check which movement really happened and remove the other.",
 };
 
 const SAME_DAY_REPLACEMENT: VarianceLabel = {
-  display: "Same-Day Replacement",
+  display: "Same-day replacement",
   tier: 3,
   risk: "A unit went out and its match came back on the same order the same day — the expected shape for a swap.",
   action: "None.",
@@ -172,7 +172,7 @@ const SAME_DAY_REPLACEMENT: VarianceLabel = {
 // into it would bury it in blue: here the dispatch is proven and the UNIT is
 // wrong, which is a different and worse problem than a mistyped barcode.
 const WRONG_UNIT: VarianceLabel = {
-  display: "Wrong Unit Moved",
+  display: "Wrong unit scanned",
   tier: 1,
   risk: "The unit scanned at handover is not the one on the order, so two units are now on the wrong records.",
   action: "Check the unit against the order and correct both records.",
@@ -182,14 +182,14 @@ const WRONG_UNIT: VarianceLabel = {
 // entry exists or is coming, here it does not exist and will not appear on its
 // own. Folding these together would retire the largest actionable Odoo queue.
 const ODOO_ENTRY_MISSING_FLOOR: VarianceLabel = {
-  display: "Odoo Entry Missing",
+  display: "Not posted in Odoo",
   tier: 2,
   risk: "The unit moved and the floor saw it, but Odoo still shows it where it was.",
   action: "Post the stock move in Odoo today.",
 };
 
 const ODOO_ENTRY_MISSING_RETURN: VarianceLabel = {
-  display: "Odoo Entry Missing",
+  display: "Odoo receipt still open",
   tier: 2,
   risk: "The unit is back in the warehouse but Odoo still has the return open, so it is not counted as available.",
   action: "Close the return in Odoo today.",
@@ -198,22 +198,22 @@ const ODOO_ENTRY_MISSING_RETURN: VarianceLabel = {
 // "Register Gap" deliberately covers every "the others confirm it, one of our
 // four books has no line" case. The per-name action names WHICH book, so the
 // owner reads one amber line instead of five.
-const registerGap = (risk: string, action: string): VarianceLabel => ({
-  display: "Register Gap",
+const registerGap = (display: string, risk: string, action: string): VarianceLabel => ({
+  display,
   tier: 2,
   risk,
   action,
 });
 
-const ODOO_DELAY = (risk: string): VarianceLabel => ({
-  display: "Odoo Posting Delay",
+const ODOO_DELAY = (display: string, risk: string): VarianceLabel => ({
+  display,
   tier: 3,
   risk,
   action: "None.",
 });
 
-const BARCODE_READ_ERROR = (risk: string): VarianceLabel => ({
-  display: "Barcode Read Error",
+const BARCODE_READ_ERROR = (display: string, risk: string): VarianceLabel => ({
+  display,
   tier: 3,
   risk,
   action: "None.",
@@ -221,7 +221,7 @@ const BARCODE_READ_ERROR = (risk: string): VarianceLabel => ({
 
 // NEW label. Not barcode text, not Odoo — a paper register spanning two days.
 const LATE_PAPERWORK: VarianceLabel = {
-  display: "Late Paperwork",
+  display: "Logged a day either side",
   tier: 3,
   risk: "The unit is fully recorded, just written on the day either side of this one.",
   action: "None.",
@@ -267,7 +267,7 @@ export const VARIANCE_LABELS: Record<VarianceName, LabelRule> = {
   },
   [VARIANCE.OT_CASE]: {
     base: {
-      display: "OT Case",
+      display: "Order transfer, map by hand",
       tier: 2,
       risk: "Odoo moved this unit between orders (Reference# OT-…); no book on the floor can confirm a transfer, so it cannot be matched automatically.",
       action: "Map the transfer to the unit and the order it now belongs to, then close.",
@@ -315,30 +315,35 @@ export const VARIANCE_LABELS: Record<VarianceName, LabelRule> = {
 
   [VARIANCE.OPS_ODOO_NO_GATE]: {
     base: registerGap(
+      "Missing from the gate register",
       "The sheet, the app and Odoo all have it; only the guard's book missed the line.",
       "Remind the guard post to write every unit in the book."
     ),
   },
   [VARIANCE.OPS_ODOO_NO_DT]: {
     base: registerGap(
+      "No tracker record",
       "The sheet and Odoo both have the movement; the delivery app has no scan for it.",
       "Ask the team to scan every unit at handover."
     ),
   },
   [VARIANCE.DT_ODOO_NO_SHEET]: {
     base: registerGap(
+      "Not in the sheet",
       "The app and Odoo both have the movement; the ops sheet has no line for it.",
       "Add the missing line to the ops sheet."
     ),
   },
   [VARIANCE.GATE_OPS_ODOO_NO_DT]: {
     base: registerGap(
+      "No tracker scan",
       "The guard's book, the sheet and Odoo agree; only the app scan is missing.",
       "Scan the unit in the app to close the record."
     ),
   },
   [VARIANCE.GATE_ODOO_NO_OPS_DT]: {
     base: registerGap(
+      "Not in sheet or tracker",
       "The guard's book and Odoo confirm the movement; the sheet and the app both missed it.",
       "Write the line into the sheet and scan it in the app."
     ),
@@ -347,17 +352,19 @@ export const VARIANCE_LABELS: Record<VarianceName, LabelRule> = {
   // ── Tier 3 ────────────────────────────────────────────────────────────────
   [VARIANCE.ODOO_ONLY]: {
     base: ODOO_DELAY(
+      "Only in Odoo, posted late",
       "An older Odoo entry was posted today; the floor records for it sit on the day it actually moved."
     ),
   },
   [VARIANCE.ODOO_POSTED_NEXT_DAY]: {
     base: ODOO_DELAY(
+      "Odoo posted next day",
       "The floor confirmed the movement and the Odoo entry exists — it was made a day late."
     ),
   },
   [VARIANCE.ODOO_OUT_PENDING]: {
     base: {
-      display: "Items In Transit",
+      display: "In transit, Odoo not validated",
       // Tier 2: nothing is lost, but there is a record to finish — the Odoo
       // Out is still to be validated.
       tier: 2,
@@ -367,21 +374,25 @@ export const VARIANCE_LABELS: Record<VarianceName, LabelRule> = {
   },
   [VARIANCE.ODOO_POSTED_LATE]: {
     base: ODOO_DELAY(
+      "Odoo posted days later",
       "The floor recorded the movement and Odoo does have the unit — the entry was posted a few days later, which is how vendor receipts are booked."
     ),
   },
   [VARIANCE.OPS_DT_ODOO_PENDING]: {
     base: ODOO_DELAY(
+      "Odoo posting pending",
       "The sheet and the app have the movement; Odoo has not caught up yet. Normal lag."
     ),
   },
   [VARIANCE.FIELD_MISMATCH]: {
     base: BARCODE_READ_ERROR(
+      "Barcode written differently",
       "Every record has the unit; one of them spells the barcode differently."
     ),
   },
   [VARIANCE.DUPLICATE]: {
     base: BARCODE_READ_ERROR(
+      "Logged twice",
       "The same barcode was written twice in one record; only one movement happened."
     ),
   },
@@ -399,7 +410,7 @@ export const VARIANCE_LABELS: Record<VarianceName, LabelRule> = {
  * already resolved this way.
  */
 const CLEARED_ON_RECHECK: VarianceLabel = {
-  display: "Cleared on Re-check",
+  display: "Cleared on re-check",
   tier: 3,
   risk: "This gap closed on its own — the missing entry was made a day late and has now been found.",
   action: "None.",
