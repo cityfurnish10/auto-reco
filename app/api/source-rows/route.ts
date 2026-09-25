@@ -147,13 +147,14 @@ export const GET = jsonRoute("source-rows", async (req: NextRequest) => {
     for (let from = 0; ; from += PAGE) {
       let lq = supabase
         .from("movement_events")
-        .select("barcode, direction")
+        .select("canonical:barcode, direction")
         .eq("run_id", runId)
         .range(from, from + PAGE - 1);
       if (city && city !== "ALL") lq = lq.eq("city", city);
       const { data: page, error } = await lq;
       if (error) throw error;
-      for (const e of page ?? []) counted.add(`${e.direction}|${e.barcode}`);
+      // Aliased: this is the canonical fold, a join key and never a label.
+      for (const e of page ?? []) counted.add(`${e.direction}|${e.canonical}`);
       if (!page || page.length < PAGE) break;
     }
   } catch {
