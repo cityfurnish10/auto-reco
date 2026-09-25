@@ -198,6 +198,7 @@ export default function SourceScoreboard({ agg, city, loading, businessDate, day
                       muted={dir === "BOTH"}
                       suffix={dir === "BOTH" && r.partial && !r.unread ? "+" : undefined}
                       figure={r.unread ? null : r.down ? "—" : n}
+                      held={r.unread || r.down ? null : heldFor(c, dir)}
                       onOpen={() => setCell({ source: r.key, direction: dir, label: `${r.label} · ${side}`, figure: n })}
                     />
                   );
@@ -258,11 +259,48 @@ export default function SourceScoreboard({ agg, city, loading, businessDate, day
  * figure that was never read, and a button that opens an empty modal teaches
  * people the modal is broken rather than that the source was silent.
  */
-function Cell({ figure, onOpen, muted, suffix }: {
+/**
+ * What the source itself held for a direction, and why our figure differs.
+ *
+ * Asked for 25 Sep 2026: "most of out/in movement is not matching the
+ * individual sources, the way we look at it". Every figure on this board had
+ * survived a rule, and no rule said so — Delhi's 22 Sep showed 104 outward
+ * against an ops sheet holding 105 rows, and 70 inward against 78.
+ */
+function heldFor(c: SourceCount | undefined, dir: "IN" | "OUT" | "BOTH"): HeldSummary | null {
+  const h = c?.held;
+  if (!h) return null;
+  const pick = (d: "in" | "out") => h[d];
+  const parts = dir === "BOTH" ? [pick("in"), pick("out")] : [pick(dir === "IN" ? "in" : "out")];
+  const sum = (f: "rows" | "units" | "notDelivered" | "notAUnit") =>
+    parts.reduce((a, p) => a + (p?.[f] ?? 0), 0);
+  return { rows: sum("rows"), units: sum("units"), notDelivered: sum("notDelivered"), notAUnit: sum("notAUnit") };
+}
+interface HeldSummary { rows: number; units: number; notDelivered: number; notAUnit: number }
+
+/** The sentence under a figure that does not equal what the source holds. */
+function heldCaption(figure: number, h: HeldSummary): { line: string; why: string } | null {
+  if (!h.rows || h.rows === figure) return null;
+  // FACTS ONLY. An earlier draft named the reasons here from the row text and
+  // could disagree with the engine, which is the very thing this is meant to
+  // cure. The three numbers are read from the run; the rows behind them are one
+  // click away, each marked counted or not.
+  const dupes = h.rows - h.units;
+  return {
+    line: `of ${h.rows} in the source`,
+    why:
+      `The source handed over ${h.rows} row${h.rows === 1 ? "" : "s"} here` +
+      (dupes > 0 ? `, covering ${h.units} unit${h.units === 1 ? "" : "s"} (${dupes} written more than once)` : "") +
+      `. ${figure} counted. Open the cell to see every row, with the uncounted ones marked.`,
+  };
+}
+
+function Cell({ figure, onOpen, muted, suffix, held }: {
   figure: number | string | null;
   onOpen: () => void;
   muted?: boolean;
   suffix?: string;
+  held?: HeldSummary | null;
 }) {
   const tone = muted ? "text-text-secondary" : "font-semibold text-text-primary";
   if (figure === null) return <td className={`text-right ${tone}`}>…</td>;
@@ -282,6 +320,12 @@ function Cell({ figure, onOpen, muted, suffix }: {
         {figure}
         {suffix && <span className="text-text-disabled">{suffix}</span>}
       </button>
+      {(() => {
+        const cap = held ? heldCaption(figure, held) : null;
+        return cap ? (
+          <span className="block text-[11px] font-normal text-text-muted" title={cap.why}>{cap.line}</span>
+        ) : null;
+      })()}
     </td>
   );
 }
@@ -290,6 +334,8 @@ function Cell({ figure, onOpen, muted, suffix }: {
 const titleCity = (c: string) => c.charAt(0) + c.slice(1).toLowerCase();
 
 interface RawRow {
+  /** False = in the source, not behind the figure. Null = ledger unreadable. */
+  counted?: boolean | null;
   barcodeAsWritten: string;
   direction: string;
   status: string | null;
@@ -374,12 +420,10 @@ function SourceRowsModal({ cell, date, city, onClose }: {
                 contradict it. */}
             {rows.length !== cell.figure && (
               <span>
-                {" · "}the board counts <b className="text-text-primary">{cell.figure}</b> of these
-                as movements —{" "}
-                {cell.source === "odoo"
-                  ? `${rows.filter((r) => r.orderTransferRef).length} are order transfers (OT CASE), which are not movements`
-                  : "the rest are rows this source marked as not delivered, or lines with no barcode"}{" "}
-                (see Outcome)
+                {" · "}the board counts <b className="text-text-primary">{cell.figure}</b> of these.
+                {" "}The ones it does not are marked <b className="text-text-primary">not counted</b> —
+                {" "}order transfers, rows the source marked not delivered, lines with no barcode,
+                {" "}or a unit written more than once.
               </span>
             )}
           </p>
@@ -394,8 +438,17 @@ function SourceRowsModal({ cell, date, city, onClose }: {
               </thead>
               <tbody>
                 {rows.map((r, i) => (
-                  <tr key={`${r.barcodeAsWritten}-${i}`} className="hover:bg-surface-elevated">
-                    <td className="px-3 py-1.5 border border-border whitespace-nowrap">{r.direction === "IN" ? "Inward" : "Outward"}</td>
+                  <tr key={`${r.barcodeAsWritten}-${i}`} className={`hover:bg-surface-elevated ${r.counted === false ? "opacity-60" : ""}`}>
+                    <td className="px-3 py-1.5 border border-border whitespace-nowrap">
+                      {/* THE ROW'S OWN ANSWER to "is this one of the N?" —
+                          the join the modal never had. */}
+                      {r.counted === false && (
+                        <span className="badge badge-suppressed uppercase mr-2" title="This row is in the source but is not part of the figure on the board">
+                          not counted
+                        </span>
+                      )}
+                      {r.direction === "IN" ? "Inward" : "Outward"}
+                    </td>
                     <td className="px-3 py-1.5 border border-border font-mono whitespace-nowrap">{r.barcodeAsWritten || "—"}</td>
                     <td className="px-3 py-1.5 border border-border">{r.product ?? "—"}</td>
                     <td className="px-3 py-1.5 border border-border">

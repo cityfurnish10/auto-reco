@@ -352,6 +352,27 @@ export interface SourceCount {
   notDone?: { in: number; out: number };
   /** ALL CITIES only: the cities this source did not report for. */
   missing?: string[];
+  /**
+   * What the source itself held for the day, before any rule of ours: rows as
+   * handed over, distinct units, and the two reasons a unit is left out of the
+   * figure beside it. Lets the board show "104 of 105" and say why — see the
+   * summary route. Absent when the run's raw feed could not be read.
+   */
+  held?: {
+    in: HeldCount;
+    out: HeldCount;
+  };
+}
+
+export interface HeldCount {
+  /** Rows the connector handed over. */
+  rows: number;
+  /** Distinct units among them — a source may write one unit twice. */
+  units: number;
+  /** Units the source's own outcome column says did not happen. */
+  notDelivered: number;
+  /** Units whose item text says it is not a barcoded unit (PP box, spare). */
+  notAUnit: number;
 }
 
 /** A city the current run did not cover — every figure unknown, not zero. */

@@ -109,7 +109,7 @@ export const GET = jsonRoute("source-rows", async (req: NextRequest) => {
   // caller can mistake it for the canonical fold (invariant 6).
   let q = supabase
     .from("source_rows")
-    .select("written:barcode, direction, status, job_type, so_number, ticket_id, customer, product, movement_date, created_on, ot:raw->>orderTransferRef, phys:raw->>physicalStatus")
+    .select("written:barcode, canonical:barcode_canonical, direction, status, job_type, so_number, ticket_id, customer, product, movement_date, created_on, ot:raw->>orderTransferRef, phys:raw->>physicalStatus")
     .eq("run_id", runId)
     .eq("source", source)
     .limit(PAGE);
@@ -135,9 +135,38 @@ export const GET = jsonRoute("source-rows", async (req: NextRequest) => {
     rows = rows.filter((r) => (day(r.created_on) ?? day(r.movement_date)) === date);
   }
 
+  // WHICH OF THESE ROWS THE FIGURE ACTUALLY COUNTED (25 Sep 2026).
+  //
+  // The modal showed the source's rows and the board showed a smaller number,
+  // and nothing joined the two: Delhi's 22 Sep ops sheet held 105 outward rows
+  // against a figure of 104, and finding the odd one out took a database
+  // query. The ledger holds exactly the units that were counted, so each row
+  // is now marked against it.
+  const counted = new Set<string>();
+  try {
+    for (let from = 0; ; from += PAGE) {
+      let lq = supabase
+        .from("movement_events")
+        .select("barcode, direction")
+        .eq("run_id", runId)
+        .range(from, from + PAGE - 1);
+      if (city && city !== "ALL") lq = lq.eq("city", city);
+      const { data: page, error } = await lq;
+      if (error) throw error;
+      for (const e of page ?? []) counted.add(`${e.direction}|${e.barcode}`);
+      if (!page || page.length < PAGE) break;
+    }
+  } catch {
+    counted.clear(); // ledger unreadable: show the rows unmarked rather than wrongly
+  }
+  const ledgerRead = counted.size > 0;
+
   return NextResponse.json({
+    ledgerRead,
     rows: rows.map((r) => ({
       barcodeAsWritten: (r.written as string) ?? "",
+      /** False = the row is in the source but not behind the figure. */
+      counted: ledgerRead ? counted.has(`${r.direction}|${r.canonical}`) : null,
       direction: r.direction as string,
       // The Tracker's own word for the item ("Done" / "Not Done") where it has
       // one; the engine's "done" says nothing a person can check.

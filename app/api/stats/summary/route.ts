@@ -31,6 +31,13 @@ function todayISO(): string {
  * genuinely quiet gate both count 0, and the dashboard must never draw the
  * first one as if it were the second (invariant 2).
  */
+export interface HeldCount {
+  rows: number;
+  units: number;
+  notDelivered: number;
+  notAUnit: number;
+}
+
 export interface SourceCount {
   in: number;
   out: number;
@@ -41,6 +48,11 @@ export interface SourceCount {
    * outcome, so only the sheet ever has these.
    */
   notDone?: { in: number; out: number };
+  /**
+   * What the source itself held before any rule of ours — see the comment on
+   * readSourceFeed. The board shows "counted of held" and names the gap.
+   */
+  held?: { in: HeldCount; out: HeldCount };
   /**
    * ALL CITIES only: the cities this source did not report for. A "Partial"
    * badge that makes the reader open five tabs to find out which is a badge
@@ -391,6 +403,41 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
     }
   };
 
+  /**
+   * WHAT EACH SOURCE ACTUALLY HANDED OVER, before any rule of ours.
+   *
+   * Asked for 25 Sep 2026, and it is the fix for the complaint behind it: the
+   * figure on the board is what SURVIVED our rules, and the rules are silent.
+   * Delhi's 22 Sep read 104 outward against an ops sheet holding 105 rows, and
+   * 70 inward against 78 — both right, neither explained, and no way to tell
+   * a rule from a bug without a database query.
+   *
+   * So the board now shows both: what the source holds, and what we counted,
+   * with every unit in between named and attributed to the rule that dropped
+   * it. Read from the same run as the figures, so the two cannot disagree.
+   */
+  const readSourceFeed = async () => {
+    try {
+      const rows: { city: string; source: string; direction: string; barcode_canonical: string | null;
+                    status: string | null; product: string | null;
+                    created_on: string | null; movement_date: string | null }[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data: page, error } = await supabase
+          .from("source_rows")
+          .select("city, source, direction, barcode_canonical, status, product, created_on, movement_date")
+          .eq("run_id", run.id)
+          .order("id", { ascending: true })
+          .range(from, from + 999);
+        if (error) throw error;
+        rows.push(...((page ?? []) as typeof rows));
+        if (!page || page.length < 1000) break;
+      }
+      return rows;
+    } catch {
+      return null; // without it the board simply shows the counted figure alone
+    }
+  };
+
   const readCalendar = async () => {
     try {
       const { data, error } = await supabase
@@ -441,12 +488,13 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
     return base as unknown as typeof full;
   };
 
-  const [varRes, cityStatsRes, ledgerRows, calRows, gateCountRows] = await Promise.all([
+  const [varRes, cityStatsRes, ledgerRows, calRows, gateCountRows, feedRows] = await Promise.all([
     readVariances(),
     readCityStats(),
     readLedger(),
     readCalendar(),
     readGateCounts(),
+    readSourceFeed(),
   ]);
 
   if (varRes.error) return NextResponse.json({ error: varRes.error }, { status: 500 });
@@ -502,6 +550,48 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
     byCityMap.set(v.city, agg);
   }
 
+  // WHAT THE SOURCE HELD, PER CITY AND DIRECTION, from the same run's feed.
+  // `rows` is what the connector handed over; `units` folds the duplicate rows
+  // a source can carry for one unit. The difference between `units` and the
+  // counted figure beside it is what our rules removed, and the reasons below
+  // are why — read off the rows themselves, never guessed.
+  const SRC_KEY: Record<string, "gate" | "sheet" | "dt" | "odoo"> = {
+    PHYSICAL: "gate", SHEET: "sheet", DT: "dt", ODOO: "odoo",
+  };
+  type Held = { rows: number; units: number; notDelivered: number; notAUnit: number };
+  const heldBy = new Map<string, Held>(); // city|source|direction
+  const seenUnit = new Map<string, Set<string>>();
+  const runDay = String(run.business_date).slice(0, 10);
+  for (const r of feedRows ?? []) {
+    const k = SRC_KEY[r.source];
+    if (!k || (r.direction !== "IN" && r.direction !== "OUT")) continue;
+    // ODOO IS PULLED WIDER THAN IT IS COUNTED — one day either side, so a
+    // next-day posting can still match this day's movement. Counting the
+    // buffer here would tell a manager the source "holds 223" against a
+    // figure of 47 and explain nothing. Same narrowing as /api/source-rows.
+    if (k === "odoo") {
+      const day = (v: string | null) => (typeof v === "string" ? v.slice(0, 10) : null);
+      if ((day(r.created_on) ?? day(r.movement_date)) !== runDay) continue;
+    }
+    const key = `${r.city}|${k}|${r.direction}`;
+    const held = heldBy.get(key) ?? { rows: 0, units: 0, notDelivered: 0, notAUnit: 0 };
+    held.rows++;
+    const units = seenUnit.get(key) ?? new Set<string>();
+    const bc = r.barcode_canonical ?? "";
+    if (bc && !units.has(bc)) {
+      units.add(bc);
+      held.units++;
+      // The sheet is the only book with an outcome column; a row it marks as
+      // not delivered is not a movement (owner's rule) and never counted.
+      if (/^not/i.test((r.status ?? "").trim())) held.notDelivered++;
+      // A line whose item text is "Not Found", a PP box or a spare is counted
+      // on the count-only card instead of the four-way comparison.
+      else if (/not found|pp\s*box|spare/i.test(`${r.product ?? ""} ${bc}`)) held.notAUnit++;
+    }
+    seenUnit.set(key, units);
+    heldBy.set(key, held);
+  }
+
   // Overlay count-only PP-box / consumable movements from run_city_stats for
   // this run's date (RLS-scoped: a manager sees only their own city's row).
   for (const s of cityStats ?? []) {
@@ -522,6 +612,15 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
       dt: { in: s.dt_in ?? 0, out: s.dt_out ?? 0, reported: !!s.reported_d },
       odoo: { in: s.odoo_in ?? 0, out: s.odoo_out ?? 0, reported: !!s.reported_o },
     };
+    for (const k of ["gate", "sheet", "dt", "odoo"] as const) {
+      const held = (dir: "IN" | "OUT") => heldBy.get(`${s.city}|${k}|${dir}`);
+      const hin = held("IN"), hout = held("OUT");
+      if (!hin && !hout) continue;
+      agg.sources[k].held = {
+        in: { rows: hin?.rows ?? 0, units: hin?.units ?? 0, notDelivered: hin?.notDelivered ?? 0, notAUnit: hin?.notAUnit ?? 0 },
+        out: { rows: hout?.rows ?? 0, units: hout?.units ?? 0, notDelivered: hout?.notDelivered ?? 0, notAUnit: hout?.notAUnit ?? 0 },
+      };
+    }
     byCityMap.set(s.city, agg);
     overall.ppBox += s.pp_box_count ?? 0;
     overall.consumable += s.consumable_count ?? 0;
@@ -534,6 +633,12 @@ export const GET = jsonRoute("stats/summary", async (req: NextRequest) => {
       const to = overall.sources[k];
       to.in += from.in;
       to.out += from.out;
+      if (from.held) {
+        to.held ??= { in: { rows: 0, units: 0, notDelivered: 0, notAUnit: 0 }, out: { rows: 0, units: 0, notDelivered: 0, notAUnit: 0 } };
+        for (const d of ["in", "out"] as const)
+          for (const f of ["rows", "units", "notDelivered", "notAUnit"] as const)
+            to.held[d][f] += from.held[d][f];
+      }
     }
   }
   // Only cities the run actually covered get a vote. A city that appears here
